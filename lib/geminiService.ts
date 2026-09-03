@@ -320,7 +320,10 @@ export async function analyzeWithGemini(
     return ruleAnalysis;
   }
 
-  const prompt = `You are a World-Class Quantitative Portfolio Architect using Economic Calendar Red-Folder Safety & Dynamic Regime-Switching.
+  const prompt = `You are a World-Class Quantitative Portfolio Architect & Trading Mentor.
+Your goal is to explain market conditions and trading decisions to beginners who have NEVER traded before in warm, natural, and fluent Thai (ภาษาไทยที่สละสลวย ถูกต้องตามหลักไวยากรณ์ สำนวนธรรมชาติเหมือนรุ่นพี่สอนรุ่นน้อง ไม่แปลตรงตัวแบบหุ่นยนต์).
+
+Context:
 - Economic Calendar Shield: ${ruleAnalysis.calendarSafety?.badgeText}
 - Red Folder Safety Reason: ${ruleAnalysis.calendarSafety?.freezeReason} (Trade Allowed: ${ruleAnalysis.calendarSafety?.tradeAllowed})
 - Current Thai Time (GMT+7): ${ruleAnalysis.sessionStatus?.thaiTimeStr}
@@ -332,6 +335,12 @@ export async function analyzeWithGemini(
 ### LIVE FINANCIAL NEWS & SENTIMENT:
 ${news.slice(0, 5).map((n, i) => `${i + 1}. [${n.source}] (${n.sentiment}) ${n.title}`).join("\n")}
 
+CRITICAL INSTRUCTIONS:
+1. "summary": Write 2-3 sentences in natural Thai explaining:
+   - ตลาดอยู่ในสถานะอะไร ปลอดภัยหรือไม่ (เช็คเกราะกล่องข่าว ${ruleAnalysis.calendarSafety?.badgeText} และช่วงเวลา ${ruleAnalysis.sessionStatus?.sessionBadge.text})
+   - แนะนำให้ผู้ใช้ทำอะไรอย่างชัดเจน (เช่น "แนะนำให้ตั้ง Buy Limit ดักซื้อของถูกที่แนวรับ" หรือ "แนะนำให้อยู่เฉยๆ ถือเงินสดไว้ก่อน")
+2. Technical terms must always have plain Thai explanations (e.g., SL = จุดยอมแพ้, TP = จุดเก็บกำไร, Support = แนวรับ/ของถูก, Resistance = แนวต้าน/ของแพง).
+
 Respond ONLY with valid JSON matching this schema:
 {
   "symbol": "${symbol}",
@@ -341,7 +350,7 @@ Respond ONLY with valid JSON matching this schema:
   "signal": "${ruleAnalysis.signal}",
   "confidence": ${ruleAnalysis.confidence},
   "setupGrade": "${ruleAnalysis.setupGrade}",
-  "summary": "Concise Thai synthesis combining Calendar Shield (${ruleAnalysis.calendarSafety?.badgeText}), Session Timing (${ruleAnalysis.sessionStatus?.sessionBadge.text}), and technical setup",
+  "summary": "บทวิเคราะห์ภาษาไทยสำนวนสละสลวยเข้าใจง่ายสำหรับมือใหม่ สรุปสถานะกล่องข่าวและสิ่งที่ควรทำ",
   "confluenceChecklist": ${JSON.stringify(ruleAnalysis.confluenceChecklist)},
   "timeframeMatrix": ${JSON.stringify(ruleAnalysis.timeframeMatrix)},
   "technicalAnalysis": {
@@ -358,8 +367,9 @@ Respond ONLY with valid JSON matching this schema:
 }`;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+    // Attempt with fast, robust gemini-3.5-flash first
+    let res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -372,6 +382,24 @@ Respond ONLY with valid JSON matching this schema:
         }),
       }
     );
+
+    // Fallback to gemini-3.1-flash-lite if 3.5 is busy
+    if (!res.ok) {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.15,
+            },
+          }),
+        }
+      );
+    }
 
     if (!res.ok) {
       console.warn(`Gemini API error: ${res.statusText}`);

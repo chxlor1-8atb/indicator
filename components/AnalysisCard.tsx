@@ -279,45 +279,57 @@ export default function AnalysisCard({
 
           {/* Expandable 4-Box Playbook Guide */}
           {showPlaybookGuide && (
-            <div className="p-3 rounded-xl bg-surface-100/95 border border-slate-700 space-y-2 text-xs">
-              <h6 className="font-bold text-white text-[11px] flex items-center gap-1.5 border-b border-slate-800 pb-1.5">
-                <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                <span>คู่มือกลยุทธ์การเทรดรับมือ 4 สีกล่องข่าวเศรษฐกิจ (Forex Factory Playbook)</span>
+            <div className="p-3.5 rounded-xl bg-surface-100/95 border border-slate-700 space-y-2.5 text-xs">
+              <h6 className="font-bold text-white text-[11px] flex items-center gap-1.5 border-b border-slate-800 pb-2">
+                <BookOpen className="w-4 h-4 text-amber-400" />
+                <span>📖 คู่มือการเทรดรับมือ 4 กล่องข่าวเศรษฐกิจ (ฉบับมือใหม่เข้าใจง่ายทันที)</span>
               </h6>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                <div className="p-2 rounded-lg bg-rose-950/25 border border-rose-500/30">
-                  <span className="font-bold text-rose-400 flex items-center gap-1 mb-0.5">
-                    <span>🟥</span> 1. กล่องสีแดง (High Impact) — รุนแรงสูงสุด
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                <div className="p-2.5 rounded-xl bg-rose-950/25 border border-rose-500/30 space-y-1">
+                  <span className="font-bold text-rose-400 flex items-center gap-1">
+                    <span>🟥</span> 1. กล่องสีแดง (High Impact) — อันตรายรุนแรงสูงสุด
                   </span>
-                  <p className="text-slate-300 text-[10px] leading-relaxed">
-                    NFP, CPI, ดอกเบี้ย Fed • กราฟกระชากพันๆ จุด เปลี่ยนเทรนด์ทันที • <strong>คำแนะนำ:</strong> ห้ามสวนเทรนด์เด็ดขาด เคลียร์พอร์ตหรือเลื่อน SL บังหน้าทุนทันที
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    <strong>ข่าวระดับโลก:</strong> เงินเฟ้อสหรัฐฯ (CPI), การจ้างงาน (NFP), แถลงดอกเบี้ยเฟด (Fed)
+                  </p>
+                  <p className="text-rose-200/90 text-[10px] leading-relaxed bg-rose-950/40 p-1.5 rounded border border-rose-500/20">
+                    👉 <strong>สำหรับมือใหม่:</strong> กราฟสามารถสะบัดขึ้นลงแรงเป็นพันจุดในพริบตา ระบบจะล็อกเป็น <strong>WAIT</strong> อัตโนมัติ เพื่อไม่ให้คุณเผลอเปิดออเดอร์แล้วพอร์ตแตก ควรนั่งดูเฉยๆ รอให้ข่าวออกไปแล้ว 15 นาทีจนตลาดนิ่ง
                   </p>
                 </div>
 
-                <div className="p-2 rounded-lg bg-amber-950/25 border border-amber-500/30">
-                  <span className="font-bold text-amber-400 flex items-center gap-1 mb-0.5">
+                <div className="p-2.5 rounded-xl bg-amber-950/25 border border-amber-500/30 space-y-1">
+                  <span className="font-bold text-amber-400 flex items-center gap-1">
                     <span>🟧</span> 2. กล่องสีส้ม (Medium Impact) — ผันผวนปานกลาง
                   </span>
-                  <p className="text-slate-300 text-[10px] leading-relaxed">
-                    PMI, Retail Sales • กราฟวิ่งไปในทิศทางใดทิศทางหนึ่ง ไม่กระชากทำลายล้าง • <strong>คำแนะนำ:</strong> Follow Trend ตามระบบปกติได้ แต่ต้องตั้ง Stop Loss เสมอ
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    <strong>ข่าวตัวเลขทั่วไป:</strong> ดัชนีความเชื่อมั่นโรงงาน (PMI), ยอดค้าปลีก (Retail Sales)
+                  </p>
+                  <p className="text-amber-200/90 text-[10px] leading-relaxed bg-amber-950/40 p-1.5 rounded border border-amber-500/20">
+                    👉 <strong>สำหรับมือใหม่:</strong> กราฟจะวิ่งไปตามทิศทางตัวเลขอย่างมีเหตุผล ไม่กระชากมั่วซั่ว สามารถเปิดออเดอร์ตามแนวโน้มเดิมได้สบายใจ แต่ต้องตั้งจุดยอมแพ้ (Stop Loss) ทุกครั้ง
                   </p>
                 </div>
 
-                <div className="p-2 rounded-lg bg-yellow-950/25 border border-yellow-500/30">
-                  <span className="font-bold text-yellow-400 flex items-center gap-1 mb-0.5">
-                    <span>🟨</span> 3. กล่องสีเหลือง (Low Impact) — ผันผวนต่ำ
+                <div className="p-2.5 rounded-xl bg-yellow-950/25 border border-yellow-500/30 space-y-1">
+                  <span className="font-bold text-yellow-400 flex items-center gap-1">
+                    <span>🟨</span> 3. กล่องสีเหลือง (Low Impact) — ผันผวนต่ำ (ปลอดภัยสุด)
                   </span>
-                  <p className="text-slate-300 text-[10px] leading-relaxed">
-                    สถิติย่อย, ยอดสั่งซื้อ • วิ่งนิ่งๆ ในกรอบ • <strong>คำแนะนำ:</strong> สวรรค์สายเทคนิคอล กราฟวิ่งตามแนวรับ-แนวต้านแม่นยำมาก เทรดได้เต็มที่
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    <strong>ข่าวระดับย่อย:</strong> สถิติประจำวัน, รายงานการค้าทั่วไป
+                  </p>
+                  <p className="text-yellow-200/90 text-[10px] leading-relaxed bg-yellow-950/40 p-1.5 rounded border border-yellow-500/20">
+                    👉 <strong>สำหรับมือใหม่:</strong> สวรรค์ของคนเทรด! กราฟจะเคารพแนวรับแนวต้านอย่างแม่นยำ เหมาะที่สุดสำหรับมือใหม่ในการฝึกเทรดและเก็บกำไรตามระบบ
                   </p>
                 </div>
 
-                <div className="p-2 rounded-lg bg-slate-800/60 border border-slate-700">
-                  <span className="font-bold text-slate-300 flex items-center gap-1 mb-0.5">
-                    <span>⬜️</span> 4. กล่องสีเทา/ขาว (Bank Holiday)
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700 space-y-1">
+                  <span className="font-bold text-slate-300 flex items-center gap-1">
+                    <span>⬜️</span> 4. กล่องสีเทา/ขาว (Bank Holiday) — วันหยุดตลาด
                   </span>
-                  <p className="text-slate-400 text-[10px] leading-relaxed">
-                    วันหยุดธนาคารสหรัฐฯ/ยุโรป • วอลุ่มแห้งสนิท กราฟวิ่งแคบ สเปรดอาจถ่าง • <strong>คำแนะนำ:</strong> แนะนำพักการเทรดหรือถือเงินสด
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    <strong>วันหยุดราชการ:</strong> ธนาคารใหญ่ในสหรัฐฯ หรือยุโรปปิดทำการ
+                  </p>
+                  <p className="text-slate-300 text-[10px] leading-relaxed bg-slate-800/80 p-1.5 rounded border border-slate-700">
+                    👉 <strong>สำหรับมือใหม่:</strong> ไม่มีคนซื้อขาย วอลุ่มจะแห้งสนิท กราฟจะแทบไม่ขยับ และค่าธรรมเนียม (Spread) อาจถ่างกว้าง แนะนำให้ปิดหน้าจอพักผ่อน ถือเงินสดไว้สบายใจที่สุด
                   </p>
                 </div>
               </div>
@@ -617,18 +629,18 @@ export default function AnalysisCard({
                 : "bg-surface-100 text-slate-400 border-slate-700"
             }`}>
               {analysis.tradeSetup.orderType === "BUY_LIMIT"
-                ? "🟢 BUY LIMIT (ตั้งรับล่วงหน้า)"
+                ? "🟢 BUY LIMIT (ตั้งรับซื้อของถูกล่วงหน้า)"
                 : analysis.tradeSetup.orderType === "SELL_LIMIT"
-                ? "🔴 SELL LIMIT (ตั้งรอขายล่วงหน้า)"
+                ? "🔴 SELL LIMIT (ตั้งรอขายราคาสูงล่วงหน้า)"
                 : analysis.tradeSetup.orderType === "BUY_STOP"
-                ? "🚀 BUY STOP (ดักทะลุแนวต้าน)"
+                ? "🚀 BUY STOP (ดักซื้อเมื่อราคาพุ่งทะลุ)"
                 : analysis.tradeSetup.orderType === "SELL_STOP"
-                ? "🔻 SELL STOP (ดักหลุดแนวรับ)"
-                : "⚪ NO PENDING ORDER"}
+                ? "🔻 SELL STOP (ดักขายเมื่อราคาหลุดร่วง)"
+                : "⚪ พักดูจังหวะ (ตลาดยังไม่ให้แต้มต่อ)"}
             </span>
 
             <span className="text-[11px] text-slate-400 font-mono">
-              R:R: <strong className="text-brand-green">{analysis.tradeSetup.riskRewardRatio}</strong>
+              ความคุ้มค่า (R:R): <strong className="text-brand-green">{analysis.tradeSetup.riskRewardRatio}</strong>
             </span>
           </div>
         </div>
@@ -647,8 +659,8 @@ export default function AnalysisCard({
             <span className="text-sm font-mono font-black text-amber-300 block">
               {analysis.tradeSetup.pendingPrice || analysis.tradeSetup.entryZone.min}
             </span>
-            <span className="text-[10px] text-slate-500 font-mono block truncate">
-              โซน: {analysis.tradeSetup.entryZone.min} - {analysis.tradeSetup.entryZone.max}
+            <span className="text-[10px] text-slate-400 font-sans block truncate">
+              แตะเพื่อคัดลอก • รอซื้อที่แนวรับ
             </span>
           </div>
 
@@ -658,14 +670,14 @@ export default function AnalysisCard({
             className="p-3 rounded-xl bg-surface-100/90 hover:bg-slate-800 border border-slate-700 hover:border-rose-500/50 cursor-pointer transition-all group relative"
           >
             <div className="flex items-center justify-between text-[11px] text-rose-400 mb-0.5">
-              <span className="font-semibold text-rose-300">2. จุดตัดขาดทุน (SL)</span>
+              <span className="font-semibold text-rose-300">2. จุดยอมแพ้ (Stop Loss)</span>
               {copiedKey === "sl" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-slate-400" />}
             </div>
             <span className="text-sm font-mono font-black text-rose-300 block">
               {analysis.tradeSetup.stopLoss}
             </span>
-            <span className="text-[10px] font-mono text-rose-400/80 block">
-              {analysis.tradeSetup.slPips ? `-${analysis.tradeSetup.slPips} pips` : "ซ่อนหลัง Swing"}
+            <span className="text-[10px] font-sans text-rose-300/80 block">
+              {analysis.tradeSetup.slPips ? `-${analysis.tradeSetup.slPips} pips (ตัดขาดทุนอัตโนมัติ)` : "ซ่อนหลัง Swing"}
             </span>
           </div>
 
@@ -675,14 +687,14 @@ export default function AnalysisCard({
             className="p-3 rounded-xl bg-surface-100/90 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/50 cursor-pointer transition-all group relative"
           >
             <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-0.5">
-              <span className="font-semibold text-emerald-300">3. จุดทำกำไร 1 (TP1)</span>
+              <span className="font-semibold text-emerald-300">3. กำไรเป้าแรก (TP1)</span>
               {copiedKey === "tp1" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-slate-400" />}
             </div>
             <span className="text-sm font-mono font-black text-emerald-300 block">
               {analysis.tradeSetup.takeProfit1}
             </span>
-            <span className="text-[10px] font-mono text-emerald-400/80 block">
-              +{analysis.tradeSetup.tp1Pips || 0} pips (เลื่อนบังทุน)
+            <span className="text-[10px] font-sans text-emerald-300/80 block">
+              +{analysis.tradeSetup.tp1Pips || 0} pips (ปิดครึ่ง + เลื่อนบังทุน)
             </span>
           </div>
 
@@ -692,14 +704,14 @@ export default function AnalysisCard({
             className="p-3 rounded-xl bg-surface-100/90 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/50 cursor-pointer transition-all group relative"
           >
             <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-0.5">
-              <span className="font-semibold text-emerald-300">4. จุดทำกำไร 2 (TP2)</span>
+              <span className="font-semibold text-emerald-300">4. กำไรเป้าใหญ่ (TP2)</span>
               {copiedKey === "tp2" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-slate-400" />}
             </div>
             <span className="text-sm font-mono font-black text-emerald-300 block">
               {analysis.tradeSetup.takeProfit2}
             </span>
-            <span className="text-[10px] font-mono text-emerald-400/80 block">
-              +{analysis.tradeSetup.tp2Pips || 0} pips (รันเทรนด์)
+            <span className="text-[10px] font-sans text-emerald-300/80 block">
+              +{analysis.tradeSetup.tp2Pips || 0} pips (ปล่อยรันเทรนด์)
             </span>
           </div>
         </div>
@@ -875,12 +887,18 @@ export default function AnalysisCard({
                 </div>
               </div>
 
-              {/* Micro-account Advice for $10 - $50 */}
-              {balance <= 50 && (
-                <div className="p-2 rounded-lg bg-indigo-950/30 border border-indigo-500/30 text-[10px] text-slate-300 leading-relaxed">
-                  💡 <strong>คำแนะนำสำหรับพอร์ต ${balance}:</strong> บนบัญชี Standard ขนาดไม้ต่ำสุดคือ 0.01 Lot หากชน SL จะเสียประมาณ -${stdLossUSD} USD (คิดเป็น {stdRiskPctActual}%) แต่หากใช้ <strong>บัญชี Cent (1,000 Cents)</strong> จะสามารถออกไม้คุมความเสี่ยงได้เป๊ะที่ {customRiskPct}% โดยเสียเพียง -${centLossUSD} USD เท่านั้นครับ
-                </div>
-              )}
+              {/* Micro-account Advice for Beginners */}
+              <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
+                <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                  <span>💡</span> คำแนะนำสำหรับมือใหม่ที่เพิ่งเริ่มต้นเทรด:
+                </span>
+                <p className="text-[10px] text-slate-300">
+                  • <strong>พอร์ตขนาดเล็ก ($10 – $50):</strong> แนะนำให้ใช้ <strong>บัญชี Cent (USC)</strong> เพราะเงิน $10 จะกลายเป็น 1,000 Cents ทำให้คุณสามารถเปิดไม้ขนาดเล็กและคุมความเสี่ยงให้เสียไม่เกินไม้ละ <strong>${centLossUSD} USD (ประมาณ {Math.max(1, Math.round(centLossUSD * 36))} บาท)</strong> ช่วยให้ฝึกเทรดได้สบายใจ พอร์ตไม่มีวันแตก
+                </p>
+                <p className="text-[10px] text-slate-300">
+                  • <strong>พอร์ตเติบโต ($100 ขึ้นไป):</strong> สามารถเลือกใช้ <strong>บัญชี Standard ($)</strong> ได้ตามปกติ โดยตั้งขนาดไม้เริ่มต้นที่ 0.01 Lot
+                </p>
+              </div>
             </div>
           );
         })()}

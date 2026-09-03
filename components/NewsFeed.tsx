@@ -28,19 +28,19 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
       case "BULLISH":
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <TrendingUp className="w-3 h-3" /> Bullish
+            <TrendingUp className="w-3 h-3" /> 🟢 แรงซื้อหนุน (มองขึ้น)
           </span>
         );
       case "BEARISH":
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            <TrendingDown className="w-3 h-3" /> Bearish
+            <TrendingDown className="w-3 h-3" /> 🔴 แรงขายกดดัน (มองลง)
           </span>
         );
       default:
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/10 text-slate-400 border border-slate-700/40">
-            <Minus className="w-3 h-3" /> Neutral
+            <Minus className="w-3 h-3" /> ⚪ ทรงตัวในกรอบ (เป็นกลาง)
           </span>
         );
     }
@@ -50,7 +50,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
     if (impact === "HIGH") {
       return (
         <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-          <Flame className="w-3 h-3" /> High Impact
+          <Flame className="w-3 h-3" /> 🔥 ข่าวสำคัญมาก
         </span>
       );
     }
@@ -59,12 +59,12 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
 
   const getTimeAgo = (isoString: string) => {
     const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
-    if (seconds < 60) return "Just now";
+    if (seconds < 60) return "เมื่อสักครู่";
     const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
+    if (minutes < 60) return `${minutes} นาทีที่แล้ว`;
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
+    if (hours < 24) return `${hours} ชั่วโมงที่แล้ว`;
+    return `${Math.floor(hours / 24)} วันที่แล้ว`;
   };
 
   return (
@@ -77,10 +77,10 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white">
-              {viewMode === "NEWS" ? "Live News & Macro Feed" : "Economic Calendar (ปฏิทินเศรษฐกิจ)"}
+              {viewMode === "NEWS" ? "ข่าวสารเศรษฐกิจสด & ปฏิทินการเงิน" : "ปฏิทินเศรษฐกิจ 4 สี (Forex Factory)"}
             </h3>
             <p className="text-[11px] text-slate-400">
-              {viewMode === "NEWS" ? "Real-time breaking economic headlines" : "กล่องแดง 🔴 ส้ม 🟠 เหลือง 🟡 เทา ⚪ (เวลาไทย GMT+7)"}
+              {viewMode === "NEWS" ? "เกาะติดพาดหัวข่าวสำคัญระดับโลกแบบ Real-time" : "กล่องแดง 🔴 ส้ม 🟠 เหลือง 🟡 เทา ⚪ (เวลาไทย GMT+7)"}
             </p>
           </div>
         </div>
@@ -93,7 +93,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
               viewMode === "NEWS" ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            📰 ข่าวสาร Real-Time
+            📰 ข่าวสารทันเหตุการณ์
           </button>
           <button
             onClick={() => setViewMode("CALENDAR")}
@@ -101,7 +101,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
               viewMode === "CALENDAR" ? "bg-slate-800 text-amber-300 shadow-sm" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            📅 ปฏิทินเศรษฐกิจ
+            📅 ปฏิทิน 4 กล่องข่าว
           </button>
         </div>
       </div>
@@ -109,7 +109,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
       {/* Sub-filter if News Mode */}
       {viewMode === "NEWS" && (
         <div className="flex items-center justify-between pt-2.5 pb-1">
-          <span className="text-[10px] text-slate-400 font-semibold">Filter:</span>
+          <span className="text-[10px] text-slate-400 font-semibold">ตัวกรอง:</span>
           <div className="flex items-center gap-1 bg-surface-50 p-0.5 rounded border border-slate-800 text-[10px]">
             <button
               onClick={() => setFilter("ALL")}
@@ -117,7 +117,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
                 filter === "ALL" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              All
+              ทั้งหมด
             </button>
             <button
               onClick={() => setFilter("RELEVANT")}
@@ -125,7 +125,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
                 filter === "RELEVANT" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              {selectedAsset}
+              #{selectedAsset}
             </button>
             <button
               onClick={() => setFilter("HIGH_IMPACT")}
@@ -133,14 +133,14 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
                 filter === "HIGH_IMPACT" ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              High Impact Only
+              เฉพาะข่าวสำคัญมาก
             </button>
           </div>
         </div>
       )}
 
       {/* Content Feed */}
-      <div className="mt-2.5 space-y-2 overflow-y-auto max-h-[500px] pr-1">
+      <div className="mt-3 space-y-2.5 overflow-y-auto flex-1 max-h-[520px] pr-1">
         {viewMode === "CALENDAR" ? (
           /* Economic Calendar View */
           calendarEvents.map((evt) => {
@@ -151,7 +151,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
             return (
               <div
                 key={evt.id}
-                className={`p-2.5 rounded-xl border transition-all ${
+                className={`p-3 rounded-xl border transition-all ${
                   isRed
                     ? "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
                     : isOrange
@@ -159,7 +159,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
                     : "bg-surface-50 border-slate-800 hover:border-slate-700"
                 }`}
               >
-                <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs">
                       {isRed ? "🔴" : isOrange ? "🟠" : isYellow ? "🟡" : "⚪"}
@@ -181,18 +181,24 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
                         : "bg-slate-700/60 text-slate-300 border-slate-600"
                     }`}
                   >
-                    {isRed ? "กล่องแดง (High)" : isOrange ? "กล่องส้ม (Med)" : "กล่องเหลือง"}
+                    {isRed ? "กล่องแดง (รุนแรงสุด)" : isOrange ? "กล่องส้ม (ปานกลาง)" : "กล่องเหลือง (ผันผวนต่ำ)"}
                   </span>
                 </div>
 
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-2 mb-2">
                   <span className="text-xs font-semibold text-slate-100 block leading-tight">
                     {evt.title}
                   </span>
                   <div className="text-right shrink-0 text-[10px] font-mono">
-                    <span className="text-slate-300 block">Exp: {evt.forecast}</span>
-                    <span className="text-slate-500 block">Prev: {evt.previous}</span>
+                    <span className="text-slate-300 block">คาดการณ์: {evt.forecast}</span>
+                    <span className="text-slate-500 block">ครั้งก่อน: {evt.previous}</span>
                   </div>
+                </div>
+
+                {/* Practical Advice for Beginners */}
+                <div className="p-2 rounded-lg bg-surface-100/90 border border-slate-800/90 text-[11px] text-slate-300 leading-relaxed">
+                  <span className="font-semibold text-amber-300">💡 คำแนะนำ: </span>
+                  {evt.strategyAdvice}
                 </div>
               </div>
             );
@@ -200,11 +206,11 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
         ) : isLoading ? (
           <div className="py-12 text-center text-xs text-slate-500 space-y-2">
             <div className="w-6 h-6 border-2 border-brand-blue border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p>Fetching real-time breaking market news...</p>
+            <p>กำลังดึงข้อมูลข่าวสารตลาดการเงินสด...</p>
           </div>
         ) : filteredNews.length === 0 ? (
           <div className="py-10 text-center text-xs text-slate-500">
-            No breaking headlines found for this filter.
+            ไม่พบหัวข้อข่าวสารสำหรับตัวกรองนี้
           </div>
         ) : (
           filteredNews.map((item) => (
