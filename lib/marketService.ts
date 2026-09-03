@@ -295,7 +295,21 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     }
   }
 
-  // 2. If Crypto, use Binance API (Real-time & Fast)
+  // 2. If Gold (XAUUSD), use live Spot Gold feed (PAXGUSDT on Binance)
+  // This matches TradingView (OANDA/FXCM) and Investing.com Spot Gold 1:1, avoiding COMEX Futures contango premium (+45$)
+  if (symbol.toUpperCase() === "XAUUSD" || symbol.toUpperCase() === "GOLD") {
+    try {
+      const candles = await fetchCryptoCandles("PAXGUSDT", interval, 200);
+      if (candles.length >= 20) {
+        candleCache.set(cacheKey, { candles, timestamp: Date.now() });
+        return candles;
+      }
+    } catch (err) {
+      console.warn("Binance PAXG Spot Gold fetch failed, falling back to Yahoo...", err);
+    }
+  }
+
+  // 3. If Crypto, use Binance API (Real-time & Fast)
   if (asset?.category === "crypto" || symbol.endsWith("USDT")) {
     try {
       const candles = await fetchCryptoCandles(symbol, interval, 200);
@@ -308,7 +322,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     }
   }
 
-  // 3. Try Yahoo Finance for Commodities, Forex, Stocks, Indices
+  // 4. Try Yahoo Finance for Commodities, Forex, Stocks, Indices
   try {
     const candles = await fetchYahooCandles(symbol, interval);
     if (candles.length >= 20) {
