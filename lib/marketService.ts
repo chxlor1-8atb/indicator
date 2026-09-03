@@ -121,7 +121,7 @@ export async function fetchCryptoCandles(symbol: string, interval = "1h", limit 
 
 export async function fetchYahooCandles(symbol: string, interval = "1h"): Promise<Candle[]> {
   const yahooSymbolMap: Record<string, string> = {
-    "XAUUSD": "GC=F",
+    "XAUUSD": "XAUT-USD", // Physical Spot Gold (avoids GC=F +45$ futures contango)
     "XAGUSD": "SI=F",
     "USOIL": "CL=F",
     "UKOIL": "BZ=F",
@@ -285,17 +285,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
   const asset = AVAILABLE_ASSETS.find((a) => a.symbol === symbol);
 
-  // 1. If Massive API key exists, try Massive API first
-  const massiveKey = process.env.MASSIVE_API_KEY;
-  if (massiveKey) {
-    const massiveCandles = await fetchMassiveCandles(symbol, interval, massiveKey);
-    if (massiveCandles.length >= 20) {
-      candleCache.set(cacheKey, { candles: massiveCandles, timestamp: Date.now() });
-      return massiveCandles;
-    }
-  }
-
-  // 2. If Gold (XAUUSD), use live Spot Gold feed (PAXGUSDT on Binance)
+  // 1. If Gold (XAUUSD), use live Spot Gold feed (PAXGUSDT on Binance)
   // This matches TradingView (OANDA/FXCM) and Investing.com Spot Gold 1:1, avoiding COMEX Futures contango premium (+45$)
   if (symbol.toUpperCase() === "XAUUSD" || symbol.toUpperCase() === "GOLD") {
     try {
@@ -305,7 +295,17 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
         return candles;
       }
     } catch (err) {
-      console.warn("Binance PAXG Spot Gold fetch failed, falling back to Yahoo...", err);
+      console.warn("Binance PAXG Spot Gold fetch failed, falling back...", err);
+    }
+  }
+
+  // 2. If Massive API key exists, try Massive API
+  const massiveKey = process.env.MASSIVE_API_KEY;
+  if (massiveKey) {
+    const massiveCandles = await fetchMassiveCandles(symbol, interval, massiveKey);
+    if (massiveCandles.length >= 20) {
+      candleCache.set(cacheKey, { candles: massiveCandles, timestamp: Date.now() });
+      return massiveCandles;
     }
   }
 

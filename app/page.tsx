@@ -185,20 +185,23 @@ export default function DashboardPage() {
         ws.onmessage = (event) => {
           const trade = JSON.parse(event.data);
           const livePrice = parseFloat(trade.p);
-          if (livePrice) {
+          if (livePrice && !isNaN(livePrice)) {
+            const formattedPrice = Number(livePrice.toFixed(2));
             setCandles((prevCandles) => {
               if (prevCandles.length === 0) return prevCandles;
               const newCandles = [...prevCandles];
               const last = { ...newCandles[newCandles.length - 1] };
-              last.close = livePrice;
-              last.high = Math.max(last.high, livePrice);
-              last.low = Math.min(last.low, livePrice);
+              last.close = formattedPrice;
+              last.high = Math.max(last.high, formattedPrice);
+              last.low = Math.min(last.low, formattedPrice);
               newCandles[newCandles.length - 1] = last;
-
-              const newInds = calculateAllIndicators(newCandles);
-              setIndicators(newInds);
               return newCandles;
             });
+
+            setIndicators((prev) => ({
+              ...prev,
+              currentPrice: formattedPrice,
+            }));
           }
         };
 
@@ -208,10 +211,10 @@ export default function DashboardPage() {
       }
     }
 
-    // High-frequency polling (every 1.8 seconds) with cache-busting for all assets
+    // Stable background sync (every 10 seconds)
     const pollInterval = setInterval(() => {
       loadMarketData(selectedAsset, selectedTimeframe, true);
-    }, 1800);
+    }, 10000);
 
     return () => {
       clearInterval(pollInterval);
