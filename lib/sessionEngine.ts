@@ -32,16 +32,49 @@ export function isDaylightSavingTime(date: Date): boolean {
   return true;
 }
 
+export function getThaiTimeParts(date: Date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+    weekday: "short",
+  });
+  const parts = formatter.formatToParts(date);
+  const findPart = (type: string) => {
+    const p = parts.find((item) => item.type === type);
+    return p ? parseInt(p.value, 10) : 0;
+  };
+
+  const hour = findPart("hour") % 24;
+  const minute = findPart("minute");
+  const day = findPart("day");
+  const month = findPart("month");
+  const year = findPart("year");
+
+  const weekdayStr = parts.find((p) => p.type === "weekday")?.value || "Sun";
+  const weekdayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  const dayOfWeek = weekdayMap[weekdayStr] ?? 0;
+
+  return { hour, minute, day, month, year, dayOfWeek };
+}
+
 export function getMarketSessionStatus(symbol: string, customDate?: Date): SessionStatus {
   const now = customDate || new Date();
   
-  // Convert to Thailand Time (GMT+7)
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const thaiDate = new Date(utc + 3600000 * 7);
-
-  const hour = thaiDate.getHours();
-  const minute = thaiDate.getMinutes();
-  const dayOfWeek = thaiDate.getDay(); // 0 = Sun, 1 = Mon, 6 = Sat
+  // Convert to Thailand Time (GMT+7) with Serverless-safe Intl format
+  const { hour, minute, dayOfWeek } = getThaiTimeParts(now);
   const isDST = isDaylightSavingTime(now);
 
   const thaiTimeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} น.`;

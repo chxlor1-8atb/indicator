@@ -267,21 +267,42 @@ export function generateRealisticCandles(symbol: string, basePrice = 2500, count
   return candles;
 }
 
+// In-memory cache with 15s TTL to prevent rate-limiting and maximize performance
+interface CacheEntry {
+  candles: Candle[];
+  timestamp: number;
+}
+const candleCache = new Map<string, CacheEntry>();
+const CANDLE_CACHE_TTL_MS = 15000; // 15 seconds
+
 export async function getMarketCandles(symbol: string, interval = "1h"): Promise<Candle[]> {
+  const cacheKey = `${symbol.toUpperCase()}_${interval}`;
+  const cached = candleCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && (now - cached.timestamp) < CANDLE_CACHE_TTL_MS && cached.candles.length >= 20) {
+    return cached.candles;
+  }
+
   const asset = AVAILABLE_ASSETS.find((a) => a.symbol === symbol);
 
   // 1. If Massive API key exists, try Massive API first
   const massiveKey = process.env.MASSIVE_API_KEY;
   if (massiveKey) {
     const massiveCandles = await fetchMassiveCandles(symbol, interval, massiveKey);
-    if (massiveCandles.length >= 20) return massiveCandles;
+    if (massiveCandles.length >= 20) {
+      candleCache.set(cacheKey, { candles: massiveCandles, timestamp: Date.now() });
+      return massiveCandles;
+    }
   }
 
   // 2. If Crypto, use Binance API (Real-time & Fast)
   if (asset?.category === "crypto" || symbol.endsWith("USDT")) {
     try {
       const candles = await fetchCryptoCandles(symbol, interval, 200);
-      if (candles.length >= 20) return candles;
+      if (candles.length >= 20) {
+        candleCache.set(cacheKey, { candles, timestamp: Date.now() });
+        return candles;
+      }
     } catch (err) {
       console.warn(`Binance fetch failed for ${symbol}, trying Yahoo...`, err);
     }
@@ -290,7 +311,10 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
   // 3. Try Yahoo Finance for Commodities, Forex, Stocks, Indices
   try {
     const candles = await fetchYahooCandles(symbol, interval);
-    if (candles.length >= 20) return candles;
+    if (candles.length >= 20) {
+      candleCache.set(cacheKey, { candles, timestamp: Date.now() });
+      return candles;
+    }
   } catch (err) {
     console.warn(`Yahoo fetch failed for ${symbol}, using fallback data...`, err);
   }

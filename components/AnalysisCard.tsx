@@ -711,20 +711,26 @@ export default function AnalysisCard({
           const tp1PipsVal = Math.max(10, analysis.tradeSetup.tp1Pips || 50);
           const tp2PipsVal = Math.max(10, analysis.tradeSetup.tp2Pips || 100);
 
+          // Asset-aware pip value per 0.01 lot standard
+          const sym = analysis.symbol.toUpperCase();
+          const isCrypto = sym.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(c => sym.startsWith(c));
+          const isJPY = sym.includes("JPY");
+          const pipDollarPer001 = isCrypto ? 0.01 : isJPY ? 0.07 : 0.10;
+
           // Standard Account Calculation (0.01 lot min)
-          const stdCalculatedLot = Math.max(0.01, Number(((balance * (customRiskPct / 100)) / (slPipsVal * 0.10)).toFixed(2)));
+          const stdCalculatedLot = Math.max(0.01, Number(((balance * (customRiskPct / 100)) / (slPipsVal * (pipDollarPer001 * 10))).toFixed(2)));
           const stdLot = balance < 100 ? 0.01 : stdCalculatedLot;
-          const stdLossUSD = Number((stdLot * slPipsVal * 0.10).toFixed(2));
-          const stdTp1USD = Number((stdLot * tp1PipsVal * 0.10).toFixed(2));
-          const stdTp2USD = Number((stdLot * tp2PipsVal * 0.10).toFixed(2));
+          const stdLossUSD = Number((stdLot * slPipsVal * pipDollarPer001).toFixed(2));
+          const stdTp1USD = Number((stdLot * tp1PipsVal * pipDollarPer001).toFixed(2));
+          const stdTp2USD = Number((stdLot * tp2PipsVal * pipDollarPer001).toFixed(2));
           const stdRiskPctActual = ((stdLossUSD / balance) * 100).toFixed(1);
 
           // Cent Account Calculation (USC - 100x smaller, ideal for $10-$50)
           const centBalanceUSC = balance * 100;
-          const centLot = Math.max(0.01, Number(((centBalanceUSC * (customRiskPct / 100)) / (slPipsVal * 0.10)).toFixed(2)));
-          const centLossUSD = Number((centLot * slPipsVal * 0.001).toFixed(2));
-          const centTp1USD = Number((centLot * tp1PipsVal * 0.001).toFixed(2));
-          const centTp2USD = Number((centLot * tp2PipsVal * 0.001).toFixed(2));
+          const centLot = Math.max(0.01, Number(((centBalanceUSC * (customRiskPct / 100)) / (slPipsVal * (pipDollarPer001 * 10))).toFixed(2)));
+          const centLossUSD = Number((centLot * slPipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
+          const centTp1USD = Number((centLot * tp1PipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
+          const centTp2USD = Number((centLot * tp2PipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
 
           const isCent = accountType === "CENT";
           const activeLot = isCent ? centLot : stdLot;

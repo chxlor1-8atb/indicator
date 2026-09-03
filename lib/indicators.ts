@@ -338,12 +338,16 @@ export function detectFairValueGaps(candles: Candle[]): FVGItem[] {
   const fvgs: FVGItem[] = [];
   if (candles.length < 5) return fvgs;
 
+  const atrs = calculateATR(candles, 14);
+
   for (let i = 2; i < candles.length; i++) {
     const c1 = candles[i - 2];
     const c3 = candles[i];
+    const currentATR = atrs[i] || Math.max(c3.high - c3.low, c3.close * 0.003);
+    const minImbalanceGap = currentATR * 0.15; // At least 15% ATR to be considered institutional imbalance
 
     // Bullish FVG: Low of candle 3 is higher than High of candle 1 (imbalance void)
-    if (c3.low > c1.high) {
+    if (c3.low > c1.high && (c3.low - c1.high) >= minImbalanceGap) {
       fvgs.push({
         type: "BULLISH",
         top: Number(c3.low.toFixed(2)),
@@ -352,7 +356,7 @@ export function detectFairValueGaps(candles: Candle[]): FVGItem[] {
       });
     }
     // Bearish FVG: High of candle 3 is lower than Low of candle 1 (imbalance void)
-    else if (c3.high < c1.low) {
+    else if (c3.high < c1.low && (c1.low - c3.high) >= minImbalanceGap) {
       fvgs.push({
         type: "BEARISH",
         top: Number(c1.low.toFixed(2)),
@@ -362,7 +366,7 @@ export function detectFairValueGaps(candles: Candle[]): FVGItem[] {
     }
   }
 
-  return fvgs.slice(-5); // Return the top 5 most recent FVGs
+  return fvgs.slice(-5); // Return the top 5 most recent validated FVGs
 }
 
 // ─── Price Action Candlestick Rejection Detection ───

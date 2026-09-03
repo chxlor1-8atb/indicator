@@ -1,3 +1,5 @@
+import { getThaiTimeParts } from "./sessionEngine";
+
 export type CalendarImpact = "HIGH" | "MEDIUM" | "LOW" | "HOLIDAY";
 
 export interface EconomicCalendarEvent {
@@ -30,10 +32,9 @@ export interface CalendarSafetyStatus {
 export function getDailyEconomicCalendar(symbol: string, customDate?: Date): EconomicCalendarEvent[] {
   const now = customDate || new Date();
   
-  // Thailand Time (GMT+7)
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const thaiDate = new Date(utc + 3600000 * 7);
-  const startOfDay = new Date(thaiDate.getFullYear(), thaiDate.getMonth(), thaiDate.getDate(), 0, 0, 0);
+  // Thailand Time (GMT+7) via Serverless-safe Intl
+  const { day, month, year } = getThaiTimeParts(now);
+  const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
 
   const rawEvents: Array<{
     hour: number;
@@ -205,10 +206,9 @@ export function getDailyEconomicCalendar(symbol: string, customDate?: Date): Eco
 export function getNewsSafetyShieldStatus(symbol: string, customDate?: Date): CalendarSafetyStatus {
   const now = customDate || new Date();
   
-  // Thailand Time (GMT+7)
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const thaiDate = new Date(utc + 3600000 * 7);
-  const currentTotalMinutes = thaiDate.getHours() * 60 + thaiDate.getMinutes();
+  // Thailand Time (GMT+7) via Serverless-safe Intl
+  const { hour: currentHour, minute: currentMinute } = getThaiTimeParts(now);
+  const currentTotalMinutes = currentHour * 60 + currentMinute;
 
   const allEvents = getDailyEconomicCalendar(symbol, customDate);
 
