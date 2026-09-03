@@ -186,8 +186,8 @@ export default function MarketChart({
         ctx.stroke();
 
         ctx.fillStyle = "#089981";
-        ctx.font = "9px sans-serif";
-        ctx.fillText(`SUP: ${sup}`, width - padding.right + 5, y - 4);
+        ctx.font = "bold 9px sans-serif";
+        ctx.fillText(`SUP: ${sup}`, padding.left + 8, y - 4);
       });
 
       indicators.resistanceLevels.forEach((res) => {
@@ -201,8 +201,8 @@ export default function MarketChart({
         ctx.stroke();
 
         ctx.fillStyle = "#f23645";
-        ctx.font = "9px sans-serif";
-        ctx.fillText(`RES: ${res}`, width - padding.right + 5, y - 4);
+        ctx.font = "bold 9px sans-serif";
+        ctx.fillText(`RES: ${res}`, padding.left + 8, y - 4);
       });
       ctx.setLineDash([]);
     }
@@ -430,25 +430,82 @@ export default function MarketChart({
     setMousePos(null);
   };
 
+  const lastCandle = candles[candles.length - 1];
+  const liveClose = lastCandle ? lastCandle.close : indicators.currentPrice;
+  const firstCandle = candles[0];
+  const baselinePrice = firstCandle ? firstCandle.open : liveClose;
+  const priceChange = liveClose - baselinePrice;
+  const priceChangePct = baselinePrice > 0 ? (priceChange / baselinePrice) * 100 : 0;
+  const isPositive = priceChange >= 0;
+
+  let high24h = -Infinity;
+  let low24h = Infinity;
+  let totalVolume = 0;
+  candles.forEach((c) => {
+    if (c.high > high24h) high24h = c.high;
+    if (c.low < low24h) low24h = c.low;
+    totalVolume += c.volume;
+  });
+
   return (
     <div className="bg-surface-100 border border-slate-800 rounded-2xl overflow-hidden shadow-sm" ref={containerRef}>
+      {/* ─── Institutional Live Price Header Banner ─── */}
+      <div className="px-4 py-3 bg-surface-150 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Symbol, Big Live Price, and Change Pill */}
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-base sm:text-lg font-bold text-white tracking-wide">{symbol}</span>
+            <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700 text-slate-300 font-mono font-semibold">
+              {timeframe}
+            </span>
+          </div>
+
+          {/* Big Prominent Live Price */}
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-2xl sm:text-3xl font-black font-mono tracking-tight transition-colors duration-150 ${
+              isPositive ? "text-emerald-400" : "text-rose-400"
+            }`}>
+              {liveClose > 0 ? liveClose.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
+            </span>
+            <span className="text-xs text-slate-500 font-bold">USD</span>
+          </div>
+
+          {/* Real-time 24h Change Pill */}
+          <div className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-bold ${
+            isPositive
+              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+              : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+          }`}>
+            <span>{isPositive ? "▲ +" : "▼ "}</span>
+            <span>{Math.abs(priceChange).toFixed(2)}</span>
+            <span>({isPositive ? "+" : ""}{priceChangePct.toFixed(2)}%)</span>
+          </div>
+        </div>
+
+        {/* Right: 24h High, 24h Low, Volume, Live Tick Badge */}
+        <div className="flex items-center gap-3 sm:gap-5 text-xs font-mono">
+          <div className="hidden xs:block">
+            <div className="text-[10px] uppercase text-slate-500 font-medium">24h High</div>
+            <div className="text-slate-200 font-bold">{high24h > -Infinity ? high24h.toFixed(2) : "-"}</div>
+          </div>
+          <div className="hidden xs:block">
+            <div className="text-[10px] uppercase text-slate-500 font-medium">24h Low</div>
+            <div className="text-slate-200 font-bold">{low24h < Infinity ? low24h.toFixed(2) : "-"}</div>
+          </div>
+          <div className="hidden sm:block">
+            <div className="text-[10px] uppercase text-slate-500 font-medium">Volume</div>
+            <div className="text-slate-200 font-bold">{totalVolume.toLocaleString()}</div>
+          </div>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-bold text-emerald-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <span className="font-sans">LIVE TICK</span>
+          </div>
+        </div>
+      </div>
+
       {/* Chart Control Toolbar */}
-      <div className="px-4 py-2.5 border-b border-slate-800/80 bg-surface-200/50 flex flex-wrap items-center justify-between gap-2">
+      <div className="px-4 py-2 border-b border-slate-800/80 bg-surface-200/50 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
-            <BarChart2 className="w-4 h-4 text-brand-blue" />
-            <span>{symbol}</span>
-            <span className="text-slate-400 font-mono">({timeframe})</span>
-          </div>
-
-          {/* Live Ping Status Badge */}
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-            <span>⚡ REAL-TIME STREAM</span>
-          </div>
-
-          <div className="h-4 w-px bg-slate-700 mx-1"></div>
-
           {/* Indicator Suite Toggles (SuperTrend, Bollinger, EMA Ribbon, S/R) */}
           <div className="flex flex-wrap items-center gap-1">
             <button
