@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import AssetSelector from "@/components/AssetSelector";
 import NewsFeed from "@/components/NewsFeed";
 import AnalysisCard from "@/components/AnalysisCard";
+import SignalJournalCard from "@/components/SignalJournalCard";
 import TelegramSettingsModal from "@/components/TelegramSettingsModal";
 import { Candle, IndicatorData, NewsItem, AnalysisResult } from "@/lib/types";
 import { calculateAllIndicators } from "@/lib/indicators";
@@ -284,6 +285,9 @@ export default function DashboardPage() {
               isSendingTelegram={isSendingTelegram}
               telegramStatus={telegramStatus}
             />
+
+            {/* AI Trade Journal & Real Win-Rate Tracker (Neon Serverless Postgres) */}
+            <SignalJournalCard />
           </div>
 
           {/* Right Column (4 cols): Real-time News Feed */}
