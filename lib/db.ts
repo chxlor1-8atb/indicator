@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import { AnalysisResult } from "./types";
+import { AnalysisResult, Candle } from "./types";
 
 // Safe singleton client for Neon Serverless Postgres
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
@@ -81,6 +81,27 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
         is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
+    `);
+
+    // 3. Table for Rolling Candlestick Buffer (FIFO Ring Buffer)
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS market_candles (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL,
+        time BIGINT NOT NULL,
+        open NUMERIC(14, 4) NOT NULL,
+        high NUMERIC(14, 4) NOT NULL,
+        low NUMERIC(14, 4) NOT NULL,
+        close NUMERIC(14, 4) NOT NULL,
+        volume NUMERIC(20, 4) DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        CONSTRAINT uq_candle_sym_tf_time UNIQUE (symbol, timeframe, time)
+      )
+    `);
+
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_market_candles_lookup ON market_candles (symbol, timeframe, time DESC)
     `);
 
     return { success: true, message: "Neon database initialized successfully." };
@@ -334,4 +355,124 @@ export async function saveTelegramSubscriber(chatId: string, username?: string, 
     return { success: false, error: String(err) };
   }
 }
+
+/**
+ * Saves candles to Neon PostgreSQL in a rolling FIFO ring buffer.
+ * Capped at `maxRetention` candles (default 200).
+ * Automatically prunes the oldest candles past `maxRetention` using PostgreSQL OFFSET,
+ * preventing database bloat and maintaining a constant storage footprint (<200KB per symbol/timeframe).
+ */
+export async function saveCandlesRollingBuffer(
+  symbol: string,
+  timeframe: string,
+  candles: Candle[],
+  maxRetention = 200
+): Promise<void> {
+  if (!sql || !candles || candles.length === 0) return;
+
+  try {
+    // Only process the latest `maxRetention` candles to minimize bandwidth & query size
+    const toSave = candles.slice(-maxRetention);
+
+    const valueClauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    for (const c of toSave) {
+      valueClauses.push(
+        `($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++})`
+      );
+      params.push(
+        symbol.toUpperCase(),
+        timeframe,
+        Math.floor(c.time),
+        c.open,
+        c.high,
+        c.low,
+        c.close,
+        c.volume || 0
+      );
+    }
+
+    const batchInsertQuery = `
+      INSERT INTO market_candles (symbol, timeframe, time, open, high, low, close, volume)
+      VALUES ${valueClauses.join(", ")}
+      ON CONFLICT (symbol, timeframe, time)
+      DO UPDATE SET
+        open = EXCLUDED.open,
+        high = EXCLUDED.high,
+        low = EXCLUDED.low,
+        close = EXCLUDED.close,
+        volume = EXCLUDED.volume;
+    `;
+
+    await sql.query(batchInsertQuery, params);
+
+    // FIFO Pruning: Keep only the latest `maxRetention` candles, delete older ones
+    await sql.query(
+      `
+      DELETE FROM market_candles
+      WHERE id IN (
+        SELECT id FROM market_candles
+        WHERE symbol = $1 AND timeframe = $2
+        ORDER BY time DESC
+        OFFSET $3
+      );
+      `,
+      [symbol.toUpperCase(), timeframe, maxRetention]
+    );
+  } catch (err) {
+    console.error(`Error saving candles rolling buffer for ${symbol} (${timeframe}):`, err);
+  }
+}
+
+/**
+ * Retrieves the latest cached candles from Neon PostgreSQL rolling buffer.
+ * Returns up to `limit` candles sorted in ascending chronological order (ready for chart rendering).
+ */
+export async function getCachedCandles(
+  symbol: string,
+  timeframe: string,
+  limit = 200
+): Promise<Candle[]> {
+  if (!sql) return [];
+
+  try {
+    const rows = (await sql.query(
+      `
+      SELECT time, open, high, low, close, volume FROM (
+        SELECT time, open, high, low, close, volume
+        FROM market_candles
+        WHERE symbol = $1 AND timeframe = $2
+        ORDER BY time DESC
+        LIMIT $3
+      ) sub
+      ORDER BY time ASC;
+      `,
+      [symbol.toUpperCase(), timeframe, limit]
+    )) as unknown as Array<{
+      time: string | number;
+      open: string | number;
+      high: string | number;
+      low: string | number;
+      close: string | number;
+      volume: string | number;
+    }>;
+
+    if (!rows || rows.length === 0) return [];
+
+    return rows.map((r) => ({
+      time: Number(r.time),
+      open: Number(r.open),
+      high: Number(r.high),
+      low: Number(r.low),
+      close: Number(r.close),
+      volume: Number(r.volume || 0),
+    }));
+  } catch (err) {
+    console.error(`Error getting cached candles from Neon for ${symbol} (${timeframe}):`, err);
+    return [];
+  }
+}
+
 

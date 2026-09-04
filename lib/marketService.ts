@@ -1,4 +1,5 @@
 import { AssetInfo, Candle } from "./types";
+import { saveCandlesRollingBuffer, getCachedCandles } from "./db";
 
 export const AVAILABLE_ASSETS: AssetInfo[] = [
   // ─── Commodities & Metals ───
@@ -275,6 +276,19 @@ interface CacheEntry {
 const candleCache = new Map<string, CacheEntry>();
 const CANDLE_CACHE_TTL_MS = 15000; // 15 seconds
 
+/**
+ * Helper to update memory cache and trigger background Neon rolling buffer persistence
+ */
+function cacheAndPersist(sym: string, tf: string, candles: Candle[]): Candle[] {
+  const cacheKey = `${sym.toUpperCase()}_${tf}`;
+  candleCache.set(cacheKey, { candles, timestamp: Date.now() });
+  // Non-blocking fire-and-forget save to Neon rolling FIFO buffer
+  saveCandlesRollingBuffer(sym, tf, candles).catch((err) => {
+    console.error(`Background saveCandlesRollingBuffer error for ${sym}:`, err);
+  });
+  return candles;
+}
+
 export async function getMarketCandles(symbol: string, interval = "1h"): Promise<Candle[]> {
   const cacheKey = `${symbol.toUpperCase()}_${interval}`;
   const cached = candleCache.get(cacheKey);
@@ -291,8 +305,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     try {
       const candles = await fetchCryptoCandles("PAXGUSDT", interval, 200);
       if (candles.length >= 20) {
-        candleCache.set(cacheKey, { candles, timestamp: Date.now() });
-        return candles;
+        return cacheAndPersist(symbol, interval, candles);
       }
     } catch (err) {
       console.warn("Binance PAXG Spot Gold fetch failed, falling back...", err);
@@ -304,8 +317,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
   if (massiveKey) {
     const massiveCandles = await fetchMassiveCandles(symbol, interval, massiveKey);
     if (massiveCandles.length >= 20) {
-      candleCache.set(cacheKey, { candles: massiveCandles, timestamp: Date.now() });
-      return massiveCandles;
+      return cacheAndPersist(symbol, interval, massiveCandles);
     }
   }
 
@@ -314,8 +326,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     try {
       const candles = await fetchCryptoCandles(symbol, interval, 200);
       if (candles.length >= 20) {
-        candleCache.set(cacheKey, { candles, timestamp: Date.now() });
-        return candles;
+        return cacheAndPersist(symbol, interval, candles);
       }
     } catch (err) {
       console.warn(`Binance fetch failed for ${symbol}, trying Yahoo...`, err);
@@ -326,14 +337,24 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
   try {
     const candles = await fetchYahooCandles(symbol, interval);
     if (candles.length >= 20) {
-      candleCache.set(cacheKey, { candles, timestamp: Date.now() });
-      return candles;
+      return cacheAndPersist(symbol, interval, candles);
     }
   } catch (err) {
     console.warn(`Yahoo fetch failed for ${symbol}, using fallback data...`, err);
   }
 
-  // 4. Fallback base prices
+  // 5. High-Availability Fallback: Fetch from Neon PostgreSQL Rolling Buffer
+  try {
+    const dbCandles = await getCachedCandles(symbol, interval, 200);
+    if (dbCandles && dbCandles.length >= 20) {
+      candleCache.set(cacheKey, { candles: dbCandles, timestamp: Date.now() });
+      return dbCandles;
+    }
+  } catch (dbErr) {
+    console.warn(`Neon DB fallback fetch failed for ${symbol}:`, dbErr);
+  }
+
+  // 6. Last resort synthetic fallback base prices
   const fallbackPrices: Record<string, number> = {
     XAUUSD: 2850.5,
     XAGUSD: 32.5,
