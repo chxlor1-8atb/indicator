@@ -4,7 +4,11 @@ import {
   SuperTrendPoint,
   BollingerBandPoint,
   StochRSIPoint,
-  FVGItem
+  FVGItem,
+  HeikinAshiPoint,
+  VWAPPoint,
+  VolumeAnomalyItem,
+  IntraBarMomentum,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -542,6 +546,115 @@ export function calculateSupportResistance(
   return { support, resistance };
 }
 
+// ─── [แผน 1] Heikin-Ashi Smoothing Filter ───
+export function calculateHeikinAshi(candles: Candle[]): HeikinAshiPoint[] {
+  const result: HeikinAshiPoint[] = [];
+  if (candles.length === 0) return result;
+
+  let prevOpen = (candles[0].open + candles[0].close) / 2;
+  let prevClose = (candles[0].open + candles[0].high + candles[0].low + candles[0].close) / 4;
+
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const haClose = (c.open + c.high + c.low + c.close) / 4;
+    const haOpen = i === 0 ? prevOpen : (prevOpen + prevClose) / 2;
+    const haHigh = Math.max(c.high, haOpen, haClose);
+    const haLow = Math.min(c.low, haOpen, haClose);
+    const isUp = haClose >= haOpen;
+
+    const threshold = (haHigh - haLow) * 0.06;
+    const hasNoLowerWick = isUp && Math.abs(haLow - haOpen) <= threshold; // Strong Bullish
+    const hasNoUpperWick = !isUp && Math.abs(haHigh - haOpen) <= threshold; // Strong Bearish
+
+    result.push({
+      open: Number(haOpen.toFixed(4)),
+      high: Number(haHigh.toFixed(4)),
+      low: Number(haLow.toFixed(4)),
+      close: Number(haClose.toFixed(4)),
+      isUp,
+      hasNoLowerWick,
+      hasNoUpperWick,
+    });
+
+    prevOpen = haOpen;
+    prevClose = haClose;
+  }
+  return result;
+}
+
+// ─── [แผน 2] Volume Weighted Average Price (VWAP) with Standard Deviation Bands ───
+export function calculateVWAP(candles: Candle[]): (VWAPPoint | null)[] {
+  const result: (VWAPPoint | null)[] = [];
+  if (candles.length === 0) return result;
+
+  let cumTypicalVol = 0;
+  let cumVol = 0;
+  let cumTypicalVolSq = 0;
+
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const vol = Math.max(c.volume, 1);
+    const typical = (c.high + c.low + c.close) / 3;
+
+    cumTypicalVol += typical * vol;
+    cumVol += vol;
+    cumTypicalVolSq += typical * typical * vol;
+
+    const vwap = cumTypicalVol / (cumVol || 1);
+    const variance = Math.max(0, (cumTypicalVolSq / (cumVol || 1)) - (vwap * vwap));
+    const stdDev = Math.sqrt(variance);
+
+    result.push({
+      vwap: Number(vwap.toFixed(4)),
+      upperBand: Number((vwap + 2 * stdDev).toFixed(4)),
+      lowerBand: Number((vwap - 2 * stdDev).toFixed(4)),
+    });
+  }
+  return result;
+}
+
+// ─── [แผน 4] Fractional Volume Anomaly Detection (Volume Spike > 2.5x) ───
+export function detectVolumeAnomalies(candles: Candle[], lookback = 20, spikeMultiplier = 2.5): VolumeAnomalyItem[] {
+  const result: VolumeAnomalyItem[] = [];
+  if (candles.length < lookback) return result;
+
+  for (let i = lookback; i < candles.length; i++) {
+    let sumVol = 0;
+    for (let j = i - lookback; j < i; j++) {
+      sumVol += candles[j].volume;
+    }
+    const avgVol = sumVol / lookback;
+    const curVol = candles[i].volume;
+
+    if (avgVol > 0 && curVol >= avgVol * spikeMultiplier) {
+      const isUp = candles[i].close >= candles[i].open;
+      result.push({
+        index: i,
+        time: candles[i].time,
+        volume: curVol,
+        avgVolume: Math.round(avgVol),
+        ratio: Number((curVol / avgVol).toFixed(2)),
+        type: isUp ? "BUYING_SPIKE" : "SELLING_SPIKE",
+      });
+    }
+  }
+  return result;
+}
+
+// ─── [แผน 5] Tick-Level Intra-Bar Momentum Interpolation ───
+export function calculateIntraBarMomentum(candle: Candle, livePrice: number): IntraBarMomentum {
+  const range = candle.high - candle.low;
+  if (range <= 0) return { percentInRange: 50, bias: "BALANCED" };
+  const rawPct = ((livePrice - candle.low) / range) * 100;
+  const percentInRange = Math.max(0, Math.min(100, Math.round(rawPct)));
+
+  let bias: "STRONG_BUYERS" | "STRONG_SELLERS" | "BALANCED" = "BALANCED";
+  if (percentInRange >= 75) bias = "STRONG_BUYERS";
+  else if (percentInRange <= 25) bias = "STRONG_SELLERS";
+
+  return { percentInRange, bias };
+}
+
 export function calculateAllIndicators(candles: Candle[]): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -578,6 +691,12 @@ export function calculateAllIndicators(candles: Candle[]): IndicatorData {
   const fvgs = detectFairValueGaps(candles, atr14);
   const { support, resistance } = calculateSupportResistance(candles);
 
+  // Batch 1: Quant-grade Accuracy Indicators
+  const heikinAshi = calculateHeikinAshi(candles);
+  const vwap = calculateVWAP(candles);
+  const volumeAnomalies = detectVolumeAnomalies(candles, 20, 2.5);
+  const intraBarMomentum = calculateIntraBarMomentum(candles[candles.length - 1], currentPrice);
+
   return {
     rsi14,
     ema20,
@@ -595,5 +714,9 @@ export function calculateAllIndicators(candles: Candle[]): IndicatorData {
     currentPrice,
     priceChange24h,
     priceChangePercent24h,
+    heikinAshi,
+    vwap,
+    volumeAnomalies,
+    intraBarMomentum,
   };
 }

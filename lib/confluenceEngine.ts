@@ -46,42 +46,52 @@ export function evaluateMasterConfluence(
   const lastST = indicators.superTrend?.slice(-1)[0] ?? { value: currentPrice, direction: "UP" };
   const lastADX = indicators.adx?.slice(-1)[0] ?? 25;
   const lastEMA200 = indicators.ema200.slice(-1)[0] ?? currentPrice;
+  const lastVWAP = indicators.vwap?.slice(-1)[0];
+  const lastHA = indicators.heikinAshi?.slice(-1)[0];
 
   const stDirection = lastST.direction;
   const isADXStrong = lastADX >= 22; // Confirms trend is genuine and not choppy sideways
+  const isAboveVWAP = lastVWAP ? currentPrice >= lastVWAP.vwap : true;
 
   if (bias === "BULLISH") {
-    if (stDirection === "UP") p1Score += 10;
-    if (currentPrice > lastEMA200) p1Score += 8;
-    if (isADXStrong) p1Score += 7;
+    if (stDirection === "UP") p1Score += 8;
+    if (currentPrice > lastEMA200) p1Score += 6;
+    if (isADXStrong) p1Score += 5;
+    if (isAboveVWAP) p1Score += 3; // [แผน 2] VWAP confirmation
+    if (lastHA && lastHA.isUp && lastHA.hasNoLowerWick) p1Score += 3; // [แผน 1] Strong Bullish Heikin-Ashi
   } else if (bias === "BEARISH") {
-    if (stDirection === "DOWN") p1Score += 10;
-    if (currentPrice < lastEMA200) p1Score += 8;
-    if (isADXStrong) p1Score += 7;
+    if (stDirection === "DOWN") p1Score += 8;
+    if (currentPrice < lastEMA200) p1Score += 6;
+    if (isADXStrong) p1Score += 5;
+    if (!isAboveVWAP) p1Score += 3; // [แผน 2] VWAP confirmation
+    if (lastHA && !lastHA.isUp && lastHA.hasNoUpperWick) p1Score += 3; // [แผน 1] Strong Bearish Heikin-Ashi
   } else {
     p1Score += 8;
   }
 
   const p1Status = isADXStrong
-    ? `เทรนด์แรงชัดเจน (ADX ${lastADX.toFixed(1)}, SuperTrend ${stDirection})`
+    ? `เทรนด์แรงชัดเจน (ADX ${lastADX.toFixed(1)}, SuperTrend ${stDirection}${lastVWAP ? `, VWAP: ${isAboveVWAP ? "เหนือ" : "ใต้"}` : ""})`
     : `ตลาดพลังอ่อนแอ/ไซด์เวย์ (ADX ${lastADX.toFixed(1)})`;
 
   // ─── PILLAR 2: MOMENTUM & CYCLES (Max 20) ───
   let p2Score = 0;
   const lastRSI = indicators.rsi14.slice(-1)[0] ?? 50;
   const lastStoch = indicators.stochRSI?.slice(-1)[0] ?? { k: 50, d: 50 };
+  const intraBar = indicators.intraBarMomentum;
 
   if (bias === "BULLISH") {
-    if (lastRSI >= 45 && lastRSI <= 75) p2Score += 10;
-    if (lastStoch.k >= lastStoch.d) p2Score += 10;
+    if (lastRSI >= 45 && lastRSI <= 75) p2Score += 8;
+    if (lastStoch.k >= lastStoch.d) p2Score += 8;
+    if (intraBar && intraBar.bias === "STRONG_BUYERS") p2Score += 4; // [แผน 5] Intra-bar live buyers
   } else if (bias === "BEARISH") {
-    if (lastRSI >= 25 && lastRSI <= 55) p2Score += 10;
-    if (lastStoch.k <= lastStoch.d) p2Score += 10;
+    if (lastRSI >= 25 && lastRSI <= 55) p2Score += 8;
+    if (lastStoch.k <= lastStoch.d) p2Score += 8;
+    if (intraBar && intraBar.bias === "STRONG_SELLERS") p2Score += 4; // [แผน 5] Intra-bar live sellers
   } else {
     p2Score += 8;
   }
 
-  const p2Status = `RSI ${lastRSI.toFixed(1)} | StochRSI K: ${lastStoch.k.toFixed(1)} / D: ${lastStoch.d.toFixed(1)}`;
+  const p2Status = `RSI ${lastRSI.toFixed(1)} | StochRSI K: ${lastStoch.k.toFixed(1)} / D: ${lastStoch.d.toFixed(1)}${intraBar ? ` (Intra-Bar: ${intraBar.percentInRange}%)` : ""}`;
 
   // ─── PILLAR 3: VOLATILITY & SQUEEZE (Max 20) ───
   let p3Score = 0;
@@ -111,13 +121,17 @@ export function evaluateMasterConfluence(
 
   const avgVol = candles.slice(-20).reduce((a, c) => a + c.volume, 0) / 20;
   const hasVolumeSpike = lastCandle.volume > avgVol * 1.3;
+  const hasAnomalySpike = (indicators.volumeAnomalies?.length ?? 0) > 0 && (indicators.volumeAnomalies?.slice(-1)[0]?.index ?? -1) >= candles.length - 3;
 
-  if (bias === "BULLISH" && obvTrend === "UP") p4Score += 8;
-  if (bias === "BEARISH" && obvTrend === "DOWN") p4Score += 8;
-  if (hasVolumeSpike) p4Score += 7;
+  if (bias === "BULLISH" && obvTrend === "UP") p4Score += 6;
+  if (bias === "BEARISH" && obvTrend === "DOWN") p4Score += 6;
+  if (hasVolumeSpike) p4Score += 5;
+  if (hasAnomalySpike) p4Score += 4; // [แผน 4] Institutional Volume Spike > 2.5x
   if (p4Score === 0) p4Score = 6;
 
-  const p4Status = hasVolumeSpike
+  const p4Status = hasAnomalySpike
+    ? `🚨 ตรวจพบ Institutional Volume Anomaly (${indicators.volumeAnomalies?.slice(-1)[0]?.ratio}x) สถาบันเข้าสะสม`
+    : hasVolumeSpike
     ? `มี Volume Spike วอลุ่มกระชาก (+${Math.round((lastCandle.volume / avgVol) * 100 - 100)}%) ยืนยันแรงสถาบัน`
     : `OBV ทิศทาง ${obvTrend} วอลุ่มสะสมสม่ำเสมอ`;
 

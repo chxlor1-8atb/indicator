@@ -43,6 +43,36 @@ export interface FVGItem {
   candleIndex: number;
 }
 
+export interface HeikinAshiPoint {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  isUp: boolean;
+  hasNoLowerWick: boolean;
+  hasNoUpperWick: boolean;
+}
+
+export interface VWAPPoint {
+  vwap: number;
+  upperBand: number;
+  lowerBand: number;
+}
+
+export interface VolumeAnomalyItem {
+  index: number;
+  time: number;
+  volume: number;
+  avgVolume: number;
+  ratio: number;
+  type: "BUYING_SPIKE" | "SELLING_SPIKE";
+}
+
+export interface IntraBarMomentum {
+  percentInRange: number; // 0 - 100%
+  bias: "STRONG_BUYERS" | "STRONG_SELLERS" | "BALANCED";
+}
+
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
   grade: "A+" | "A" | "B" | "C (Wait)";
@@ -146,6 +176,10 @@ export interface IndicatorData {
   currentPrice: number;
   priceChange24h: number;
   priceChangePercent24h: number;
+  heikinAshi?: HeikinAshiPoint[];
+  vwap?: (VWAPPoint | null)[];
+  volumeAnomalies?: VolumeAnomalyItem[];
+  intraBarMomentum?: IntraBarMomentum;
 }
 
 export interface NewsItem {
@@ -243,6 +277,9 @@ export interface AnalysisResult {
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
     h4: "BULLISH" | "BEARISH" | "NEUTRAL";
     d1: "BULLISH" | "BEARISH" | "NEUTRAL";
+    alignmentScore?: number;
+    assetCategory?: "forex" | "crypto" | "commodities" | "stocks";
+    summary?: string;
   };
   technicalAnalysis: {
     trend: "STRONG_UPTREND" | "UPTREND" | "SIDEWAYS" | "DOWNTREND" | "STRONG_DOWNTREND";

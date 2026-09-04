@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";
-import { Candle, IndicatorData, OptimizedConfig } from "@/lib/types";
+import { Candle, IndicatorData, OptimizedConfig, VolumeAnomalyItem } from "@/lib/types";
 import { BarChart2, Activity, Zap, TrendingUp, Compass, Layers } from "lucide-react";
 
 interface MarketChartProps {
@@ -26,6 +26,8 @@ export default function MarketChart({
   const [showSuperTrend, setShowSuperTrend] = useState(true);
   const [showBollinger, setShowBollinger] = useState(true);
   const [showEMA, setShowEMA] = useState(true);
+  const [showVWAP, setShowVWAP] = useState(true);
+  const [showHeikinAshi, setShowHeikinAshi] = useState(false);
   const [showSR, setShowSR] = useState(true);
   const [showRSI, setShowRSI] = useState(true);
 
@@ -351,25 +353,60 @@ export default function MarketChart({
       });
     }
 
-    // ─── 3. Draw Volume Bars ───
+    // ─── 3. Draw Volume Bars & Volume Anomaly Detection [แผน 4] ───
+    const anomalyMap = new Map<number, VolumeAnomalyItem>();
+    if (indicators.volumeAnomalies) {
+      indicators.volumeAnomalies.forEach((a) => anomalyMap.set(a.index, a));
+    }
+
     candles.forEach((c, i) => {
       const x = getX(i);
       const isUp = c.close >= c.open;
-      const volHeight = (c.volume / (maxVolume || 1)) * (mainHeight * 0.18);
-      ctx.fillStyle = isUp ? "rgba(8, 153, 129, 0.15)" : "rgba(242, 54, 69, 0.15)";
-      ctx.fillRect(x - candleWidth / 2, padding.top + mainHeight - volHeight, candleWidth, volHeight);
+      const volHeight = Math.max(2, (c.volume / (maxVolume || 1)) * (mainHeight * 0.18));
+      const anomaly = anomalyMap.get(i);
+
+      if (anomaly) {
+        // Highlight Institutional Volume Spikes
+        if (anomaly.type === "BUYING_SPIKE") {
+          ctx.fillStyle = "rgba(16, 185, 129, 0.85)";
+          ctx.fillRect(x - candleWidth / 2, padding.top + mainHeight - volHeight, candleWidth, volHeight);
+          // Indicator marker above spike
+          ctx.fillStyle = "#34d399";
+          ctx.beginPath();
+          ctx.arc(x, padding.top + mainHeight - volHeight - 3, 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (anomaly.type === "SELLING_SPIKE") {
+          ctx.fillStyle = "rgba(244, 63, 94, 0.85)";
+          ctx.fillRect(x - candleWidth / 2, padding.top + mainHeight - volHeight, candleWidth, volHeight);
+          ctx.fillStyle = "#fb7185";
+          ctx.beginPath();
+          ctx.arc(x, padding.top + mainHeight - volHeight - 3, 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.fillStyle = "rgba(168, 85, 247, 0.85)";
+          ctx.fillRect(x - candleWidth / 2, padding.top + mainHeight - volHeight, candleWidth, volHeight);
+        }
+      } else {
+        ctx.fillStyle = isUp ? "rgba(8, 153, 129, 0.15)" : "rgba(242, 54, 69, 0.15)";
+        ctx.fillRect(x - candleWidth / 2, padding.top + mainHeight - volHeight, candleWidth, volHeight);
+      }
     });
 
-    // ─── 4. Draw Candlesticks ───
-    candles.forEach((c, i) => {
+    // ─── 4. Draw Candlesticks (Raw or Heikin-Ashi) [แผน 1] ───
+    const haCandles = indicators.heikinAshi;
+    candles.forEach((rawC, i) => {
+      const ha = showHeikinAshi && haCandles && haCandles[i] ? haCandles[i] : null;
+      const c = ha
+        ? { open: ha.open, high: ha.high, low: ha.low, close: ha.close, isUp: ha.isUp }
+        : { open: rawC.open, high: rawC.high, low: rawC.low, close: rawC.close, isUp: rawC.close >= rawC.open };
+
       const x = getX(i);
       const openY = getY(c.open);
       const closeY = getY(c.close);
       const highY = getY(c.high);
       const lowY = getY(c.low);
-      const isUp = c.close >= c.open;
 
-      const color = isUp ? "#089981" : "#f23645";
+      const color = c.isUp ? "#089981" : "#f23645";
 
       // Wick
       ctx.strokeStyle = color;
@@ -434,6 +471,70 @@ export default function MarketChart({
       drawEMALine(indicators.ema20, "#3b82f6"); // Fast Ribbon
       drawEMALine(indicators.ema50, "#f59e0b"); // Slow Ribbon
       drawEMALine(indicators.ema200, "#a855f7"); // Major Baseline
+    }
+
+    // ─── 6b. Draw VWAP (Volume Weighted Average Price) & ±2σ Bands [แผน 2] ───
+    if (showVWAP && indicators.vwap && indicators.vwap.length > 0) {
+      const vwaps = indicators.vwap;
+
+      // 1. Draw ±2σ Bands
+      ctx.strokeStyle = "rgba(234, 179, 8, 0.35)";
+      ctx.setLineDash([2, 3]);
+      ctx.lineWidth = 1;
+
+      // Upper Band (+2σ)
+      ctx.beginPath();
+      let startedUpper = false;
+      vwaps.forEach((v, i) => {
+        if (v && v.upperBand !== null && v.upperBand !== undefined) {
+          const x = getX(i);
+          const y = getY(v.upperBand);
+          if (!startedUpper) {
+            ctx.moveTo(x, y);
+            startedUpper = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+      });
+      ctx.stroke();
+
+      // Lower Band (-2σ)
+      ctx.beginPath();
+      let startedLower = false;
+      vwaps.forEach((v, i) => {
+        if (v && v.lowerBand !== null && v.lowerBand !== undefined) {
+          const x = getX(i);
+          const y = getY(v.lowerBand);
+          if (!startedLower) {
+            ctx.moveTo(x, y);
+            startedLower = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 2. Draw Central VWAP Golden Line
+      ctx.strokeStyle = "#eab308";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      let startedVWAP = false;
+      vwaps.forEach((v, i) => {
+        if (v && v.vwap !== null && v.vwap !== undefined) {
+          const x = getX(i);
+          const y = getY(v.vwap);
+          if (!startedVWAP) {
+            ctx.moveTo(x, y);
+            startedVWAP = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+      });
+      ctx.stroke();
     }
 
     // ─── 7. Draw Live Price Line & Pulsing Tag ───
@@ -544,7 +645,12 @@ export default function MarketChart({
       ctx.font = "11px monospace";
       ctx.textAlign = "left";
       const dt = new Date(c.time * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-      const stats = `[${dt}] O: ${c.open.toFixed(assetPrecision)} H: ${c.high.toFixed(assetPrecision)} L: ${c.low.toFixed(assetPrecision)} C: ${c.close.toFixed(assetPrecision)} Vol: ${c.volume.toLocaleString()}`;
+      const hoveredAnomaly = indicators.volumeAnomalies?.find((a) => a.index === hoverIndex);
+      const anomalyTag = hoveredAnomaly ? ` [⚡${hoveredAnomaly.type.replace("_", " ")} x${hoveredAnomaly.ratio.toFixed(1)}]` : "";
+      const vwapVal = indicators.vwap?.[hoverIndex]?.vwap;
+      const vwapTag = showVWAP && vwapVal ? ` VWAP: ${vwapVal.toFixed(assetPrecision)}` : "";
+      const haTag = showHeikinAshi ? " [HA Smoothed]" : "";
+      const stats = `[${dt}]${haTag} O: ${c.open.toFixed(assetPrecision)} H: ${c.high.toFixed(assetPrecision)} L: ${c.low.toFixed(assetPrecision)} C: ${c.close.toFixed(assetPrecision)} Vol: ${c.volume.toLocaleString()}${vwapTag}${anomalyTag}`;
       ctx.fillText(stats, padding.left + 5, padding.top - 8);
     }
 
@@ -553,7 +659,7 @@ export default function MarketChart({
 
   animId = requestAnimationFrame(render);
   return () => cancelAnimationFrame(animId);
-}, [candles, indicators, showSuperTrend, showBollinger, showEMA, showSR, showRSI, hoverIndex, mousePos, optimizedConfig, containerWidth]);
+}, [candles, indicators, showSuperTrend, showBollinger, showEMA, showVWAP, showHeikinAshi, showSR, showRSI, hoverIndex, mousePos, optimizedConfig, containerWidth]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -686,6 +792,24 @@ export default function MarketChart({
               {emaFastLabel}/{emaSlowLabel}
             </button>
             <button
+              onClick={() => setShowVWAP(!showVWAP)}
+              title="VWAP: Volume-Weighted Average Price + กรอบเบี่ยงเบนมาตรฐาน ±2σ [แผน 2]"
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                showVWAP ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/10" : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              VWAP ±2σ
+            </button>
+            <button
+              onClick={() => setShowHeikinAshi(!showHeikinAshi)}
+              title="Heikin-Ashi: แท่งเทียนเฉลี่ยกรองความผันผวนหลอก [แผน 1]"
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                showHeikinAshi ? "bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-sm shadow-teal-500/10" : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              Heikin-Ashi
+            </button>
+            <button
               onClick={() => setShowSR(!showSR)}
               title="Support & Resistance: เส้นประเขียว=แนวรับ, เส้นประแดง=แนวต้าน"
               className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
@@ -700,11 +824,15 @@ export default function MarketChart({
           <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-700/60 text-[10.5px] font-medium">
             <span className="flex items-center gap-1 text-emerald-400">
               <span className="w-2 h-0.5 bg-emerald-400 inline-block border-t border-dashed border-emerald-400"></span>
-              <span>เขียว = แนวรับ (SUP)</span>
+              <span>เขียว = แนวรับ</span>
             </span>
             <span className="flex items-center gap-1 text-rose-400">
               <span className="w-2 h-0.5 bg-rose-400 inline-block border-t border-dashed border-rose-400"></span>
-              <span>แดง = แนวต้าน (RES)</span>
+              <span>แดง = แนวต้าน</span>
+            </span>
+            <span className="flex items-center gap-1 text-amber-400">
+              <span className="w-2 h-0.5 bg-amber-400 inline-block"></span>
+              <span>ทอง = VWAP</span>
             </span>
           </div>
         </div>

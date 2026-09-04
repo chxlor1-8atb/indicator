@@ -142,18 +142,28 @@ export function generateRuleBasedAnalysis(
   else if (sentimentScore <= -20) overallSentiment = "BEARISH";
 
   // MTF Matrix Resolution (True candles from DB if provided, else fallback to current series)
-  const mtfMatrix: AnalysisResult["timeframeMatrix"] = multiTimeframeMatrix || {
+  const rawMtf = multiTimeframeMatrix || {
     m15: isUptrend ? "BULLISH" : isDowntrend ? "BEARISH" : "NEUTRAL",
     h1: isUptrend ? "BULLISH" : isDowntrend ? "BEARISH" : "NEUTRAL",
     h4: currentPrice > lastEMA200 ? "BULLISH" : "BEARISH",
     d1: currentPrice > lastEMA200 ? "BULLISH" : "BEARISH",
   };
+  const mtfAlignment = computeMtfAlignment(symbol, rawMtf);
+  const mtfMatrix: AnalysisResult["timeframeMatrix"] = {
+    ...rawMtf,
+    alignmentScore: rawMtf.alignmentScore ?? mtfAlignment.alignmentScore,
+    assetCategory: rawMtf.assetCategory ?? mtfAlignment.assetCategory,
+    summary: rawMtf.summary ?? mtfAlignment.summary,
+  };
 
-  // SAFETY LOCK 4: Higher-Timeframe (H4/D1) Trend Filter
+  // SAFETY LOCK 4: Higher-Timeframe (H4/D1) Trend Filter & Dynamic Asset-Weighted Alignment
   const macroBullish = mtfMatrix.h4 === "BULLISH" && mtfMatrix.d1 === "BULLISH";
   const macroBearish = mtfMatrix.h4 === "BEARISH" && mtfMatrix.d1 === "BEARISH";
-  const isCounterTrend = (tier1Bias === "BULLISH" && macroBearish) || (tier1Bias === "BEARISH" && macroBullish);
-  const isInstitutionalAligned = (tier1Bias === "BULLISH" && macroBullish) || (tier1Bias === "BEARISH" && macroBearish);
+  const mtfScore = mtfMatrix.alignmentScore ?? 0;
+  const isCounterTrend = (tier1Bias === "BULLISH" && (macroBearish || mtfScore <= -40)) ||
+                         (tier1Bias === "BEARISH" && (macroBullish || mtfScore >= 40));
+  const isInstitutionalAligned = (tier1Bias === "BULLISH" && (macroBullish || mtfScore >= 45)) ||
+                                 (tier1Bias === "BEARISH" && (macroBearish || mtfScore <= -45));
 
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
@@ -341,8 +351,64 @@ export function generateRuleBasedAnalysis(
 }
 
 /**
+ * [แผน 3] Dynamic Multi-Timeframe Alignment Weighting
+ * Identifies asset class and applies adaptive timeframe weights:
+ * - Crypto (15m=30%, 1h=35%, 4h=25%, 1D=10%)
+ * - Forex & Commodities (15m=15%, 1h=25%, 4h=35%, 1D=25%)
+ * - Stocks & Indices (15m=15%, 1h=30%, 4h=30%, 1D=25%)
+ */
+export function detectAssetCategory(symbol: string): "crypto" | "forex" | "commodities" | "stocks" {
+  const sym = symbol.toUpperCase();
+  if (["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "LINK", "SUI"].some((c) => sym.startsWith(c)) || sym.endsWith("USDT")) {
+    return "crypto";
+  }
+  if (sym === "XAUUSD" || sym === "XAGUSD" || sym === "USOIL" || sym === "UKOIL") {
+    return "commodities";
+  }
+  if (["EUR", "GBP", "USD", "JPY", "CHF", "CAD", "AUD", "NZD"].some((c) => sym.includes(c)) && sym.length === 6) {
+    return "forex";
+  }
+  return "stocks";
+}
+
+export function getMtfWeightsForAsset(category: "crypto" | "forex" | "commodities" | "stocks") {
+  if (category === "crypto") {
+    return { m15: 0.30, h1: 0.35, h4: 0.25, d1: 0.10 };
+  }
+  if (category === "forex" || category === "commodities") {
+    return { m15: 0.15, h1: 0.25, h4: 0.35, d1: 0.25 };
+  }
+  return { m15: 0.15, h1: 0.30, h4: 0.30, d1: 0.25 };
+}
+
+export function computeMtfAlignment(
+  symbol: string,
+  mtf: { m15: "BULLISH" | "BEARISH" | "NEUTRAL"; h1: "BULLISH" | "BEARISH" | "NEUTRAL"; h4: "BULLISH" | "BEARISH" | "NEUTRAL"; d1: "BULLISH" | "BEARISH" | "NEUTRAL" }
+) {
+  const category = detectAssetCategory(symbol);
+  const weights = getMtfWeightsForAsset(category);
+
+  const biasToScore = (b: "BULLISH" | "BEARISH" | "NEUTRAL") => (b === "BULLISH" ? 1 : b === "BEARISH" ? -1 : 0);
+  const rawScore =
+    weights.m15 * biasToScore(mtf.m15) +
+    weights.h1 * biasToScore(mtf.h1) +
+    weights.h4 * biasToScore(mtf.h4) +
+    weights.d1 * biasToScore(mtf.d1);
+
+  const alignmentScore = Math.round(rawScore * 100);
+
+  let summary = "ทิศทางผสมผสาน (MTF Divergence)";
+  if (alignmentScore >= 60) summary = "สอดคล้องขาขึ้นทุกระดับเวลา (Institutional Bullish Alignment)";
+  else if (alignmentScore >= 25) summary = "เอียงขาขึ้นตามไทม์เฟรมหลัก (Mild Bullish Tilt)";
+  else if (alignmentScore <= -60) summary = "สอดคล้องขาลงทุกระดับเวลา (Institutional Bearish Alignment)";
+  else if (alignmentScore <= -25) summary = "เอียงขาลงตามไทม์เฟรมหลัก (Mild Bearish Tilt)";
+
+  return { alignmentScore, assetCategory: category, summary };
+}
+
+/**
  * Computes true Multi-Timeframe Alignment (M15, H1, H4, D1) directly from
- * actual historical candlestick data in Neon PostgreSQL.
+ * actual historical candlestick data in Neon PostgreSQL with dynamic asset-class weighting.
  */
 export async function calculateTrueMultiTimeframeMatrix(
   symbol: string
@@ -366,15 +432,33 @@ export async function calculateTrueMultiTimeframeMatrix(
       return "NEUTRAL";
     };
 
-    return {
+    const rawMtf = {
       m15: determineBias(c15m),
       h1: determineBias(c1h),
       h4: determineBias(c4h),
       d1: determineBias(c1d),
     };
+
+    const alignment = computeMtfAlignment(symbol, rawMtf);
+
+    return {
+      ...rawMtf,
+      alignmentScore: alignment.alignmentScore,
+      assetCategory: alignment.assetCategory,
+      summary: alignment.summary,
+    };
   } catch (err) {
     console.warn("Failed to calculate true MTF matrix from Neon:", err);
-    return { m15: "NEUTRAL", h1: "NEUTRAL", h4: "NEUTRAL", d1: "NEUTRAL" };
+    const category = detectAssetCategory(symbol);
+    return {
+      m15: "NEUTRAL",
+      h1: "NEUTRAL",
+      h4: "NEUTRAL",
+      d1: "NEUTRAL",
+      alignmentScore: 0,
+      assetCategory: category,
+      summary: "กำลังซิงค์ข้อมูล MTF จาก Neon Database",
+    };
   }
 }
 

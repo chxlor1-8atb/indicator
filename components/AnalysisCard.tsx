@@ -597,6 +597,70 @@ export default function AnalysisCard({
         </div>
       )}
 
+      {/* 5b. 🧭 Dynamic Multi-Timeframe Alignment Matrix [แผน 3] */}
+      {analysis.timeframeMatrix && (
+        <div className="p-3.5 rounded-xl bg-surface-100/90 border border-slate-700/60 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-zinc-800 text-zinc-200 border border-zinc-700">
+                <Compass className="w-4 h-4 text-cyan-400" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Dynamic MTF Alignment Matrix (แผน 3)</span>
+                  {analysis.timeframeMatrix.alignmentScore !== undefined && (
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        analysis.timeframeMatrix.alignmentScore >= 40
+                          ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                          : analysis.timeframeMatrix.alignmentScore <= -40
+                          ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                          : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                      }`}
+                    >
+                      คะแนนความสอดคล้อง: {analysis.timeframeMatrix.alignmentScore > 0 ? `+${analysis.timeframeMatrix.alignmentScore}` : analysis.timeframeMatrix.alignmentScore}%
+                    </span>
+                  )}
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  ถ่วงน้ำหนักตามสินทรัพย์ ({analysis.timeframeMatrix.assetCategory?.toUpperCase() || "ASSET"} Adaptive Weights) • {analysis.timeframeMatrix.summary || "สแกนทิศทางหลายช่วงเวลา"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { tf: "15M", val: analysis.timeframeMatrix.m15, label: "Intraday Flow" },
+              { tf: "1H", val: analysis.timeframeMatrix.h1, label: "Hourly Trend" },
+              { tf: "4H", val: analysis.timeframeMatrix.h4, label: "Macro Swing" },
+              { tf: "1D", val: analysis.timeframeMatrix.d1, label: "Daily Cycle" },
+            ].map((item) => {
+              const isBull = item.val === "BULLISH";
+              const isBear = item.val === "BEARISH";
+              return (
+                <div
+                  key={item.tf}
+                  className={`p-2 rounded-lg border flex flex-col items-center justify-center text-center transition-all ${
+                    isBull
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                      : isBear
+                      ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                      : "bg-surface-50 border-slate-800 text-slate-400"
+                  }`}
+                >
+                  <span className="text-[10px] font-mono font-bold text-slate-400">{item.tf}</span>
+                  <span className="text-xs font-black tracking-tight my-0.5">
+                    {isBull ? "BULLISH ▲" : isBear ? "BEARISH ▼" : "NEUTRAL ─"}
+                  </span>
+                  <span className="text-[9px] text-slate-400">{item.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 6. 📱 MT4 / MT5 Mobile Pending Order Ticket */}
       <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-surface-50 to-indigo-950/20 border border-blue-500/40 space-y-3.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
