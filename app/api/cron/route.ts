@@ -7,6 +7,8 @@ import { sendTelegramMessage } from "@/lib/telegramService";
 
 export const dynamic = "force-dynamic";
 
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   try {
     // Optional CRON_SECRET verification for security
@@ -15,14 +17,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const watchList = ["XAUUSD", "BTCUSDT", "EURUSD"];
+    const watchList = ["XAUUSD", "BTCUSDT", "EURUSD", "ETHUSDT", "SOLUSDT", "GBPUSD", "USDJPY", "USOIL"];
+    const timeframes = ["15m", "1h", "4h", "1D"];
     const results = [];
     const news = await fetchLiveNews();
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
 
-    for (const symbol of watchList) {
+    // 1. Warm Neon PostgreSQL Rolling Buffer across all 4 timeframes concurrently
+    await Promise.allSettled(
+      watchList.flatMap((symbol) =>
+        timeframes.map((tf) => getMarketCandles(symbol, tf).catch((e) => {
+          console.warn(`Cron sync warning for ${symbol} [${tf}]:`, e);
+          return null;
+        }))
+      )
+    );
+
+    // 2. Scan core assets for AI Signals & Telegram notifications
+    const alertAssets = ["XAUUSD", "BTCUSDT", "EURUSD"];
+    for (const symbol of alertAssets) {
       const candles = await getMarketCandles(symbol, "1h");
       const indicators = calculateAllIndicators(candles);
       const analysis = await analyzeWithGemini(symbol, "1h", candles, indicators, news);

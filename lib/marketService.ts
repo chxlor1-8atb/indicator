@@ -69,15 +69,16 @@ export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKe
     }
 
     const toDate = new Date().toISOString().split("T")[0];
-    const fromDate = new Date(Date.now() - 45 * 86400000).toISOString().split("T")[0];
+    const daysBack = interval === "1D" ? 365 : interval === "4h" ? 90 : interval === "15m" ? 10 : 45;
+    const fromDate = new Date(Date.now() - daysBack * 86400000).toISOString().split("T")[0];
 
-    const url = `https://api.massive.com/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
+    const url = `https://api.massive.com/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${fromDate}/${toDate}?adjusted=true&sort=desc&limit=250&apiKey=${apiKey}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(4500), cache: "no-store" });
     
     if (res.ok) {
       const data = await res.json();
       if (data.results && Array.isArray(data.results)) {
-        return data.results.map((r: { t: number; o: number; h: number; l: number; c: number; v: number }) => ({
+        const candles = data.results.map((r: { t: number; o: number; h: number; l: number; c: number; v: number }) => ({
           time: Math.floor(r.t / 1000),
           open: r.o,
           high: r.h,
@@ -85,6 +86,8 @@ export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKe
           close: r.c,
           volume: r.v || 1000,
         }));
+        candles.sort((a: Candle, b: Candle) => a.time - b.time);
+        return candles;
       }
     }
   } catch (err) {
@@ -365,16 +368,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     }
   }
 
-  // 2. If Massive API key exists, try Massive API
-  const massiveKey = process.env.MASSIVE_API_KEY;
-  if (massiveKey) {
-    const massiveCandles = await fetchMassiveCandles(symbol, interval, massiveKey);
-    if (massiveCandles.length >= 20) {
-      return cacheAndPersist(symbol, interval, massiveCandles);
-    }
-  }
-
-  // 3. If Crypto, use Binance API (Real-time & Fast)
+  // 2. If Crypto, use Binance API (Real-time & Fast 200 candles)
   if (asset?.category === "crypto" || symbol.endsWith("USDT")) {
     try {
       const candles = await fetchCryptoCandles(symbol, interval, 200);
@@ -383,6 +377,15 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
       }
     } catch (err) {
       console.warn(`Binance fetch failed for ${symbol}, trying Yahoo...`, err);
+    }
+  }
+
+  // 3. If Massive API key exists, try Massive API
+  const massiveKey = process.env.MASSIVE_API_KEY;
+  if (massiveKey) {
+    const massiveCandles = await fetchMassiveCandles(symbol, interval, massiveKey);
+    if (massiveCandles.length >= 20) {
+      return cacheAndPersist(symbol, interval, massiveCandles);
     }
   }
 
