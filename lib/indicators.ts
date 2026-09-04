@@ -15,6 +15,10 @@ import {
   BreakevenAdvice,
   RoundLevelInfo,
   StructuralStopLossInfo,
+  VolumeProfileInfo,
+  TDSequentialInfo,
+  SpreadImpactInfo,
+  TrailingStopInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -1069,6 +1073,267 @@ export function calculateRoundNumberGravity(
   };
 }
 
+/**
+ * [แผน 16] Session Volume Profile Value Area (VAH / VAL / POC)
+ * Bins traded volume across price intervals over recent session candles.
+ * Computes POC (highest volume bin) and Value Area (70% total volume boundaries VAH/VAL).
+ */
+export function calculateSessionVolumeProfile(candles: Candle[], precision = 2): VolumeProfileInfo {
+  if (candles.length < 5) {
+    const p = candles[candles.length - 1]?.close || 0;
+    return {
+      poc: p,
+      vah: p,
+      val: p,
+      valueAreaVolumePct: 70,
+      isInsideValueArea: true,
+      description: "ข้อมูลไม่เพียงพอสำหรับคำนวณ Volume Profile",
+    };
+  }
+
+  const sample = candles.slice(-Math.min(candles.length, 50));
+  let minPrice = Infinity;
+  let maxPrice = -Infinity;
+  let totalVolume = 0;
+
+  for (const c of sample) {
+    if (c.low < minPrice) minPrice = c.low;
+    if (c.high > maxPrice) maxPrice = c.high;
+    totalVolume += c.volume || 1;
+  }
+
+  const numBins = 25;
+  const binStep = (maxPrice - minPrice) / numBins || 0.1;
+  const bins = new Array(numBins).fill(0);
+
+  for (const c of sample) {
+    const vol = c.volume || 1;
+    const lowBin = Math.max(0, Math.min(numBins - 1, Math.floor((c.low - minPrice) / binStep)));
+    const highBin = Math.max(0, Math.min(numBins - 1, Math.floor((c.high - minPrice) / binStep)));
+    const span = highBin - lowBin + 1;
+    for (let b = lowBin; b <= highBin; b++) {
+      bins[b] += vol / span;
+    }
+  }
+
+  // Find POC
+  let maxVol = -1;
+  let pocBin = 0;
+  for (let b = 0; b < numBins; b++) {
+    if (bins[b] > maxVol) {
+      maxVol = bins[b];
+      pocBin = b;
+    }
+  }
+
+  // Expand to 70% of total volume for Value Area
+  const targetVolume = totalVolume * 0.70;
+  let accumulatedVolume = bins[pocBin];
+  let lowerBin = pocBin;
+  let upperBin = pocBin;
+
+  while (accumulatedVolume < targetVolume && (lowerBin > 0 || upperBin < numBins - 1)) {
+    const nextLowerVol = lowerBin > 0 ? bins[lowerBin - 1] : -1;
+    const nextUpperVol = upperBin < numBins - 1 ? bins[upperBin + 1] : -1;
+
+    if (nextUpperVol >= nextLowerVol && upperBin < numBins - 1) {
+      upperBin++;
+      accumulatedVolume += bins[upperBin];
+    } else if (lowerBin > 0) {
+      lowerBin--;
+      accumulatedVolume += bins[lowerBin];
+    } else {
+      break;
+    }
+  }
+
+  const poc = Number((minPrice + (pocBin + 0.5) * binStep).toFixed(precision));
+  const val = Number((minPrice + lowerBin * binStep).toFixed(precision));
+  const vah = Number((minPrice + (upperBin + 1) * binStep).toFixed(precision));
+
+  const currentPrice = candles[candles.length - 1].close;
+  const isInsideValueArea = currentPrice >= val && currentPrice <= vah;
+
+  const desc = isInsideValueArea
+    ? `ราคาอยู่ในกรอบสมดุลสถาบัน (Value Area ${val} - ${vah}) โซนสะสมวอลุ่มสูงสุด POC อยู่ที่ ${poc}`
+    : currentPrice > vah
+    ? `ราคาเทรดเหนือกรอบสมดุล (เหนือ VAH ${vah}) สภาวะ Imbalance ฝั่งซื้อ POC รับอยู่ที่ ${poc}`
+    : `ราคาเทรดหลุดกรอบสมดุล (ใต้ VAL ${val}) สภาวะ Imbalance ฝั่งขาย POC ต้านอยู่ที่ ${poc}`;
+
+  return {
+    poc,
+    vah,
+    val,
+    valueAreaVolumePct: 70,
+    isInsideValueArea,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 17] Multi-Candle Momentum Exhaustion (TD Sequential 9/13 Reversal)
+ * Measures consecutive candles closing higher/lower than 4 bars prior.
+ * Setup 9 flags imminent exhaustion to prevent buying the very top or selling the bottom.
+ */
+export function calculateTDSequential(candles: Candle[]): TDSequentialInfo {
+  if (candles.length < 5) {
+    return {
+      buySetupCount: 0,
+      sellSetupCount: 0,
+      isExhausted: false,
+      exhaustionType: "NONE",
+      note: "ข้อมูลไม่เพียงพอสำหรับคำนวณ TD Sequential",
+    };
+  }
+
+  let buyCount = 0;
+  let sellCount = 0;
+
+  const startIdx = Math.max(4, candles.length - 16);
+  for (let i = startIdx; i < candles.length; i++) {
+    const c = candles[i].close;
+    const ref = candles[i - 4].close;
+
+    if (c > ref) {
+      buyCount++;
+      sellCount = 0;
+    } else if (c < ref) {
+      sellCount++;
+      buyCount = 0;
+    } else {
+      buyCount = 0;
+      sellCount = 0;
+    }
+  }
+
+  const isBuyExhausted = buyCount >= 9;
+  const isSellExhausted = sellCount >= 9;
+  const isExhausted = isBuyExhausted || isSellExhausted;
+
+  let exhaustionType: "BUY_EXHAUSTION_9" | "SELL_EXHAUSTION_9" | "NONE" = "NONE";
+  let note = `TD Momentum ปกติ (Buy Count: ${buyCount}/9, Sell Count: ${sellCount}/9)`;
+
+  if (isBuyExhausted) {
+    exhaustionType = "BUY_EXHAUSTION_9";
+    note = `⚠️ ตรวจพบสัญญาณหมดแรงซื้อ (TD Sequential Buy Setup ${buyCount}/9) เสี่ยงย่อตัวสูง ห้ามไล่ Long ที่ยอด`;
+  } else if (isSellExhausted) {
+    exhaustionType = "SELL_EXHAUSTION_9";
+    note = `⚠️ ตรวจพบสัญญาณหมดแรงขาย (TD Sequential Sell Setup ${sellCount}/9) เสี่ยงดีดตัวกลับ ห้าม Short ที่ก้นเหว`;
+  }
+
+  return {
+    buySetupCount: buyCount,
+    sellSetupCount: sellCount,
+    isExhausted,
+    exhaustionType,
+    note,
+  };
+}
+
+/**
+ * [แผน 18] Dynamic Spread & Slippage Impact Calculator
+ * Evaluates live broker friction against Stop Loss distance and adjusts effective Net R:R.
+ */
+export function calculateSpreadImpact(
+  symbol: string,
+  slPips: number,
+  rewardPips: number,
+  balance = 100,
+  lotSize = 0.01
+): SpreadImpactInfo {
+  const sym = symbol.toUpperCase();
+  let estimatedSpreadPips = 1.8;
+  let pipDollarVal = 0.10;
+
+  if (sym === "XAUUSD") {
+    estimatedSpreadPips = 2.5;
+    pipDollarVal = 0.10;
+  } else if (sym === "EURUSD") {
+    estimatedSpreadPips = 1.0;
+    pipDollarVal = 0.10;
+  } else if (sym === "GBPUSD") {
+    estimatedSpreadPips = 1.4;
+    pipDollarVal = 0.10;
+  } else if (sym.includes("JPY")) {
+    estimatedSpreadPips = 1.2;
+    pipDollarVal = 0.07;
+  } else if (sym.endsWith("USDT") || ["BTC", "ETH"].some((c) => sym.startsWith(c))) {
+    estimatedSpreadPips = 5.0;
+    pipDollarVal = 0.01;
+  }
+
+  const spreadCostUSD = Number((estimatedSpreadPips * (pipDollarVal * 10 * lotSize)).toFixed(2));
+  const safeSL = Math.max(slPips, 1);
+  const spreadToSLPercent = Number(((estimatedSpreadPips / safeSL) * 100).toFixed(1));
+  const isSpreadWarning = spreadToSLPercent >= 20;
+
+  const effectiveReward = Math.max(0, rewardPips - estimatedSpreadPips);
+  const effectiveRisk = safeSL + estimatedSpreadPips;
+  const effectiveRatio = Number((effectiveReward / effectiveRisk).toFixed(1));
+  const effectiveRiskReward = `1:${effectiveRatio}`;
+
+  let warningMessage: string | undefined;
+  if (isSpreadWarning) {
+    warningMessage = `ค่าสเปรด (${estimatedSpreadPips} pips) กินพื้นที่สูงถึง ${spreadToSLPercent}% ของระยะ SL แนะนำขยายระยะ SL ให้ปลอดภัยจากสเปรดสะบัด`;
+  }
+
+  return {
+    estimatedSpreadPips,
+    spreadCostUSD,
+    spreadToSLPercent,
+    effectiveRiskReward,
+    isSpreadWarning,
+    warningMessage,
+  };
+}
+
+/**
+ * [แผน 20] Automated Multi-Stage Trailing Stop Loss (ATR Chandelier Trail)
+ * Computes dynamic trailing stop offset (Highest High / Lowest Low +/- 2.5x ATR).
+ */
+export function calculateChandelierTrailingStop(
+  candles: Candle[],
+  action: "BUY" | "SELL",
+  atrValue: number,
+  precision = 2,
+  symbol = "XAUUSD"
+): TrailingStopInfo {
+  const sample = candles.slice(-Math.min(candles.length, 14));
+  const atr = atrValue || 1.0;
+  const mult = 2.5;
+
+  let trailingStopPrice = 0;
+  let instruction = "";
+
+  if (action === "BUY") {
+    let highestHigh = -Infinity;
+    for (const c of sample) {
+      if (c.high > highestHigh) highestHigh = c.high;
+    }
+    trailingStopPrice = Number((highestHigh - mult * atr).toFixed(precision));
+    instruction = `ขยับ Trailing SL ตามระดับ ${trailingStopPrice} (Highest High - 2.5x ATR) เมื่อราคาไต่ระดับขึ้นเพื่อล็อคกำไร`;
+  } else {
+    let lowestLow = Infinity;
+    for (const c of sample) {
+      if (c.low < lowestLow) lowestLow = c.low;
+    }
+    trailingStopPrice = Number((lowestLow + mult * atr).toFixed(precision));
+    instruction = `ขยับ Trailing SL ตามระดับ ${trailingStopPrice} (Lowest Low + 2.5x ATR) เมื่อราคาปรับตัวลงเพื่อล็อคกำไร`;
+  }
+
+  const currentPrice = candles[candles.length - 1]?.close || trailingStopPrice;
+  const sym = symbol.toUpperCase();
+  const pipMult = sym.includes("JPY") ? 100 : sym.includes("XAU") ? 10 : precision === 4 ? 10000 : precision === 3 ? 1000 : 10;
+  const stepPips = Math.round(Math.abs(currentPrice - trailingStopPrice) * pipMult);
+
+  return {
+    trailingStopPrice,
+    stepPips,
+    isActivated: false,
+    instruction,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -1087,12 +1352,12 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
 
   // Determine asset precision
   const sym = symbol.toUpperCase();
-  const precision = sym.includes("JPY")
+  const precision = sym.includes("JPY") || sym === "XAUUSD" || sym.startsWith("XAU")
     ? 2
-    : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some((c) => sym.startsWith(c) || sym.endsWith(c))
-    ? 4
     : sym === "XAGUSD"
     ? 3
+    : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some((c) => sym.startsWith(c) || sym.endsWith(c))
+    ? 4
     : 2;
 
   // [แผน 6] กรองไส้เทียนสเปรดถ่าง (Outlier Wicks) ก่อนส่งคำนวณแนวรับ-ต้านและแบนด์
@@ -1133,6 +1398,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const volumeDelta = calculateVolumeDelta(candles);
   const roundLevel = calculateRoundNumberGravity(currentPrice, symbol, precision);
 
+  // Batch 4: Plans 16, 17
+  const volumeProfile = calculateSessionVolumeProfile(cleanCandles, precision);
+  const tdSequential = calculateTDSequential(cleanCandles);
+
   return {
     rsi14,
     ema20,
@@ -1158,5 +1427,7 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     oteZone,
     volumeDelta,
     roundLevel,
+    volumeProfile,
+    tdSequential,
   };
 }

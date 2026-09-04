@@ -145,6 +145,40 @@ export interface StructuralStopLossInfo {
   protectionType: "SWING_LOW_BUFFER" | "SWING_HIGH_BUFFER" | "VOLATILITY_ATR";
 }
 
+// ─── BATCH 4 (PLANS 16-20) QUANT INTERFACES ───
+export interface VolumeProfileInfo {
+  poc: number; // Point of Control (highest volume price bin)
+  vah: number; // Value Area High (70% boundary)
+  val: number; // Value Area Low (70% boundary)
+  valueAreaVolumePct: number; // e.g. 70%
+  isInsideValueArea: boolean;
+  description: string;
+}
+
+export interface TDSequentialInfo {
+  buySetupCount: number; // 1 to 9
+  sellSetupCount: number; // 1 to 9
+  isExhausted: boolean;
+  exhaustionType: "BUY_EXHAUSTION_9" | "SELL_EXHAUSTION_9" | "NONE";
+  note: string;
+}
+
+export interface SpreadImpactInfo {
+  estimatedSpreadPips: number;
+  spreadCostUSD: number;
+  spreadToSLPercent: number; // Spread / SL distance * 100
+  effectiveRiskReward: string; // R:R after deducting spread
+  isSpreadWarning: boolean;
+  warningMessage?: string;
+}
+
+export interface TrailingStopInfo {
+  trailingStopPrice: number;
+  stepPips: number;
+  isActivated: boolean;
+  instruction: string;
+}
+
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
   grade: "A+" | "A" | "B" | "C (Wait)";
@@ -259,6 +293,8 @@ export interface IndicatorData {
   oteZone?: OTEZoneInfo;
   volumeDelta?: VolumeDeltaInfo;
   roundLevel?: RoundLevelInfo;
+  volumeProfile?: VolumeProfileInfo;
+  tdSequential?: TDSequentialInfo;
 }
 
 export interface NewsItem {
@@ -355,6 +391,10 @@ export interface AnalysisResult {
   volumeDelta?: VolumeDeltaInfo;
   breakevenAdvice?: BreakevenAdvice;
   roundLevel?: RoundLevelInfo;
+  volumeProfile?: VolumeProfileInfo;
+  tdSequential?: TDSequentialInfo;
+  spreadImpact?: SpreadImpactInfo;
+  trailingStop?: TrailingStopInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -396,6 +436,9 @@ export interface AnalysisResult {
     structuralSL?: StructuralStopLossInfo;
     breakevenAdvice?: BreakevenAdvice;
     roundLevel?: RoundLevelInfo;
+    trailingStop?: TrailingStopInfo;
+    spreadImpact?: SpreadImpactInfo;
+    volumeProfile?: VolumeProfileInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;

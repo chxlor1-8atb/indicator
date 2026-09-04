@@ -11,6 +11,10 @@ import {
   BreakevenAdvice,
   RoundLevelInfo,
   StructuralStopLossInfo,
+  VolumeProfileInfo,
+  TDSequentialInfo,
+  SpreadImpactInfo,
+  TrailingStopInfo,
 } from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
@@ -24,6 +28,10 @@ import {
   calculateVolumeDelta,
   calculateBreakevenRules,
   calculateRoundNumberGravity,
+  calculateSessionVolumeProfile,
+  calculateTDSequential,
+  calculateSpreadImpact,
+  calculateChandelierTrailingStop,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -53,14 +61,14 @@ export function generateRuleBasedAnalysis(
 
   // Determine asset precision dynamically (Forex = 4, Crypto under $10 = 4, JPY/Gold/Stocks = 2)
   const sym = symbol.toUpperCase();
-  const precision = sym.includes("JPY")
+  const precision = sym.includes("JPY") || sym === "XAUUSD" || sym.startsWith("XAU")
     ? 2
+    : sym === "XAGUSD"
+    ? 3
     : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some(c => sym.startsWith(c) || sym.endsWith(c))
     ? 4
     : ["XRP", "ADA", "DOGE", "SUI"].some(c => sym.startsWith(c))
     ? 4
-    : sym === "XAGUSD"
-    ? 3
     : currentPrice < 10 && currentPrice > 0
     ? 4
     : 2;
@@ -207,6 +215,10 @@ export function generateRuleBasedAnalysis(
   const isOrbBullBreak = sessionStatus.orb?.status === "BREAKOUT_BULL" && tier1Bias === "BULLISH";
   const isOrbBearBreak = sessionStatus.orb?.status === "BREAKOUT_BEAR" && tier1Bias === "BEARISH";
 
+  // ─── BATCH 4 PRE-COMPUTATIONS (PLANS 16-17) ───
+  const volumeProfile = indicators.volumeProfile || calculateSessionVolumeProfile(candles, precision);
+  const tdSequential = indicators.tdSequential || calculateTDSequential(candles);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   let signal: AnalysisResult["signal"] = "WAIT";
@@ -242,6 +254,16 @@ export function generateRuleBasedAnalysis(
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 50);
+  }
+  // SAFETY LOCK 7: TD Sequential 9 Exhaustion Trap (Buying top of 9 green bars or selling bottom of 9 red bars) [แผน 17]
+  else if (tier1Bias === "BULLISH" && tdSequential.exhaustionType === "BUY_EXHAUSTION_9") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 45);
+  } else if (tier1Bias === "BEARISH" && tdSequential.exhaustionType === "SELL_EXHAUSTION_9") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 45);
   }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
@@ -340,7 +362,13 @@ export function generateRuleBasedAnalysis(
   const tp1Pips = Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
   const tp2Pips = Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);
 
-  // 6-Point Confluence Checklist with News Shield & Order Flow
+  // [แผน 18] Dynamic Spread & Slippage Impact Calculator
+  const spreadImpact = calculateSpreadImpact(symbol, slPips, tp1Pips, 100, 0.01);
+
+  // [แผน 20] Automated Multi-Stage Trailing Stop Loss (Chandelier ATR Trail)
+  const trailingStop = calculateChandelierTrailingStop(candles, tradeAction === "SELL" ? "SELL" : "BUY", currentATR, precision, symbol);
+
+  // 7-Point Confluence Checklist with News Shield, Order Flow & Volume Profile
   const confluenceChecklist: ConfluenceCheckItem[] = [
     {
       name: `Pillar 1: Trend & Regime (${regimeInfo.title})`,
@@ -374,6 +402,11 @@ export function generateRuleBasedAnalysis(
               volumeDelta.isAbsorption,
       note: volumeDelta.description,
     },
+    {
+      name: `Pillar 7: Volume Profile Value Area (${volumeProfile.isInsideValueArea ? "In Value" : "Imbalance"})`,
+      passed: volumeProfile.isInsideValueArea || (tradeAction === "BUY" && currentPrice >= volumeProfile.poc),
+      note: volumeProfile.description,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -401,6 +434,10 @@ export function generateRuleBasedAnalysis(
     volumeDelta,
     breakevenAdvice,
     roundLevel,
+    volumeProfile,
+    tdSequential,
+    spreadImpact,
+    trailingStop,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -416,6 +453,10 @@ export function generateRuleBasedAnalysis(
         `OTE Golden Pocket (61.8%-78.6%): ${oteZone.oteMin} - ${oteZone.oteMax} (Sweet Spot: ${oteZone.sweetSpot})`,
         `Volume Delta: ฝั่งซื้อ ${volumeDelta.buyerVolumePct}% vs ฝั่งขาย ${volumeDelta.sellerVolumePct}% (${volumeDelta.dominantSide})`,
         `Psychological Round Level: ${roundLevel.nearestMajor} (ห่าง ${roundLevel.distancePips} pips)`,
+        `Volume Profile: POC ${volumeProfile.poc} (VAH: ${volumeProfile.vah} | VAL: ${volumeProfile.val})`,
+        `TD Sequential: ${tdSequential.note}`,
+        `Chandelier Trailing Stop: ${trailingStop.trailingStopPrice} (${trailingStop.instruction})`,
+        `Spread Impact: ${spreadImpact.estimatedSpreadPips} pips (Net R:R: ${spreadImpact.effectiveRiskReward})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -452,6 +493,9 @@ export function generateRuleBasedAnalysis(
       structuralSL,
       breakevenAdvice,
       roundLevel,
+      trailingStop,
+      spreadImpact,
+      volumeProfile,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -653,6 +697,10 @@ Context:
 - Volume Delta Flow: ${ruleAnalysis.volumeDelta?.description} (Buyers ${ruleAnalysis.volumeDelta?.buyerVolumePct}% vs Sellers ${ruleAnalysis.volumeDelta?.sellerVolumePct}%)
 - Breakeven Rule: ${ruleAnalysis.breakevenAdvice?.actionText}
 - Round Number Magnet: ${ruleAnalysis.roundLevel?.nearestMajor} (ห่าง ${ruleAnalysis.roundLevel?.distancePips} pips)
+- Volume Profile: POC ${ruleAnalysis.volumeProfile?.poc} (VAH: ${ruleAnalysis.volumeProfile?.vah}, VAL: ${ruleAnalysis.volumeProfile?.val}, Inside Value: ${ruleAnalysis.volumeProfile?.isInsideValueArea})
+- TD Sequential Exhaustion: ${ruleAnalysis.tdSequential?.note}
+- Broker Spread Friction: ${ruleAnalysis.spreadImpact?.estimatedSpreadPips} pips (Net R:R: ${ruleAnalysis.spreadImpact?.effectiveRiskReward})
+- Chandelier Trailing Stop: ${ruleAnalysis.trailingStop?.trailingStopPrice} (${ruleAnalysis.trailingStop?.instruction})
 
 ### CLOSED-LOOP TRADING LESSONS & REINFORCEMENT MEMORY FOR ${symbol}:
 ${lessonsText}
@@ -759,12 +807,19 @@ Respond ONLY with valid JSON matching this schema:
     parsed.volumeDelta = ruleAnalysis.volumeDelta;
     parsed.breakevenAdvice = ruleAnalysis.breakevenAdvice;
     parsed.roundLevel = ruleAnalysis.roundLevel;
+    parsed.volumeProfile = ruleAnalysis.volumeProfile;
+    parsed.tdSequential = ruleAnalysis.tdSequential;
+    parsed.spreadImpact = ruleAnalysis.spreadImpact;
+    parsed.trailingStop = ruleAnalysis.trailingStop;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
       parsed.tradeSetup.structuralSL = ruleAnalysis.tradeSetup.structuralSL;
       parsed.tradeSetup.breakevenAdvice = ruleAnalysis.tradeSetup.breakevenAdvice;
       parsed.tradeSetup.roundLevel = ruleAnalysis.tradeSetup.roundLevel;
+      parsed.tradeSetup.trailingStop = ruleAnalysis.tradeSetup.trailingStop;
+      parsed.tradeSetup.spreadImpact = ruleAnalysis.tradeSetup.spreadImpact;
+      parsed.tradeSetup.volumeProfile = ruleAnalysis.tradeSetup.volumeProfile;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

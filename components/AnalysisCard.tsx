@@ -77,6 +77,10 @@ export default function AnalysisCard({
     const ssl = analysis.tradeSetup.structuralSL;
     const be = analysis.tradeSetup.breakevenAdvice || analysis.breakevenAdvice;
     const vd = analysis.volumeDelta;
+    const vp = analysis.tradeSetup.volumeProfile || analysis.volumeProfile;
+    const td = analysis.tdSequential;
+    const ts = analysis.tradeSetup.trailingStop || analysis.trailingStop;
+    const sp = analysis.tradeSetup.spreadImpact || analysis.spreadImpact;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
       `• Signal: ${analysis.signal} (Grade: ${analysis.setupGrade || "A"}, Confluence: ${mc?.totalScore || analysis.confidence}%)\n` +
@@ -84,11 +88,15 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (vp ? `• Volume Profile Value Area: ${vp.val} - ${vp.vah} (POC: ${vp.poc})\n` : "") +
       `• Stop Loss: ${analysis.tradeSetup.stopLoss} (${analysis.tradeSetup.slPips || 0} Pips ${ssl ? `| ${ssl.protectionType}` : ""})\n` +
       `• Take Profit 1: ${analysis.tradeSetup.takeProfit1} (+${analysis.tradeSetup.tp1Pips || 0} Pips | Breakeven Point)\n` +
       `• Take Profit 2: ${analysis.tradeSetup.takeProfit2} (+${analysis.tradeSetup.tp2Pips || 0} Pips | Trend Runner)\n` +
       `• R:R: ${analysis.tradeSetup.riskRewardRatio}\n` +
       (be ? `• Breakeven Shield (+1.0R): ${be.actionText}\n` : "") +
+      (ts ? `• Chandelier Trailing Stop: ${ts.trailingStopPrice}\n` : "") +
+      (sp ? `• Broker Spread Impact: ~${sp.estimatedSpreadPips} pips (Net R:R: ${sp.effectiveRiskReward})\n` : "") +
+      (td && td.isExhausted ? `• Exhaustion Warning: ${td.note}\n` : "") +
       (vd ? `• Volume Delta: ซื้อ ${vd.buyerVolumePct}% vs ขาย ${vd.sellerVolumePct}% (${vd.dominantSide})\n` : "") +
       `• Invalidation: ${analysis.tradeSetup.invalidationNote}`;
     copyToClipboard(text, "full_plan");
@@ -837,6 +845,123 @@ export default function AnalysisCard({
         </div>
       )}
 
+      {/* 5d. 📊 Advanced Market Profile, Exhaustion & Order Flow Suite (Plans 16-20) */}
+      {(analysis.volumeProfile || analysis.tdSequential) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                <BarChart3 className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Institutional Market Profile & Exhaustion Shield (แผน 16-20)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    Precision Profile
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  ตรวจจับจุดรวมสภาพคล่องสถาบัน (Volume Profile Value Area 70%) และดักจับจุดหมดแรงแท่งเทียน 9 สเต็ป (TD Sequential 9)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* 1. Session Volume Profile (POC, VAH, VAL) */}
+            {analysis.volumeProfile && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📊 Volume Profile Value Area (70%)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.volumeProfile.isInsideValueArea
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  }`}>
+                    {analysis.volumeProfile.isInsideValueArea ? "⚖️ Fair Value Zone" : "⚡ Out of Value Area"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center py-1">
+                  <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                    <span className="text-[9px] text-slate-400 block font-semibold">VAH (กรอบบน 70%)</span>
+                    <span className="text-xs font-mono font-bold text-emerald-300">{analysis.volumeProfile.vah}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/40">
+                    <span className="text-[9px] text-amber-300 block font-black">POC (จุดหนาแน่นสูงสุด)</span>
+                    <span className="text-xs font-mono font-black text-amber-300">{analysis.volumeProfile.poc}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                    <span className="text-[9px] text-slate-400 block font-semibold">VAL (กรอบล่าง 70%)</span>
+                    <span className="text-xs font-mono font-bold text-rose-300">{analysis.volumeProfile.val}</span>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.volumeProfile.description}
+                </p>
+              </div>
+            )}
+
+            {/* 2. TD Sequential 9 Momentum Exhaustion */}
+            {analysis.tdSequential && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⏱️ TD Sequential 9 Exhaustion Shield</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.tdSequential.isExhausted
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold animate-pulse"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.tdSequential.exhaustionType === "BUY_EXHAUSTION_9"
+                      ? "🛑 BUY EXHAUSTION 9"
+                      : analysis.tdSequential.exhaustionType === "SELL_EXHAUSTION_9"
+                      ? "🟢 SELL EXHAUSTION 9"
+                      : `Setup Count: ${Math.max(analysis.tdSequential.buySetupCount, analysis.tdSequential.sellSetupCount)}/9`}
+                  </span>
+                </div>
+
+                {/* Progress bar visual for 9 counts */}
+                <div className="space-y-1 py-1">
+                  <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                    <span>
+                      {analysis.tdSequential.buySetupCount > 0
+                        ? `Buy Sequence: ${analysis.tdSequential.buySetupCount}/9`
+                        : `Sell Sequence: ${analysis.tdSequential.sellSetupCount}/9`}
+                    </span>
+                    <span>{analysis.tdSequential.isExhausted ? "⚠️ Trigger Reversal" : "Building Trend"}</span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                    <div
+                      className={`h-full transition-all ${
+                        analysis.tdSequential.isExhausted
+                          ? "bg-rose-500"
+                          : analysis.tdSequential.buySetupCount > 0
+                          ? "bg-emerald-500"
+                          : "bg-amber-500"
+                      }`}
+                      style={{
+                        width: `${(Math.max(analysis.tdSequential.buySetupCount, analysis.tdSequential.sellSetupCount) / 9) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.tdSequential.note}
+                </p>
+
+                {analysis.tdSequential.isExhausted && (
+                  <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[10px] text-rose-300 font-medium">
+                    🛡️ <strong>Safety Lock 7 Active:</strong> ระบบล็อคห้ามตามน้ำ ณ จุดปลายคลื่นแท่งที่ 9 เพื่อป้องกันการติดดอย/ก้นเหว
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 6. 📱 MT4 / MT5 Mobile Pending Order Ticket */}
       <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-surface-50 to-indigo-950/20 border border-blue-500/40 space-y-3.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -970,6 +1095,71 @@ export default function AnalysisCard({
             </div>
           </div>
         )}
+
+        {/* Chandelier ATR Trailing Stop [แผน 20] */}
+        {(analysis.tradeSetup.trailingStop || analysis.trailingStop) && (
+          <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-start gap-2.5 text-xs">
+            <Sliders className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+            <div className="space-y-1 w-full">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <span className="font-bold text-purple-300 text-[11px] flex items-center gap-1.5">
+                  <span>🎯 Chandelier ATR Trailing Stop (แผน 20 - เลื่อนล็อคกำไรอัตโนมัติ):</span>
+                  <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-200 border border-purple-500/30">
+                    +{(analysis.tradeSetup.trailingStop || analysis.trailingStop)?.stepPips} pips Trailing Step
+                  </span>
+                </span>
+                <span className="font-mono font-black text-amber-300 text-xs">
+                  Trail SL: {(analysis.tradeSetup.trailingStop || analysis.trailingStop)?.trailingStopPrice}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                {(analysis.tradeSetup.trailingStop || analysis.trailingStop)?.instruction}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Dynamic Spread & Slippage Impact Calculator [แผน 18] */}
+        {(analysis.tradeSetup.spreadImpact || analysis.spreadImpact) && (() => {
+          const sp = analysis.tradeSetup.spreadImpact || analysis.spreadImpact!;
+          return (
+            <div className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+              sp.isSpreadWarning
+                ? "bg-rose-950/30 border-rose-500/40 text-rose-200"
+                : "bg-surface-100/90 border-slate-800 text-slate-300"
+            }`}>
+              <div className="flex items-center gap-2">
+                <div className={`p-1.5 rounded-lg ${sp.isSpreadWarning ? "bg-rose-500/20 text-rose-400" : "bg-blue-500/10 text-blue-400"}`}>
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white text-[11px]">ต้นทุนสเปรดโบรกเกอร์ (Broker Spread Impact - แผน 18)</span>
+                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
+                      sp.isSpreadWarning
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold"
+                        : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+                    }`}>
+                      {sp.isSpreadWarning ? "⚠️ SPREAD HIGH DANGER" : "✅ SPREAD ACCEPTABLE"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    สเปรดประมาณ {sp.estimatedSpreadPips} pips (${sp.spreadCostUSD} USD / 0.01 lot) • กินระยะ SL ไป {sp.spreadToSLPercent}%
+                    {sp.warningMessage ? ` • ${sp.warningMessage}` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 self-end sm:self-center font-mono">
+                <span className="text-[10px] text-slate-400">Net R:R สุทธิ:</span>
+                <span className={`text-xs font-black px-2 py-0.5 rounded ${
+                  sp.isSpreadWarning ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300"
+                }`}>
+                  {sp.effectiveRiskReward}
+                </span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Micro-Account Interactive Lot & Risk Calculator (เริ่มต้นตั้งแต่ $10 USD) */}
         {(() => {

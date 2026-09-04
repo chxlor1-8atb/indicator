@@ -17,8 +17,10 @@ function escapeHtml(text: string): string {
 
 function formatPrice(num: number, symbol: string): string {
   const sym = symbol.toUpperCase();
-  const precision = sym.includes("JPY")
+  const precision = sym.includes("JPY") || sym === "XAUUSD" || sym.startsWith("XAU")
     ? 2
+    : sym === "XAGUSD"
+    ? 3
     : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some((c) => sym.startsWith(c) || sym.endsWith(c))
     ? 4
     : ["XRP", "ADA", "DOGE", "SUI"].some((c) => sym.startsWith(c))
