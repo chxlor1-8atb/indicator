@@ -10,6 +10,11 @@ import {
   VolumeAnomalyItem,
   IntraBarMomentum,
   Rolling24hRange,
+  OTEZoneInfo,
+  VolumeDeltaInfo,
+  BreakevenAdvice,
+  RoundLevelInfo,
+  StructuralStopLossInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -739,7 +744,332 @@ export function calculateRolling24hRange(candles: Candle[], currentPrice: number
   };
 }
 
-export function calculateAllIndicators(candles: Candle[]): IndicatorData {
+/**
+ * [แผน 11] Institutional Optimal Trade Entry (OTE - Fibonacci 61.8% – 78.6% Golden Pocket)
+ * Sweeps swing highs/lows and computes institutional equilibrium discount/premium levels:
+ * - 0.618 Fib
+ * - 0.705 Institutional Sweet Spot
+ * - 0.786 Fib
+ */
+export function calculateOTEZones(
+  candles: Candle[],
+  bias: "BULLISH" | "BEARISH",
+  precision = 2
+): OTEZoneInfo {
+  if (candles.length < 5) {
+    const p = candles[candles.length - 1]?.close || 0;
+    return {
+      swingHigh: p,
+      swingLow: p,
+      fib618: p,
+      fib705: p,
+      fib786: p,
+      oteMin: p,
+      oteMax: p,
+      sweetSpot: p,
+      isPriceInOTE: false,
+      bias,
+      description: "ข้อมูลไม่เพียงพอสำหรับคำนวณ OTE Zone",
+    };
+  }
+
+  // Lookback 35-45 candles to capture swing extremes
+  const sample = candles.slice(-Math.min(candles.length, 45));
+  let swingHigh = -Infinity;
+  let swingLow = Infinity;
+
+  for (const c of sample) {
+    if (c.high > swingHigh) swingHigh = c.high;
+    if (c.low < swingLow) swingLow = c.low;
+  }
+
+  const range = swingHigh - swingLow;
+  const currentPrice = candles[candles.length - 1].close;
+
+  let fib618 = 0;
+  let fib705 = 0;
+  let fib786 = 0;
+  let oteMin = 0;
+  let oteMax = 0;
+
+  if (bias === "BULLISH") {
+    // Bullish OTE: Retracement downwards from swingHigh
+    fib618 = swingHigh - range * 0.618;
+    fib705 = swingHigh - range * 0.705;
+    fib786 = swingHigh - range * 0.786;
+    oteMin = fib786;
+    oteMax = fib618;
+  } else {
+    // Bearish OTE: Retracement upwards from swingLow
+    fib618 = swingLow + range * 0.618;
+    fib705 = swingLow + range * 0.705;
+    fib786 = swingLow + range * 0.786;
+    oteMin = fib618;
+    oteMax = fib786;
+  }
+
+  const sweetSpot = Number(fib705.toFixed(precision));
+  const minVal = Number(Math.min(oteMin, oteMax).toFixed(precision));
+  const maxVal = Number(Math.max(oteMin, oteMax).toFixed(precision));
+  const isPriceInOTE = currentPrice >= minVal && currentPrice <= maxVal;
+
+  const desc = bias === "BULLISH"
+    ? `โซนย่อซื้อสถาบัน OTE Golden Pocket (Fib 61.8% - 78.6%: ${minVal} - ${maxVal}) จุด Sweet Spot 70.5% ที่ ${sweetSpot}`
+    : `โซนเด้งขายสถาบัน OTE Golden Pocket (Fib 61.8% - 78.6%: ${minVal} - ${maxVal}) จุด Sweet Spot 70.5% ที่ ${sweetSpot}`;
+
+  return {
+    swingHigh: Number(swingHigh.toFixed(precision)),
+    swingLow: Number(swingLow.toFixed(precision)),
+    fib618: Number(fib618.toFixed(precision)),
+    fib705: sweetSpot,
+    fib786: Number(fib786.toFixed(precision)),
+    oteMin: minVal,
+    oteMax: maxVal,
+    sweetSpot,
+    isPriceInOTE,
+    bias,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 12] Liquidity Hunt Protection Stop Loss
+ * Places Stop Loss safely behind structural swing pivots + anti-sweep liquidity buffer (0.5x ATR).
+ */
+export function calculateStructuralStopLoss(
+  candles: Candle[],
+  action: "BUY" | "SELL",
+  atrValue?: number,
+  currentPrice?: number,
+  precision = 2
+): StructuralStopLossInfo {
+  const p = currentPrice || candles[candles.length - 1]?.close || 1;
+  const atr = atrValue || p * 0.005;
+  const sample = candles.slice(-Math.min(candles.length, 25));
+
+  let swingHigh = -Infinity;
+  let swingLow = Infinity;
+
+  for (const c of sample) {
+    if (c.high > swingHigh) swingHigh = c.high;
+    if (c.low < swingLow) swingLow = c.low;
+  }
+
+  const liquidityBuffer = Number((atr * 0.5).toFixed(precision));
+
+  if (action === "BUY") {
+    const rawSL = swingLow - liquidityBuffer;
+    const finalSL = rawSL < p ? rawSL : p - atr * 1.5;
+    return {
+      stopLoss: Number(finalSL.toFixed(precision)),
+      swingRefPrice: Number(swingLow.toFixed(precision)),
+      liquidityBuffer,
+      protectionType: "SWING_LOW_BUFFER",
+    };
+  } else {
+    const rawSL = swingHigh + liquidityBuffer;
+    const finalSL = rawSL > p ? rawSL : p + atr * 1.5;
+    return {
+      stopLoss: Number(finalSL.toFixed(precision)),
+      swingRefPrice: Number(swingHigh.toFixed(precision)),
+      liquidityBuffer,
+      protectionType: "SWING_HIGH_BUFFER",
+    };
+  }
+}
+
+/**
+ * [แผน 13] Volume Delta & Order Flow Imbalance Approximation
+ * Estimates buyer vs seller aggression per candle and identifies institutional absorption.
+ */
+export function calculateVolumeDelta(candles: Candle[]): VolumeDeltaInfo {
+  if (candles.length === 0) {
+    return {
+      buyerVolumePct: 50,
+      sellerVolumePct: 50,
+      netDelta: 0,
+      dominantSide: "BALANCED",
+      isAbsorption: false,
+      description: "ไม่มีข้อมูล Volume เพียงพอ",
+    };
+  }
+
+  const sample = candles.slice(-Math.min(candles.length, 14));
+  let totalBuy = 0;
+  let totalSell = 0;
+
+  for (const c of sample) {
+    const range = c.high - c.low;
+    const vol = c.volume || 1;
+    if (range <= 0) {
+      totalBuy += vol * 0.5;
+      totalSell += vol * 0.5;
+    } else {
+      const buyRatio = Math.max(0.05, Math.min(0.95, (c.close - c.low) / range));
+      const sellRatio = 1 - buyRatio;
+      totalBuy += vol * buyRatio;
+      totalSell += vol * sellRatio;
+    }
+  }
+
+  const totalVol = totalBuy + totalSell || 1;
+  const buyerVolumePct = Math.round((totalBuy / totalVol) * 100);
+  const sellerVolumePct = 100 - buyerVolumePct;
+  const netDelta = Math.round(totalBuy - totalSell);
+
+  const dominantSide: "BUYERS" | "SELLERS" | "BALANCED" =
+    buyerVolumePct >= 55 ? "BUYERS" : sellerVolumePct >= 55 ? "SELLERS" : "BALANCED";
+
+  // Check absorption
+  const lastC = sample[sample.length - 1];
+  const prev3C = sample.length >= 4 ? sample[sample.length - 4] : sample[0];
+  const priceDropped = lastC.close < prev3C.close;
+  const priceRose = lastC.close > prev3C.close;
+
+  const isAbsorption = (priceDropped && buyerVolumePct >= 55) || (priceRose && sellerVolumePct >= 55);
+
+  let description = "";
+  if (isAbsorption) {
+    description = priceDropped
+      ? `ตรวจพบสัญญาณสถาบันดักดูดซับแรงขาย (Bullish Absorption) ฝั่งซื้อคุม ${buyerVolumePct}% ขณะที่ราคาลง`
+      : `ตรวจพบสัญญาณสถาบันดักดูดซับแรงซื้อ (Bearish Absorption) ฝั่งขายคุม ${sellerVolumePct}% ขณะที่ราคาขึ้น`;
+  } else if (dominantSide === "BUYERS") {
+    description = `ฝั่งซื้อครองตลาด (${buyerVolumePct}%) เกิดแรงผลักดันเชิงบวกอย่างต่อเนื่อง`;
+  } else if (dominantSide === "SELLERS") {
+    description = `ฝั่งขายครองตลาด (${sellerVolumePct}%) เกิดแรงกดดันเชิงลบอย่างต่อเนื่อง`;
+  } else {
+    description = `สภาวะการซื้อขายสมดุล (ผู้ซื้อ ${buyerVolumePct}% / ผู้ขาย ${sellerVolumePct}%) รอแรงสถาบันเลือกทาง`;
+  }
+
+  return {
+    buyerVolumePct,
+    sellerVolumePct,
+    netDelta,
+    dominantSide,
+    isAbsorption,
+    description,
+  };
+}
+
+/**
+ * [แผน 14] Dynamic Multi-Stage Take Profit & Automated Risk-Free Breakeven Shield
+ * Determines precise breakeven price (+spread cushion) and status when TP1 (+1.0R) is achieved.
+ */
+export function calculateBreakevenRules(
+  entryPrice: number,
+  stopLoss: number,
+  takeProfit1: number,
+  action: "BUY" | "SELL",
+  currentPrice: number,
+  symbol = "XAUUSD",
+  precision = 2
+): BreakevenAdvice {
+  const sym = symbol.toUpperCase();
+  const pipMultiplier = sym.includes("JPY") ? 100 : sym.includes("XAU") ? 10 : 10000;
+  const bufferVal = 2.5 / pipMultiplier;
+
+  let breakevenPrice = entryPrice;
+  if (action === "BUY") {
+    breakevenPrice = Number((entryPrice + bufferVal).toFixed(precision));
+  } else if (action === "SELL") {
+    breakevenPrice = Number((entryPrice - bufferVal).toFixed(precision));
+  }
+
+  let status: "PENDING_TP1" | "READY_FOR_BREAKEVEN" | "RISK_FREE" = "PENDING_TP1";
+  if (action === "BUY") {
+    if (currentPrice >= takeProfit1) {
+      status = "READY_FOR_BREAKEVEN";
+    }
+  } else if (action === "SELL") {
+    if (currentPrice <= takeProfit1) {
+      status = "READY_FOR_BREAKEVEN";
+    }
+  }
+
+  const actionText =
+    status === "READY_FOR_BREAKEVEN"
+      ? `ราคาชนเป้า TP1 แล้ว! เลื่อนจุดตัดขาดทุน (SL) มาที่ ${breakevenPrice} ทันทีเพื่อล็อคความเสี่ยงเป็นศูนย์ (Zero-Risk Trade)`
+      : `เมื่อราคาไปถึง TP1 (${takeProfit1}) ให้ปิดทำกำไร 50% และเลื่อน SL มาที่ ${breakevenPrice} เพื่อความปลอดภัย 100%`;
+
+  return {
+    targetTP1: takeProfit1,
+    breakevenPrice,
+    bufferPips: 2.5,
+    status,
+    actionText,
+  };
+}
+
+/**
+ * [แผน 15] Psychological Round Number & Key Level Gravity Engine
+ * Maps key institutional price magnets (e.g. 4,450 / 4,500 for Gold, 1.1600 for EURUSD).
+ */
+export function calculateRoundNumberGravity(
+  currentPrice: number,
+  symbol = "XAUUSD",
+  precision = 2
+): RoundLevelInfo {
+  const sym = symbol.toUpperCase();
+  let majorStep = 50;
+  let minorStep = 10;
+  let pipMultiplier = 10;
+
+  if (sym === "XAUUSD") {
+    majorStep = 50; // e.g. 4400, 4450, 4500
+    minorStep = 10; // e.g. 4460, 4470, 4480
+    pipMultiplier = 10;
+  } else if (sym === "XAGUSD") {
+    majorStep = 1.0;
+    minorStep = 0.5;
+    pipMultiplier = 100;
+  } else if (sym.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some((c) => sym.startsWith(c))) {
+    majorStep = currentPrice > 1000 ? 1000 : 100;
+    minorStep = majorStep / 5;
+    pipMultiplier = 1;
+  } else if (sym.includes("JPY")) {
+    majorStep = 1.0;
+    minorStep = 0.5;
+    pipMultiplier = 100;
+  } else if (["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some((c) => sym.startsWith(c) || sym.endsWith(c))) {
+    majorStep = 0.0100; // 100 pips 'Big Figure'
+    minorStep = 0.0050; // 50 pips
+    pipMultiplier = 10000;
+  }
+
+  const nearestMajor = Number((Math.round(currentPrice / majorStep) * majorStep).toFixed(precision));
+  const nearestMinor = Number((Math.round(currentPrice / minorStep) * minorStep).toFixed(precision));
+
+  const distToMajor = Math.abs(currentPrice - nearestMajor);
+  const distancePips = Math.round(distToMajor * pipMultiplier);
+
+  const isMagnetZone = distancePips <= 15;
+  const isTouching = distancePips <= 5;
+
+  let gravityEffect: "ATTRACTING" | "REPELLING" | "NEUTRAL" = "NEUTRAL";
+  if (isTouching) {
+    gravityEffect = "REPELLING";
+  } else if (isMagnetZone) {
+    gravityEffect = "ATTRACTING";
+  }
+
+  let description = "";
+  if (isMagnetZone) {
+    description = `ราคาอยู่ใกล้แนวระดับจิตวิทยาตัวเลขกลม (Psychological Level: ${nearestMajor}) ห่างเพียง ${distancePips} pips สถาบันมักใช้เป็นจุดดึงดูดสภาพคล่อง`;
+  } else {
+    description = `แนวระดับจิตวิทยาถัดไปอยู่ที่ ${nearestMajor} (ห่าง ${distancePips} pips)`;
+  }
+
+  return {
+    nearestMajor,
+    nearestMinor,
+    distancePips,
+    isMagnetZone,
+    gravityEffect,
+    description,
+  };
+}
+
+export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
       rsi14: [],
@@ -755,12 +1085,22 @@ export function calculateAllIndicators(candles: Candle[]): IndicatorData {
     };
   }
 
+  // Determine asset precision
+  const sym = symbol.toUpperCase();
+  const precision = sym.includes("JPY")
+    ? 2
+    : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some((c) => sym.startsWith(c) || sym.endsWith(c))
+    ? 4
+    : sym === "XAGUSD"
+    ? 3
+    : 2;
+
   // [แผน 6] กรองไส้เทียนสเปรดถ่าง (Outlier Wicks) ก่อนส่งคำนวณแนวรับ-ต้านและแบนด์
   const cleanCandles = filterOutlierWicks(candles, 3.5);
 
   const currentPrice = candles[candles.length - 1].close;
   const firstPrice = candles[0].close;
-  const priceChange24h = Number((currentPrice - firstPrice).toFixed(4));
+  const priceChange24h = Number((currentPrice - firstPrice).toFixed(precision));
   const priceChangePercent24h = Number(((priceChange24h / firstPrice) * 100).toFixed(2));
 
   const rsi14 = calculateRSI(cleanCandles, 14);
@@ -787,6 +1127,12 @@ export function calculateAllIndicators(candles: Candle[]): IndicatorData {
   // Batch 2: Plans 6 & 7
   const rolling24h = calculateRolling24hRange(cleanCandles, currentPrice);
 
+  // Batch 3: Plans 11, 13, 15
+  const initialBias: "BULLISH" | "BEARISH" = currentPrice >= (ema50[ema50.length - 1] || currentPrice) ? "BULLISH" : "BEARISH";
+  const oteZone = calculateOTEZones(cleanCandles, initialBias, precision);
+  const volumeDelta = calculateVolumeDelta(candles);
+  const roundLevel = calculateRoundNumberGravity(currentPrice, symbol, precision);
+
   return {
     rsi14,
     ema20,
@@ -809,5 +1155,8 @@ export function calculateAllIndicators(candles: Candle[]): IndicatorData {
     volumeAnomalies,
     intraBarMomentum,
     rolling24h,
+    oteZone,
+    volumeDelta,
+    roundLevel,
   };
 }

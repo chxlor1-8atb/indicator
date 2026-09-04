@@ -73,17 +73,23 @@ export default function AnalysisCard({
     const reg = analysis.regimeInfo;
     const sess = analysis.sessionStatus;
     const cal = analysis.calendarSafety;
-    const text = `📊 [ECONOMIC CALENDAR & SESSION PLAN: ${analysis.symbol}]\n` +
-      `• Signal: ${analysis.signal} (Grade: ${analysis.setupGrade || "A"}, Score: ${mc?.totalScore || analysis.confidence}%)\n` +
-      `• Calendar Shield: ${cal?.badgeText || "SAFE"}\n` +
-      `• Calendar Note: ${cal?.freezeReason || ""}\n` +
+    const ote = analysis.tradeSetup.oteZone || analysis.oteZone;
+    const ssl = analysis.tradeSetup.structuralSL;
+    const be = analysis.tradeSetup.breakevenAdvice || analysis.breakevenAdvice;
+    const vd = analysis.volumeDelta;
+
+    const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
+      `• Signal: ${analysis.signal} (Grade: ${analysis.setupGrade || "A"}, Confluence: ${mc?.totalScore || analysis.confidence}%)\n` +
+      `• Calendar Shield: ${cal?.badgeText || "SAFE"} (${cal?.freezeReason || "ปกติ"})\n` +
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
-      `• Market Regime: ${reg?.title || "NORMAL"} (Target Win Rate: ${reg?.targetedWinRate || "75-85%"})\n` +
-      `• Entry: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max}\n` +
-      `• Stop Loss: ${analysis.tradeSetup.stopLoss} (${analysis.tradeSetup.slPips || 0} Pips)\n` +
-      `• Take Profit 1: ${analysis.tradeSetup.takeProfit1} (+${analysis.tradeSetup.tp1Pips || 0} Pips)\n` +
-      `• Take Profit 2: ${analysis.tradeSetup.takeProfit2} (+${analysis.tradeSetup.tp2Pips || 0} Pips)\n` +
+      `• Market Regime: ${reg?.title || "NORMAL"}\n` +
+      `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      `• Stop Loss: ${analysis.tradeSetup.stopLoss} (${analysis.tradeSetup.slPips || 0} Pips ${ssl ? `| ${ssl.protectionType}` : ""})\n` +
+      `• Take Profit 1: ${analysis.tradeSetup.takeProfit1} (+${analysis.tradeSetup.tp1Pips || 0} Pips | Breakeven Point)\n` +
+      `• Take Profit 2: ${analysis.tradeSetup.takeProfit2} (+${analysis.tradeSetup.tp2Pips || 0} Pips | Trend Runner)\n` +
       `• R:R: ${analysis.tradeSetup.riskRewardRatio}\n` +
+      (be ? `• Breakeven Shield (+1.0R): ${be.actionText}\n` : "") +
+      (vd ? `• Volume Delta: ซื้อ ${vd.buyerVolumePct}% vs ขาย ${vd.sellerVolumePct}% (${vd.dominantSide})\n` : "") +
       `• Invalidation: ${analysis.tradeSetup.invalidationNote}`;
     copyToClipboard(text, "full_plan");
   };
@@ -705,6 +711,132 @@ export default function AnalysisCard({
         </div>
       )}
 
+      {/* 5c. 🎯 Institutional Order Flow & Sniper Precision Suite (Plans 11-15) */}
+      {(analysis.oteZone || analysis.volumeDelta || analysis.roundLevel) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                <Target className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Institutional Order Flow & Sniper Precision (แผน 11-15)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Smart Money Engine
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">ผสานโซนย่อซื้อ OTE 61.8%-78.6%, สัดส่วน Volume Delta และแรงดึงดูดตัวเลขกลม</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* 1. OTE Golden Pocket */}
+            {analysis.oteZone && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🎯 OTE Golden Pocket</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                    analysis.oteZone.isPriceInOTE
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.oteZone.isPriceInOTE ? "⚡ In Zone" : "Waiting"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Fib 61.8% - 78.6%:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {analysis.oteZone.oteMin} - {analysis.oteZone.oteMax}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Sweet Spot (70.5%):</span>
+                    <span className="font-mono font-bold text-emerald-300">
+                      {analysis.oteZone.sweetSpot}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.oteZone.description}
+                </p>
+              </div>
+            )}
+
+            {/* 2. Volume Delta & Imbalance */}
+            {analysis.volumeDelta && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚖️ Volume Delta Flow</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                    analysis.volumeDelta.dominantSide === "BUYERS"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.volumeDelta.dominantSide === "SELLERS"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.volumeDelta.dominantSide}
+                  </span>
+                </div>
+                <div className="space-y-1 pt-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-emerald-400 font-bold">ซื้อ {analysis.volumeDelta.buyerVolumePct}%</span>
+                    <span className="text-rose-400 font-bold">ขาย {analysis.volumeDelta.sellerVolumePct}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                    <div className="h-full bg-emerald-500" style={{ width: `${analysis.volumeDelta.buyerVolumePct}%` }}></div>
+                    <div className="h-full bg-rose-500" style={{ width: `${analysis.volumeDelta.sellerVolumePct}%` }}></div>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.volumeDelta.description}
+                </p>
+                {analysis.volumeDelta.isAbsorption && (
+                  <div className="p-1 rounded bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 font-bold text-center">
+                    🔥 ตรวจพบสถาบันดูดซับสภาพคล่อง (Absorption)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. Psychological Round Number Gravity */}
+            {analysis.roundLevel && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🧲 Round Number Gravity</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                    analysis.roundLevel.isMagnetZone
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.roundLevel.isMagnetZone ? "🧲 Magnet Active" : "Neutral"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">เลขกลมหลัก (Major Level):</span>
+                    <span className="font-mono font-bold text-indigo-300">
+                      {analysis.roundLevel.nearestMajor}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ระยะห่างจากราคาปัจจุบัน:</span>
+                    <span className="font-mono font-bold text-slate-200">
+                      {analysis.roundLevel.distancePips} pips
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.roundLevel.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 6. 📱 MT4 / MT5 Mobile Pending Order Ticket */}
       <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-surface-50 to-indigo-950/20 border border-blue-500/40 space-y-3.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -768,7 +900,7 @@ export default function AnalysisCard({
               {analysis.tradeSetup.pendingPrice || analysis.tradeSetup.entryZone.min}
             </span>
             <span className="text-[10px] text-slate-400 font-sans block truncate">
-              แตะเพื่อคัดลอก • รอซื้อที่แนวรับ
+              {analysis.tradeSetup.oteZone ? `OTE 70.5% (${analysis.tradeSetup.entryZone.min}-${analysis.tradeSetup.entryZone.max})` : "แตะเพื่อคัดลอก • รอซื้อที่แนวรับ"}
             </span>
           </div>
 
@@ -785,7 +917,7 @@ export default function AnalysisCard({
               {analysis.tradeSetup.stopLoss}
             </span>
             <span className="text-[10px] font-sans text-rose-300/80 block">
-              {analysis.tradeSetup.slPips ? `-${analysis.tradeSetup.slPips} pips (ตัดขาดทุนอัตโนมัติ)` : "ซ่อนหลัง Swing"}
+              {analysis.tradeSetup.structuralSL ? `🛡️ Liquidity Shield (-${analysis.tradeSetup.slPips || 0} pips)` : analysis.tradeSetup.slPips ? `-${analysis.tradeSetup.slPips} pips (ตัดขาดทุนอัตโนมัติ)` : "ซ่อนหลัง Swing"}
             </span>
           </div>
 
@@ -802,7 +934,7 @@ export default function AnalysisCard({
               {analysis.tradeSetup.takeProfit1}
             </span>
             <span className="text-[10px] font-sans text-emerald-300/80 block">
-              +{analysis.tradeSetup.tp1Pips || 0} pips (ปิดครึ่ง + เลื่อนบังทุน)
+              +{analysis.tradeSetup.tp1Pips || 0} pips (TP1 +1.0R / เลื่อนบังทุน)
             </span>
           </div>
 
@@ -819,10 +951,25 @@ export default function AnalysisCard({
               {analysis.tradeSetup.takeProfit2}
             </span>
             <span className="text-[10px] font-sans text-emerald-300/80 block">
-              +{analysis.tradeSetup.tp2Pips || 0} pips (ปล่อยรันเทรนด์)
+              +{analysis.tradeSetup.tp2Pips || 0} pips (TP2 รันเทรนด์สถาบัน)
             </span>
           </div>
         </div>
+
+        {/* Automated Risk-Free Breakeven Shield [แผน 14] */}
+        {(analysis.tradeSetup.breakevenAdvice || analysis.breakevenAdvice) && (
+          <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex items-start gap-2.5 text-xs">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-emerald-300 text-[11px] block">
+                🛡️ เกราะป้องกันทุน Breakeven Shield (+1.0R Rule):
+              </span>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                {(analysis.tradeSetup.breakevenAdvice || analysis.breakevenAdvice)?.actionText}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Micro-Account Interactive Lot & Risk Calculator (เริ่มต้นตั้งแต่ $10 USD) */}
         {(() => {

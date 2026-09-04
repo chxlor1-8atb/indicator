@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     };
 
     const candles = await getMarketCandles(symbol, timeframe);
-    const indicators = calculateAllIndicators(candles);
+    const indicators = calculateAllIndicators(candles, symbol);
 
     return NextResponse.json(
       {

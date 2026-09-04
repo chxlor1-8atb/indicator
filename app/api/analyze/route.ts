@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
     // 1. Fetch market candles & calculate technical indicators
     const candles = await getMarketCandles(symbol, timeframe);
-    const indicators = calculateAllIndicators(candles);
+    const indicators = calculateAllIndicators(candles, symbol);
 
     // 2. Fetch live market news
     const news = await fetchLiveNews();

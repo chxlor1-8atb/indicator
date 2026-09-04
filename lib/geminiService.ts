@@ -1,7 +1,30 @@
-import { AnalysisResult, Candle, IndicatorData, NewsItem, ConfluenceCheckItem, TraderTierHierarchy, QuadEmaConfluence } from "./types";
+import {
+  AnalysisResult,
+  Candle,
+  IndicatorData,
+  NewsItem,
+  ConfluenceCheckItem,
+  TraderTierHierarchy,
+  QuadEmaConfluence,
+  OTEZoneInfo,
+  VolumeDeltaInfo,
+  BreakevenAdvice,
+  RoundLevelInfo,
+  StructuralStopLossInfo,
+} from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
-import { calculateATR, calculateEMA, detectCandleRejection, detectRSIDivergence } from "./indicators";
+import {
+  calculateATR,
+  calculateEMA,
+  detectCandleRejection,
+  detectRSIDivergence,
+  calculateOTEZones,
+  calculateStructuralStopLoss,
+  calculateVolumeDelta,
+  calculateBreakevenRules,
+  calculateRoundNumberGravity,
+} from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
 import { getMarketSessionStatus } from "./sessionEngine";
@@ -245,41 +268,79 @@ export function generateRuleBasedAnalysis(
     setupGrade = masterConfluence.totalScore >= 60 ? "B" : "C (Wait)";
   }
 
-  // Calculate Trade Setup Levels with Dynamic TP Multiplier & Asset Precision
+  // ─── BATCH 3 QUANT CALIBRATION (PLANS 11-15) ───
+  // [แผน 11] Institutional Optimal Trade Entry (OTE - Fibonacci 61.8% – 78.6% Golden Pocket)
+  const oteZone = indicators.oteZone || calculateOTEZones(candles, tier1Bias === "BEARISH" ? "BEARISH" : "BULLISH", precision);
+
+  // [แผน 13] Volume Delta & Order Flow Imbalance Approximation
+  const volumeDelta = indicators.volumeDelta || calculateVolumeDelta(candles);
+
+  // [แผน 15] Psychological Round Number & Key Level Gravity Engine
+  const roundLevel = indicators.roundLevel || calculateRoundNumberGravity(currentPrice, symbol, precision);
+
+  // Calculate Trade Setup Levels with Dynamic TP Multiplier, Structural SL & Asset Precision
   const effectiveTPMultiplier = regimeInfo.optimalParams.tpMultiplier || optimizedConfig.tpMultiplier;
   const nearestSupport = indicators.supportLevels[0] || Number((currentPrice - currentATR * 1.5).toFixed(precision));
   const nearestResistance = indicators.resistanceLevels[0] || Number((currentPrice + currentATR * 1.5).toFixed(precision));
 
   let tradeAction: "BUY" | "SELL" | "NO_TRADE" = "NO_TRADE";
+  let structuralSL: StructuralStopLossInfo | undefined;
   let stopLoss = Number((currentPrice - currentATR * 1.2).toFixed(precision));
+  let pendingPrice = currentPrice;
+  let entryZone = { min: Number((currentPrice * 0.998).toFixed(precision)), max: Number((currentPrice * 1.002).toFixed(precision)) };
   let takeProfit1 = Number((currentPrice + currentATR * 1.0).toFixed(precision));
   let takeProfit2 = Number((currentPrice + currentATR * effectiveTPMultiplier).toFixed(precision));
   let riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
 
   if (signal === "STRONG_BUY" || signal === "BUY") {
     tradeAction = "BUY";
-    const slCandidate = Math.min(lastCandle.low, lastEMA50) - currentATR * 0.3;
-    stopLoss = Number(slCandidate.toFixed(precision));
-    const risk = currentPrice - stopLoss;
-    takeProfit1 = Number((currentPrice + risk * 1.0).toFixed(precision));
-    takeProfit2 = Number((currentPrice + risk * effectiveTPMultiplier).toFixed(precision));
+    // [แผน 12] Liquidity Hunt Protection Stop Loss (ซ่อนหลัง Swing Low + Buffer)
+    structuralSL = calculateStructuralStopLoss(candles, "BUY", currentATR, currentPrice, precision);
+    stopLoss = structuralSL.stopLoss;
+
+    // [แผน 11] OTE Zone Entry & Sweet Spot 70.5%
+    pendingPrice = oteZone.sweetSpot || Number(Math.min(currentPrice, lastEMA20 * 1.002).toFixed(precision));
+    entryZone = { min: oteZone.oteMin, max: oteZone.oteMax };
+
+    // [แผน 14] Dynamic Multi-Stage Take Profit
+    const risk = Math.max(pendingPrice - stopLoss, currentATR * 0.8);
+    takeProfit1 = Number((pendingPrice + risk * 1.0).toFixed(precision));
+    takeProfit2 = Number((pendingPrice + risk * effectiveTPMultiplier).toFixed(precision));
     riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
-    const slCandidate = Math.max(lastCandle.high, lastEMA50) + currentATR * 0.3;
-    stopLoss = Number(slCandidate.toFixed(precision));
-    const risk = stopLoss - currentPrice;
-    takeProfit1 = Number((currentPrice - risk * 1.0).toFixed(precision));
-    takeProfit2 = Number((currentPrice - risk * effectiveTPMultiplier).toFixed(precision));
+    // [แผน 12] Liquidity Hunt Protection Stop Loss (ซ่อนหลัง Swing High + Buffer)
+    structuralSL = calculateStructuralStopLoss(candles, "SELL", currentATR, currentPrice, precision);
+    stopLoss = structuralSL.stopLoss;
+
+    // [แผน 11] OTE Zone Entry & Sweet Spot 70.5%
+    pendingPrice = oteZone.sweetSpot || Number(Math.max(currentPrice, lastEMA20 * 0.998).toFixed(precision));
+    entryZone = { min: oteZone.oteMin, max: oteZone.oteMax };
+
+    // [แผน 14] Dynamic Multi-Stage Take Profit
+    const risk = Math.max(stopLoss - pendingPrice, currentATR * 0.8);
+    takeProfit1 = Number((pendingPrice - risk * 1.0).toFixed(precision));
+    takeProfit2 = Number((pendingPrice - risk * effectiveTPMultiplier).toFixed(precision));
     riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
   }
 
-  const pipMultiplier = symbol.includes("JPY") ? 100 : symbol.includes("XAU") ? 10 : 10000;
-  const slPips = Math.round(Math.abs(currentPrice - stopLoss) * pipMultiplier);
-  const tp1Pips = Math.round(Math.abs(takeProfit1 - currentPrice) * pipMultiplier);
-  const tp2Pips = Math.round(Math.abs(takeProfit2 - currentPrice) * pipMultiplier);
+  // [แผน 14] Automated Risk-Free Breakeven Shield
+  const breakevenAdvice = calculateBreakevenRules(
+    tradeAction !== "NO_TRADE" ? pendingPrice : currentPrice,
+    stopLoss,
+    takeProfit1,
+    tradeAction === "SELL" ? "SELL" : "BUY",
+    currentPrice,
+    symbol,
+    precision
+  );
 
-  // 5-Point Confluence Checklist with News Shield
+  const pipMultiplier = symbol.includes("JPY") ? 100 : symbol.includes("XAU") ? 10 : 10000;
+  const slPips = Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier);
+  const tp1Pips = Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
+  const tp2Pips = Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);
+
+  // 6-Point Confluence Checklist with News Shield & Order Flow
   const confluenceChecklist: ConfluenceCheckItem[] = [
     {
       name: `Pillar 1: Trend & Regime (${regimeInfo.title})`,
@@ -302,9 +363,16 @@ export function generateRuleBasedAnalysis(
       note: calendarSafety.freezeReason,
     },
     {
-      name: `Pillar 5: Market Structure & FVGs`,
-      passed: masterConfluence.pillars.smartMoneyStructure.score >= 14,
-      note: masterConfluence.pillars.smartMoneyStructure.status,
+      name: `Pillar 5: Market Structure & OTE Fibonacci Zone`,
+      passed: masterConfluence.pillars.smartMoneyStructure.score >= 14 || oteZone.isPriceInOTE,
+      note: `${masterConfluence.pillars.smartMoneyStructure.status} • ${oteZone.description}`,
+    },
+    {
+      name: `Pillar 6: Volume Delta & Order Flow (${volumeDelta.dominantSide})`,
+      passed: (tradeAction === "BUY" && volumeDelta.buyerVolumePct >= 50) ||
+              (tradeAction === "SELL" && volumeDelta.sellerVolumePct >= 50) ||
+              volumeDelta.isAbsorption,
+      note: volumeDelta.description,
     },
   ];
 
@@ -329,6 +397,10 @@ export function generateRuleBasedAnalysis(
     regimeInfo,
     sessionStatus,
     calendarSafety,
+    oteZone,
+    volumeDelta,
+    breakevenAdvice,
+    roundLevel,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -341,6 +413,9 @@ export function generateRuleBasedAnalysis(
         `Economic Calendar Shield: ${calendarSafety.badgeText}`,
         `Session Timing: ${sessionStatus.sessionBadge.text} (${sessionStatus.thaiTimeStr})`,
         `Live Market Regime: ${regimeInfo.title}`,
+        `OTE Golden Pocket (61.8%-78.6%): ${oteZone.oteMin} - ${oteZone.oteMax} (Sweet Spot: ${oteZone.sweetSpot})`,
+        `Volume Delta: ฝั่งซื้อ ${volumeDelta.buyerVolumePct}% vs ฝั่งขาย ${volumeDelta.sellerVolumePct}% (${volumeDelta.dominantSide})`,
+        `Psychological Round Level: ${roundLevel.nearestMajor} (ห่าง ${roundLevel.distancePips} pips)`,
       ],
     },
     newsSentimentAnalysis: {
@@ -360,19 +435,12 @@ export function generateRuleBasedAnalysis(
     tradeSetup: {
       action: tradeAction,
       orderType: tradeAction === "BUY"
-        ? (currentPrice > lastEMA20 ? "BUY_LIMIT" : "BUY_LIMIT")
+        ? "BUY_LIMIT"
         : tradeAction === "SELL"
-        ? (currentPrice < lastEMA20 ? "SELL_LIMIT" : "SELL_LIMIT")
+        ? "SELL_LIMIT"
         : "WAIT_NO_ORDER",
-      pendingPrice: tradeAction === "BUY"
-        ? Number((Math.min(currentPrice, lastEMA20 * 1.002)).toFixed(precision))
-        : tradeAction === "SELL"
-        ? Number((Math.max(currentPrice, lastEMA20 * 0.998)).toFixed(precision))
-        : currentPrice,
-      entryZone: {
-        min: Number((currentPrice * 0.998).toFixed(precision)),
-        max: Number((currentPrice * 1.002).toFixed(precision)),
-      },
+      pendingPrice,
+      entryZone,
       stopLoss,
       takeProfit1,
       takeProfit2,
@@ -380,13 +448,19 @@ export function generateRuleBasedAnalysis(
       tp1Pips,
       tp2Pips,
       riskRewardRatio,
+      oteZone,
+      structuralSL,
+      breakevenAdvice,
+      roundLevel,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
         balance5k: Math.max(0.01, Number((50 / Math.max(slPips, 10)).toFixed(2))),
         balance10k: Math.max(0.01, Number((100 / Math.max(slPips, 10)).toFixed(2))),
       },
-      invalidationNote: `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`,
+      invalidationNote: structuralSL
+        ? `หากราคาหลุดแนวรับสวิง ${structuralSL.swingRefPrice} (Stop Loss: ${stopLoss}) ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`
+        : `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`,
     },
   };
 }
@@ -574,6 +648,11 @@ Context:
 - Live Market Regime: ${ruleAnalysis.regimeInfo?.title}
 - Confluence Score: ${ruleAnalysis.masterConfluence?.totalScore}% (Grade ${ruleAnalysis.setupGrade})
 - Self-Adaptive Engine: ${adaptiveConfig?.isSelfTuned ? `Active (Win Rate: ${adaptiveConfig.recentWinRate}%, Gating: >=${adaptiveConfig.minScoreThreshold}%)` : "Baseline Institutional"}
+- Institutional OTE Golden Pocket (61.8%-78.6%): ${ruleAnalysis.oteZone?.oteMin} - ${ruleAnalysis.oteZone?.oteMax} (Sweet Spot: ${ruleAnalysis.oteZone?.sweetSpot})
+- Liquidity Shield Stop Loss: ${ruleAnalysis.tradeSetup.stopLoss} (${ruleAnalysis.tradeSetup.structuralSL?.protectionType || "Swing Protected"})
+- Volume Delta Flow: ${ruleAnalysis.volumeDelta?.description} (Buyers ${ruleAnalysis.volumeDelta?.buyerVolumePct}% vs Sellers ${ruleAnalysis.volumeDelta?.sellerVolumePct}%)
+- Breakeven Rule: ${ruleAnalysis.breakevenAdvice?.actionText}
+- Round Number Magnet: ${ruleAnalysis.roundLevel?.nearestMajor} (ห่าง ${ruleAnalysis.roundLevel?.distancePips} pips)
 
 ### CLOSED-LOOP TRADING LESSONS & REINFORCEMENT MEMORY FOR ${symbol}:
 ${lessonsText}
@@ -676,6 +755,28 @@ Respond ONLY with valid JSON matching this schema:
     parsed.regimeInfo = ruleAnalysis.regimeInfo;
     parsed.sessionStatus = ruleAnalysis.sessionStatus;
     parsed.calendarSafety = ruleAnalysis.calendarSafety;
+    parsed.oteZone = ruleAnalysis.oteZone;
+    parsed.volumeDelta = ruleAnalysis.volumeDelta;
+    parsed.breakevenAdvice = ruleAnalysis.breakevenAdvice;
+    parsed.roundLevel = ruleAnalysis.roundLevel;
+
+    if (parsed.tradeSetup) {
+      parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
+      parsed.tradeSetup.structuralSL = ruleAnalysis.tradeSetup.structuralSL;
+      parsed.tradeSetup.breakevenAdvice = ruleAnalysis.tradeSetup.breakevenAdvice;
+      parsed.tradeSetup.roundLevel = ruleAnalysis.tradeSetup.roundLevel;
+      if (ruleAnalysis.tradeSetup.structuralSL) {
+        parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
+        parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;
+        parsed.tradeSetup.pendingPrice = ruleAnalysis.tradeSetup.pendingPrice;
+        parsed.tradeSetup.takeProfit1 = ruleAnalysis.tradeSetup.takeProfit1;
+        parsed.tradeSetup.takeProfit2 = ruleAnalysis.tradeSetup.takeProfit2;
+        parsed.tradeSetup.slPips = ruleAnalysis.tradeSetup.slPips;
+        parsed.tradeSetup.tp1Pips = ruleAnalysis.tradeSetup.tp1Pips;
+        parsed.tradeSetup.tp2Pips = ruleAnalysis.tradeSetup.tp2Pips;
+        parsed.tradeSetup.riskRewardRatio = ruleAnalysis.tradeSetup.riskRewardRatio;
+      }
+    }
     return parsed;
   } catch (err) {
     console.error("Gemini analysis error, falling back to calendar-aware rule engine:", err);

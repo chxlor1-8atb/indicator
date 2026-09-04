@@ -97,6 +97,54 @@ export interface SessionORB {
   status: "BREAKOUT_BULL" | "BREAKOUT_BEAR" | "INSIDE_RANGE";
 }
 
+// ─── BATCH 3 (PLANS 11-15) QUANT INTERFACES ───
+export interface OTEZoneInfo {
+  swingHigh: number;
+  swingLow: number;
+  fib618: number;
+  fib705: number;
+  fib786: number;
+  oteMin: number;
+  oteMax: number;
+  sweetSpot: number; // 0.705 Optimal Institutional Entry
+  isPriceInOTE: boolean;
+  bias: "BULLISH" | "BEARISH";
+  description: string;
+}
+
+export interface VolumeDeltaInfo {
+  buyerVolumePct: number; // 0 - 100%
+  sellerVolumePct: number; // 0 - 100%
+  netDelta: number;
+  dominantSide: "BUYERS" | "SELLERS" | "BALANCED";
+  isAbsorption: boolean;
+  description: string;
+}
+
+export interface BreakevenAdvice {
+  targetTP1: number;
+  breakevenPrice: number;
+  bufferPips: number;
+  status: "PENDING_TP1" | "READY_FOR_BREAKEVEN" | "RISK_FREE";
+  actionText: string;
+}
+
+export interface RoundLevelInfo {
+  nearestMajor: number;
+  nearestMinor: number;
+  distancePips: number;
+  isMagnetZone: boolean;
+  gravityEffect: "ATTRACTING" | "REPELLING" | "NEUTRAL";
+  description: string;
+}
+
+export interface StructuralStopLossInfo {
+  stopLoss: number;
+  swingRefPrice: number;
+  liquidityBuffer: number;
+  protectionType: "SWING_LOW_BUFFER" | "SWING_HIGH_BUFFER" | "VOLATILITY_ATR";
+}
+
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
   grade: "A+" | "A" | "B" | "C (Wait)";
@@ -208,6 +256,9 @@ export interface IndicatorData {
   intraBarMomentum?: IntraBarMomentum;
   rolling24h?: Rolling24hRange;
   quadEma?: QuadEmaConfluence;
+  oteZone?: OTEZoneInfo;
+  volumeDelta?: VolumeDeltaInfo;
+  roundLevel?: RoundLevelInfo;
 }
 
 export interface NewsItem {
@@ -300,6 +351,10 @@ export interface AnalysisResult {
   regimeInfo?: MarketRegimeInfo;
   sessionStatus?: SessionStatus;
   calendarSafety?: CalendarSafetyStatus;
+  oteZone?: OTEZoneInfo;
+  volumeDelta?: VolumeDeltaInfo;
+  breakevenAdvice?: BreakevenAdvice;
+  roundLevel?: RoundLevelInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -337,6 +392,10 @@ export interface AnalysisResult {
     tp1Pips: number;
     tp2Pips: number;
     riskRewardRatio: string;
+    oteZone?: OTEZoneInfo;
+    structuralSL?: StructuralStopLossInfo;
+    breakevenAdvice?: BreakevenAdvice;
+    roundLevel?: RoundLevelInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
