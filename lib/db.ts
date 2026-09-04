@@ -104,6 +104,44 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
       CREATE INDEX IF NOT EXISTS idx_market_candles_lookup ON market_candles (symbol, timeframe, time DESC)
     `);
 
+    // 4. Table for Closed-Loop Outcome Attribution & Self-Learning Lessons
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS signal_feedback_lessons (
+        id SERIAL PRIMARY KEY,
+        signal_id INT,
+        symbol VARCHAR(20) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL,
+        outcome VARCHAR(20) NOT NULL,
+        pnl_pips NUMERIC(10, 2) DEFAULT 0,
+        confluence_score INT DEFAULT 0,
+        setup_grade VARCHAR(15),
+        lesson_summary TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_feedback_lessons_sym_time ON signal_feedback_lessons (symbol, created_at DESC)
+    `);
+
+    // 5. Table for Adaptive Parameter & Dynamic Weight Storage
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS market_adaptive_params (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL,
+        trend_weight INT DEFAULT 25,
+        momentum_weight INT DEFAULT 20,
+        squeeze_weight INT DEFAULT 20,
+        volume_weight INT DEFAULT 15,
+        smc_weight INT DEFAULT 20,
+        min_confluence_threshold INT DEFAULT 70,
+        recent_win_rate NUMERIC(5, 2) DEFAULT 80.0,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        CONSTRAINT uq_adaptive_sym_tf UNIQUE (symbol, timeframe)
+      )
+    `);
+
     return { success: true, message: "Neon database initialized successfully." };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -251,6 +289,7 @@ export async function getSignalsAndStats(limit = 15): Promise<{ signals: DbAiSig
 
 /**
  * Checks open ACTIVE signals against current live price and resolves them if TP or SL is touched.
+ * Closed-Loop Attribution: Records an educational lesson into signal_feedback_lessons on every resolution.
  */
 export async function resolveOpenSignals(symbol: string, currentPrice: number) {
   if (!sql || currentPrice <= 0) return;
@@ -268,9 +307,15 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
       const isGold = symbol.toUpperCase().includes("XAU") || symbol.toUpperCase() === "GOLD";
       const pipMultiplier = isGold ? 10 : 10000;
 
+      let outcome: "HIT_TP2" | "HIT_TP1" | "HIT_SL" | null = null;
+      let pips = 0;
+      let lesson = "";
+
       // Check Take Profit 2 (Maximum Win)
       if ((isBuy && currentPrice >= sig.take_profit2) || (!isBuy && currentPrice <= sig.take_profit2)) {
-        const pips = Math.abs(sig.take_profit2 - sig.entry_price) * pipMultiplier;
+        outcome = "HIT_TP2";
+        pips = Math.abs(sig.take_profit2 - sig.entry_price) * pipMultiplier;
+        lesson = `🎯 ชนะเป้าสูงสุด TP2 (+${pips.toFixed(1)} pips): สัญญาณ ${sig.action} สอดคล้องกับแนวโน้มหลักอย่างสมบูรณ์ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade})`;
         updates.push(
           sql.query(
             `UPDATE ai_signals SET status = 'HIT_TP2', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
@@ -280,7 +325,9 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
       }
       // Check Take Profit 1 (Target 1 Win)
       else if ((isBuy && currentPrice >= sig.take_profit1) || (!isBuy && currentPrice <= sig.take_profit1)) {
-        const pips = Math.abs(sig.take_profit1 - sig.entry_price) * pipMultiplier;
+        outcome = "HIT_TP1";
+        pips = Math.abs(sig.take_profit1 - sig.entry_price) * pipMultiplier;
+        lesson = `✅ ชนะเป้าแรก TP1 (+${pips.toFixed(1)} pips): ราคาไปถึงเป้าหมายแรกได้ตามโครงสร้าง (Confluence ${sig.confluence_score}%) ก่อนเกิดการพักตัว`;
         updates.push(
           sql.query(
             `UPDATE ai_signals SET status = 'HIT_TP1', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
@@ -290,11 +337,24 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
       }
       // Check Stop Loss
       else if ((isBuy && currentPrice <= sig.stop_loss) || (!isBuy && currentPrice >= sig.stop_loss)) {
-        const pips = -Math.abs(sig.entry_price - sig.stop_loss) * pipMultiplier;
+        outcome = "HIT_SL";
+        pips = -Math.abs(sig.entry_price - sig.stop_loss) * pipMultiplier;
+        lesson = `⚠️ ชนจุดตัดขาดทุน SL (${pips.toFixed(1)} pips): เกิดการทะลุหลอกหรือมีแรงกระชากขัดแย้งเทรนด์ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade}) ให้ระวังจุดเข้าในลักษณะนี้`;
         updates.push(
           sql.query(
             `UPDATE ai_signals SET status = 'HIT_SL', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
             [Number(pips.toFixed(1)), sig.id]
+          )
+        );
+      }
+
+      // Record Attribution Lesson for Closed-Loop Learning
+      if (outcome && lesson) {
+        updates.push(
+          sql.query(
+            `INSERT INTO signal_feedback_lessons (signal_id, symbol, timeframe, outcome, pnl_pips, confluence_score, setup_grade, lesson_summary)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [sig.id, sig.symbol, sig.timeframe, outcome, Number(pips.toFixed(1)), sig.confluence_score, sig.setup_grade, lesson]
           )
         );
       }
@@ -472,6 +532,185 @@ export async function getCachedCandles(
   } catch (err) {
     console.error(`Error getting cached candles from Neon for ${symbol} (${timeframe}):`, err);
     return [];
+  }
+}
+
+export interface AdaptiveWeightsConfig {
+  trendWeight: number;
+  momentumWeight: number;
+  squeezeWeight: number;
+  volumeWeight: number;
+  smcWeight: number;
+  minScoreThreshold: number;
+  recentWinRate: number;
+  isSelfTuned: boolean;
+}
+
+/**
+ * Retrieves recent closed-loop trading lessons for Gemini AI Few-Shot Contextual Learning.
+ */
+export async function getRecentLessons(symbol: string, limit = 4): Promise<string[]> {
+  if (!sql) return [];
+  try {
+    const rows = (await sql.query(
+      `
+      SELECT outcome, pnl_pips, setup_grade, lesson_summary, created_at
+      FROM signal_feedback_lessons
+      WHERE symbol = $1 OR symbol = 'ALL'
+      ORDER BY created_at DESC
+      LIMIT $2;
+      `,
+      [symbol.toUpperCase(), limit]
+    )) as unknown as Array<{
+      outcome: string;
+      pnl_pips: number;
+      setup_grade: string;
+      lesson_summary: string;
+    }>;
+
+    if (!rows || rows.length === 0) {
+      return [
+        `การเข้าเทรดทองคำ (XAUUSD) และคู่เงินหลัก ให้รอราคาย่อตัวเข้าสู่ Value Zone ใกล้เส้น EMA20/50 ก่อนเสมอ ห้ามไล่ราคาเกิน 2.0 ATR`,
+        `ในตลาดที่มีความผันผวนสูง (High Volatility) สัญญาณเกรด A/A+ ที่มี Confluence Score >= 80% ให้ความแม่นยำสูงสุด`,
+        `หลีกเลี่ยงการเปิดสถานะใหม่ช่วงก่อนข่าวแดง (High-Impact News) ออก 15 นาที เพื่อป้องกัน Slippage และ False Breakout`,
+      ];
+    }
+
+    return rows.map(
+      (r) =>
+        `[${r.outcome === "HIT_TP2" ? "WIN_TP2" : r.outcome === "HIT_TP1" ? "WIN_TP1" : "LOSS_SL"}] ${r.lesson_summary}`
+    );
+  } catch (err) {
+    console.error(`Error getting recent lessons for ${symbol}:`, err);
+    return [];
+  }
+}
+
+/**
+ * Dynamically self-tunes indicator pillar weights and gating thresholds
+ * based on actual live win/loss performance from Neon DB.
+ */
+export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeightsConfig> {
+  const defaults: AdaptiveWeightsConfig = {
+    trendWeight: 25,
+    momentumWeight: 20,
+    squeezeWeight: 20,
+    volumeWeight: 15,
+    smcWeight: 20,
+    minScoreThreshold: 70,
+    recentWinRate: 82.5,
+    isSelfTuned: false,
+  };
+
+  if (!sql) return defaults;
+
+  try {
+    // Check if recently computed within 4 hours
+    const cached = (await sql.query(
+      `SELECT * FROM market_adaptive_params WHERE symbol = $1 AND updated_at >= NOW() - INTERVAL '4 hours' LIMIT 1`,
+      [symbol.toUpperCase()]
+    )) as unknown as Array<{
+      trend_weight: number;
+      momentum_weight: number;
+      squeeze_weight: number;
+      volume_weight: number;
+      smc_weight: number;
+      min_confluence_threshold: number;
+      recent_win_rate: number;
+    }>;
+
+    if (cached && cached.length > 0) {
+      const c = cached[0];
+      return {
+        trendWeight: Number(c.trend_weight) || 25,
+        momentumWeight: Number(c.momentum_weight) || 20,
+        squeezeWeight: Number(c.squeeze_weight) || 20,
+        volumeWeight: Number(c.volume_weight) || 15,
+        smcWeight: Number(c.smc_weight) || 20,
+        minScoreThreshold: Number(c.min_confluence_threshold) || 70,
+        recentWinRate: Number(c.recent_win_rate) || 82.5,
+        isSelfTuned: true,
+      };
+    }
+
+    // Query historical outcomes for this symbol
+    const stats = (await sql.query(
+      `
+      SELECT 
+        COUNT(*)::int as total,
+        COUNT(CASE WHEN outcome IN ('HIT_TP1', 'HIT_TP2') THEN 1 END)::int as wins,
+        COUNT(CASE WHEN outcome = 'HIT_SL' THEN 1 END)::int as losses
+      FROM signal_feedback_lessons
+      WHERE symbol = $1 OR symbol = 'ALL'
+      `,
+      [symbol.toUpperCase()]
+    )) as unknown as Array<{ total: number; wins: number; losses: number }>;
+
+    const total = stats[0]?.total || 0;
+    const wins = stats[0]?.wins || 0;
+    const winRate = total >= 4 ? Number(((wins / total) * 100).toFixed(1)) : 82.5;
+
+    let trend = 25;
+    let momentum = 20;
+    let squeeze = 20;
+    let volume = 15;
+    let smc = 20;
+    let minThreshold = 70;
+    let isSelfTuned = false;
+
+    if (total >= 4) {
+      isSelfTuned = true;
+      if (winRate < 75) {
+        // Tough/choppy regime -> Strengthen trend following and institutional levels, tighten entry gating
+        trend = 30;
+        momentum = 15;
+        squeeze = 15;
+        volume = 15;
+        smc = 25;
+        minThreshold = 80; // Only allow Grade A/A+ setups
+      } else if (winRate >= 85) {
+        // High trend alignment -> Reward momentum continuation
+        trend = 25;
+        momentum = 25;
+        squeeze = 15;
+        volume = 15;
+        smc = 20;
+        minThreshold = 68;
+      }
+    }
+
+    // Cache to market_adaptive_params
+    await sql.query(
+      `
+      INSERT INTO market_adaptive_params (
+        symbol, timeframe, trend_weight, momentum_weight, squeeze_weight, volume_weight, smc_weight, min_confluence_threshold, recent_win_rate, updated_at
+      ) VALUES ($1, '1h', $2, $3, $4, $5, $6, $7, $8, NOW())
+      ON CONFLICT (symbol, timeframe) DO UPDATE SET
+        trend_weight = EXCLUDED.trend_weight,
+        momentum_weight = EXCLUDED.momentum_weight,
+        squeeze_weight = EXCLUDED.squeeze_weight,
+        volume_weight = EXCLUDED.volume_weight,
+        smc_weight = EXCLUDED.smc_weight,
+        min_confluence_threshold = EXCLUDED.min_confluence_threshold,
+        recent_win_rate = EXCLUDED.recent_win_rate,
+        updated_at = NOW()
+      `,
+      [symbol.toUpperCase(), trend, momentum, squeeze, volume, smc, minThreshold, winRate]
+    );
+
+    return {
+      trendWeight: trend,
+      momentumWeight: momentum,
+      squeezeWeight: squeeze,
+      volumeWeight: volume,
+      smcWeight: smc,
+      minScoreThreshold: minThreshold,
+      recentWinRate: winRate,
+      isSelfTuned,
+    };
+  } catch (err) {
+    console.error(`Error calculating adaptive weights for ${symbol}:`, err);
+    return defaults;
   }
 }
 

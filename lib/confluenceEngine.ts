@@ -1,21 +1,38 @@
 import { Candle, IndicatorData, MasterConfluenceScore } from "./types";
 
+export interface AdaptivePillarWeightsInput {
+  trendWeight?: number;
+  momentumWeight?: number;
+  squeezeWeight?: number;
+  volumeWeight?: number;
+  smcWeight?: number;
+  isSelfTuned?: boolean;
+}
+
 export function evaluateMasterConfluence(
   candles: Candle[],
   indicators: IndicatorData,
-  bias: "BULLISH" | "BEARISH" | "NEUTRAL"
+  bias: "BULLISH" | "BEARISH" | "NEUTRAL",
+  adaptiveWeights?: AdaptivePillarWeightsInput
 ): MasterConfluenceScore {
+  const wTrend = adaptiveWeights?.trendWeight ?? 25;
+  const wMom = adaptiveWeights?.momentumWeight ?? 20;
+  const wSq = adaptiveWeights?.squeezeWeight ?? 20;
+  const wVol = adaptiveWeights?.volumeWeight ?? 15;
+  const wSmc = adaptiveWeights?.smcWeight ?? 20;
+  const isSelfTuned = Boolean(adaptiveWeights?.isSelfTuned);
+
   const len = candles.length;
   if (len < 20) {
     return {
       totalScore: 50,
       grade: "C (Wait)",
       pillars: {
-        trendRegime: { score: 12, max: 25, status: "Insufficient history", adx: 20, superTrend: "UP" },
-        momentumCycles: { score: 10, max: 20, status: "Neutral", rsi: 50, stochRsiK: 50 },
-        volatilitySqueeze: { score: 10, max: 20, status: "Normal", isSqueezing: false },
-        volumeFlow: { score: 8, max: 15, status: "Average", obvTrend: "UP", hasVolumeSpike: false },
-        smartMoneyStructure: { score: 10, max: 20, status: "Neutral", fvgCount: 0, structure: "Consolidation" },
+        trendRegime: { score: 12, max: wTrend, status: "Insufficient history", adx: 20, superTrend: "UP" },
+        momentumCycles: { score: 10, max: wMom, status: "Neutral", rsi: 50, stochRsiK: 50 },
+        volatilitySqueeze: { score: 10, max: wSq, status: "Normal", isSqueezing: false },
+        volumeFlow: { score: 8, max: wVol, status: "Average", obvTrend: "UP", hasVolumeSpike: false },
+        smartMoneyStructure: { score: 10, max: wSmc, status: "Neutral", fvgCount: 0, structure: "Consolidation" },
       },
       verdict: "รอสะสมข้อมูลแท่งเทียนให้ครบถ้วนก่อนยืนยันสัญญาณ",
     };
@@ -117,8 +134,14 @@ export function evaluateMasterConfluence(
     ? `พบ ${relevantFVGs.length} โซน Fair Value Gap (FVG) สภาพคล่องพร้อมหนุนราคา`
     : "โครงสร้างแนวรับ-แนวต้านคมชัด ไม่มี Liquidity Trap";
 
+  const p1Scaled = Math.min(wTrend, Math.round((p1Score / 25) * wTrend));
+  const p2Scaled = Math.min(wMom, Math.round((p2Score / 20) * wMom));
+  const p3Scaled = Math.min(wSq, Math.round((p3Score / 20) * wSq));
+  const p4Scaled = Math.min(wVol, Math.round((p4Score / 15) * wVol));
+  const p5Scaled = Math.min(wSmc, Math.round((p5Score / 20) * wSmc));
+
   // Total Confluence Score
-  const totalScore = Math.min(100, Math.max(20, p1Score + p2Score + p3Score + p4Score + p5Score));
+  const totalScore = Math.min(100, Math.max(20, p1Scaled + p2Scaled + p3Scaled + p4Scaled + p5Scaled));
 
   let grade: MasterConfluenceScore["grade"] = "C (Wait)";
   let verdict = "คะแนนสัญญาณต่ำกว่าเกณฑ์ความปลอดภัย แนะนำให้ WAIT / ถือเงินสด";
@@ -134,15 +157,19 @@ export function evaluateMasterConfluence(
     verdict = "⚖️ สัญญาณเกรด B: มีบางปัจจัยยังก้ำกึ่ง แนะนำคุมความเสี่ยงแบ่งไม้เข้า";
   }
 
+  if (isSelfTuned) {
+    verdict += " (⚡ ปรับค่าน้ำหนักตัวชี้วัดอัตโนมัติตามสถิติผลแพ้ชนะจริงในฐานข้อมูล)";
+  }
+
   return {
     totalScore,
     grade,
     pillars: {
-      trendRegime: { score: p1Score, max: 25, status: p1Status, adx: lastADX, superTrend: stDirection },
-      momentumCycles: { score: p2Score, max: 20, status: p2Status, rsi: lastRSI, stochRsiK: lastStoch.k },
-      volatilitySqueeze: { score: p3Score, max: 20, status: p3Status, isSqueezing },
-      volumeFlow: { score: p4Score, max: 15, status: p4Status, obvTrend, hasVolumeSpike },
-      smartMoneyStructure: { score: p5Score, max: 20, status: p5Status, fvgCount: relevantFVGs.length, structure: "Valid BOS" },
+      trendRegime: { score: p1Scaled, max: wTrend, status: p1Status, adx: lastADX, superTrend: stDirection },
+      momentumCycles: { score: p2Scaled, max: wMom, status: p2Status, rsi: lastRSI, stochRsiK: lastStoch.k },
+      volatilitySqueeze: { score: p3Scaled, max: wSq, status: p3Status, isSqueezing },
+      volumeFlow: { score: p4Scaled, max: wVol, status: p4Status, obvTrend, hasVolumeSpike },
+      smartMoneyStructure: { score: p5Scaled, max: wSmc, status: p5Status, fvgCount: relevantFVGs.length, structure: "Valid BOS" },
     },
     verdict,
   };

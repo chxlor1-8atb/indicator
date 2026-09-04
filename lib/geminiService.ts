@@ -6,13 +6,15 @@ import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
 import { getMarketSessionStatus } from "./sessionEngine";
 import { getNewsSafetyShieldStatus } from "./calendarEngine";
+import { getRecentLessons, getAdaptiveWeights, AdaptiveWeightsConfig } from "./db";
 
 export function generateRuleBasedAnalysis(
   symbol: string,
   timeframe: string,
   candles: Candle[],
   indicators: IndicatorData,
-  news: NewsItem[]
+  news: NewsItem[],
+  adaptiveConfig?: AdaptiveWeightsConfig
 ): AnalysisResult {
   const currentPrice = indicators.currentPrice;
   const lastCandle = candles[candles.length - 1];
@@ -105,8 +107,8 @@ export function generateRuleBasedAnalysis(
     },
   };
 
-  // ─── 5-PILLAR MASTER CONFLUENCE SCORING ───
-  const masterConfluence = evaluateMasterConfluence(candles, indicators, tier1Bias);
+  // ─── 5-PILLAR MASTER CONFLUENCE SCORING WITH ADAPTIVE SELF-TUNING ───
+  const masterConfluence = evaluateMasterConfluence(candles, indicators, tier1Bias, adaptiveConfig);
 
   // News Sentiment calculation
   let sentimentScore = 0;
@@ -124,7 +126,8 @@ export function generateRuleBasedAnalysis(
   if (sentimentScore >= 20) overallSentiment = "BULLISH";
   else if (sentimentScore <= -20) overallSentiment = "BEARISH";
 
-  // ─── DYNAMIC REGIME, SESSION & RED FOLDER SAFETY SYNTHESIS ───
+  // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
+  const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   let signal: AnalysisResult["signal"] = "WAIT";
   let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier));
   let setupGrade: AnalysisResult["setupGrade"] = masterConfluence.grade;
@@ -145,9 +148,9 @@ export function generateRuleBasedAnalysis(
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
-  } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= 70) {
+  } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= minThreshold) {
     signal = (trend === "STRONG_UPTREND" || regimeInfo.regime === "EXPLOSIVE_TREND") && masterConfluence.totalScore >= 85 ? "STRONG_BUY" : "BUY";
-  } else if (tier1Bias === "BEARISH" && inSellValueZone && hasSellTrigger && masterConfluence.totalScore >= 70) {
+  } else if (tier1Bias === "BEARISH" && inSellValueZone && hasSellTrigger && masterConfluence.totalScore >= minThreshold) {
     signal = (trend === "STRONG_DOWNTREND" || regimeInfo.regime === "EXPLOSIVE_TREND") && masterConfluence.totalScore >= 85 ? "STRONG_SELL" : "SELL";
   } else {
     signal = "WAIT";
@@ -314,11 +317,23 @@ export async function analyzeWithGemini(
   customApiKey?: string
 ): Promise<AnalysisResult> {
   const apiKey = customApiKey || process.env.GEMINI_API_KEY;
-  const ruleAnalysis = generateRuleBasedAnalysis(symbol, timeframe, candles, indicators, news);
+
+  // Closed-loop reinforcement: Retrieve dynamic weights and past win/loss lessons
+  const [adaptiveConfig, recentLessons] = await Promise.all([
+    getAdaptiveWeights(symbol).catch(() => undefined),
+    getRecentLessons(symbol, 4).catch(() => []),
+  ]);
+
+  const ruleAnalysis = generateRuleBasedAnalysis(symbol, timeframe, candles, indicators, news, adaptiveConfig);
 
   if (!apiKey) {
     return ruleAnalysis;
   }
+
+  const lessonsText =
+    recentLessons && recentLessons.length > 0
+      ? recentLessons.map((l, i) => `${i + 1}. ${l}`).join("\n")
+      : "1. คอยสังเกตแท่งเทียน Rejection ที่แนวรับ EMA20/50 ก่อนเข้าเทรดเสมอ";
 
   const prompt = `You are a World-Class Quantitative Portfolio Architect & Trading Mentor.
 Your goal is to explain market conditions and trading decisions to beginners who have NEVER traded before in warm, natural, and fluent Thai (ภาษาไทยที่สละสลวย ถูกต้องตามหลักไวยากรณ์ สำนวนธรรมชาติเหมือนรุ่นพี่สอนรุ่นน้อง ไม่แปลตรงตัวแบบหุ่นยนต์).
@@ -331,6 +346,15 @@ Context:
 - Session Timing Advice: ${ruleAnalysis.sessionStatus?.assetSessionAdvice}
 - Live Market Regime: ${ruleAnalysis.regimeInfo?.title}
 - Confluence Score: ${ruleAnalysis.masterConfluence?.totalScore}% (Grade ${ruleAnalysis.setupGrade})
+- Self-Adaptive Engine: ${adaptiveConfig?.isSelfTuned ? `Active (Win Rate: ${adaptiveConfig.recentWinRate}%, Gating: >=${adaptiveConfig.minScoreThreshold}%)` : "Baseline Institutional"}
+
+### CLOSED-LOOP TRADING LESSONS & REINFORCEMENT MEMORY FOR ${symbol}:
+${lessonsText}
+
+SELF-IMPROVING MANDATE FOR AI:
+- Learn from the past outcomes above: DO NOT repeat setups matching historical losses.
+- If recent win rate is lower, advise extra caution and recommend waiting for confirmed institutional confluence.
+- Reinforce high-win setups (e.g. alignment with SuperTrend, optimal London/NY sessions, value zone pullbacks).
 
 ### LIVE FINANCIAL NEWS & SENTIMENT:
 ${news.slice(0, 5).map((n, i) => `${i + 1}. [${n.source}] (${n.sentiment}) ${n.title}`).join("\n")}

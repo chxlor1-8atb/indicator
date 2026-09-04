@@ -47,11 +47,11 @@ export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
   grade: "A+" | "A" | "B" | "C (Wait)";
   pillars: {
-    trendRegime: { score: number; max: 25; status: string; adx: number; superTrend: "UP" | "DOWN" };
-    momentumCycles: { score: number; max: 20; status: string; rsi: number; stochRsiK: number };
-    volatilitySqueeze: { score: number; max: 20; status: string; isSqueezing: boolean };
-    volumeFlow: { score: number; max: 15; status: string; obvTrend: "UP" | "DOWN"; hasVolumeSpike: boolean };
-    smartMoneyStructure: { score: number; max: 20; status: string; fvgCount: number; structure: string };
+    trendRegime: { score: number; max: number; status: string; adx: number; superTrend: "UP" | "DOWN" };
+    momentumCycles: { score: number; max: number; status: string; rsi: number; stochRsiK: number };
+    volatilitySqueeze: { score: number; max: number; status: string; isSqueezing: boolean };
+    volumeFlow: { score: number; max: number; status: string; obvTrend: "UP" | "DOWN"; hasVolumeSpike: boolean };
+    smartMoneyStructure: { score: number; max: number; status: string; fvgCount: number; structure: string };
   };
   verdict: string;
 }
