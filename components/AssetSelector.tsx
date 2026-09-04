@@ -110,7 +110,7 @@ export default function AssetSelector({
               className="flex items-center justify-between gap-2 px-3 py-1.5 bg-surface-50 hover:bg-slate-800/80 border border-slate-700/80 rounded-lg text-xs font-semibold text-white transition-colors min-w-[210px]"
             >
               <div className="flex items-center gap-2">
-                <span className="font-mono text-brand-blue font-bold">{selectedAsset}</span>
+                <span className="font-mono text-zinc-100 font-bold">{selectedAsset}</span>
                 <span className="text-slate-400 truncate max-w-[120px] font-normal">
                   {currentAssetInfo.name.split("(")[0]}
                 </span>
@@ -130,7 +130,7 @@ export default function AssetSelector({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     autoFocus
-                    className="w-full pl-8 pr-3 py-1.5 bg-surface-50 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-blue"
+                    className="w-full pl-8 pr-3 py-1.5 bg-surface-50 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-zinc-500"
                   />
                 </form>
 
@@ -148,7 +148,7 @@ export default function AssetSelector({
                             setIsOpen(false);
                             setSearchQuery("");
                           }}
-                          className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 rounded bg-brand-blue/20 text-brand-blue hover:bg-brand-blue/30 text-xs font-semibold"
+                          className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700 border border-zinc-700 text-xs font-semibold"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>Load & Analyze &quot;{searchQuery.toUpperCase()}&quot;</span>
@@ -166,7 +166,7 @@ export default function AssetSelector({
                         }}
                         className={`w-full flex items-center justify-between p-2 rounded-lg text-left text-xs transition-colors ${
                           selectedAsset === asset.symbol
-                            ? "bg-blue-500/10 text-brand-blue font-bold border border-blue-500/20"
+                            ? "bg-zinc-700/60 text-zinc-100 font-bold border border-zinc-600/50"
                             : "text-slate-300 hover:bg-surface-50 hover:text-white"
                         }`}
                       >
@@ -174,7 +174,7 @@ export default function AssetSelector({
                           <span className="font-mono font-bold block">{asset.symbol}</span>
                           <span className="text-[10px] text-slate-500 font-normal">{asset.name}</span>
                         </div>
-                        {selectedAsset === asset.symbol && <Check className="w-4 h-4 text-brand-blue" />}
+                        {selectedAsset === asset.symbol && <Check className="w-4 h-4 text-zinc-200" />}
                       </button>
                     ))
                   )}
@@ -216,7 +216,7 @@ export default function AssetSelector({
                 onClick={() => onSelectTimeframe(tf)}
                 className={`px-2.5 py-1 rounded-md text-xs font-semibold font-mono transition-all ${
                   selectedTimeframe === tf
-                    ? "bg-brand-blue text-white shadow-sm"
+                    ? "bg-zinc-700 text-white shadow-sm border border-zinc-600/50"
                     : "text-slate-400 hover:text-white"
                 }`}
               >

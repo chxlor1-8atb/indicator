@@ -458,10 +458,10 @@ export default function AnalysisCard({
 
       {/* 4. 🧠 LIVE MARKET REGIME & MOMENTUM RADAR */}
       {reg && (
-        <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 via-surface-50 to-indigo-950/40 border border-indigo-500/40 space-y-3">
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+              <div className="p-1.5 rounded-lg bg-zinc-800 text-zinc-200 border border-zinc-700">
                 <Radio className="w-4 h-4 animate-pulse" />
               </div>
               <div>
@@ -475,35 +475,35 @@ export default function AnalysisCard({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 bg-surface-100/90 px-3 py-1.5 rounded-lg border border-slate-700 text-xs font-mono">
+            <div className="flex items-center gap-2 bg-surface-50 px-3 py-1.5 rounded-lg border border-slate-700 text-xs font-mono">
               <span className="text-slate-400 text-[11px]">เป้า Win Rate สภาวะนี้:</span>
               <strong className="text-emerald-400">{reg.targetedWinRate}</strong>
             </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-            <div className="p-2 rounded-lg bg-surface-100/70 border border-slate-800">
+            <div className="p-2 rounded-lg bg-surface-50/80 border border-slate-800">
               <span className="text-[10px] text-slate-400 block">ADX Strength</span>
               <span className={`text-xs font-mono font-bold ${reg.adxValue >= 24 ? "text-emerald-400" : "text-amber-400"}`}>
                 {reg.adxValue} ({reg.adxValue >= 24 ? "Trending" : "Ranging"})
               </span>
             </div>
 
-            <div className="p-2 rounded-lg bg-surface-100/70 border border-slate-800">
+            <div className="p-2 rounded-lg bg-surface-50/80 border border-slate-800">
               <span className="text-[10px] text-slate-400 block">Bollinger Width</span>
               <span className="text-xs font-mono font-bold text-sky-400">
                 {reg.bandwidthValue}%
               </span>
             </div>
 
-            <div className="p-2 rounded-lg bg-surface-100/70 border border-slate-800">
+            <div className="p-2 rounded-lg bg-surface-50/80 border border-slate-800">
               <span className="text-[10px] text-slate-400 block">Adaptive Ribbon</span>
               <span className="text-xs font-mono font-bold text-amber-300">
                 EMA {reg.optimalParams.emaFast}/{reg.optimalParams.emaSlow}
               </span>
             </div>
 
-            <div className="p-2 rounded-lg bg-surface-100/70 border border-slate-800">
+            <div className="p-2 rounded-lg bg-surface-50/80 border border-slate-800">
               <span className="text-[10px] text-slate-400 block">Optimal R:R Ratio</span>
               <span className="text-xs font-mono font-bold text-emerald-300">
                 1 : {reg.optimalParams.tpMultiplier.toFixed(1)}
@@ -515,10 +515,10 @@ export default function AnalysisCard({
 
       {/* 5. 🏛️ 5-Pillar Master Confluence Suite */}
       {mc && (
-        <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-950/25 via-surface-50 to-slate-900/50 border border-indigo-500/30 space-y-3.5">
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+              <div className="p-1.5 rounded-lg bg-zinc-800 text-zinc-200 border border-zinc-700">
                 <Gauge className="w-4 h-4" />
               </div>
               <div>
@@ -532,7 +532,7 @@ export default function AnalysisCard({
               </div>
             </div>
 
-            <div className="text-xs font-bold px-3 py-1 rounded-lg bg-surface-100 border border-slate-700 text-indigo-300">
+            <div className="text-xs font-bold px-3 py-1 rounded-lg bg-surface-50 border border-slate-700 text-zinc-200">
               {mc.verdict}
             </div>
           </div>

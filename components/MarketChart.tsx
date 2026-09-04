@@ -70,7 +70,7 @@ export default function MarketChart({
       const mainHeight = height - padding.top - padding.bottom - (showRSI ? rsiHeight + 15 : 0);
 
       // Clear background cleanly without buffer reset
-      ctx.fillStyle = "#0f121a";
+      ctx.fillStyle = "#161618";
       ctx.fillRect(0, 0, width, height);
 
     // Determine min/max price
@@ -99,7 +99,7 @@ export default function MarketChart({
     const getX = (idx: number) => padding.left + idx * spacing + spacing / 2;
 
     // Draw Price Grid Lines
-    ctx.strokeStyle = "#1e222d";
+    ctx.strokeStyle = "#242428";
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
 
@@ -112,7 +112,7 @@ export default function MarketChart({
       ctx.lineTo(width - padding.right, y);
       ctx.stroke();
 
-      ctx.fillStyle = "#64748b";
+      ctx.fillStyle = "#71717a";
       ctx.font = "10px monospace";
       ctx.textAlign = "left";
       ctx.fillText(p.toFixed(2), width - padding.right + 8, y + 3);
@@ -334,7 +334,7 @@ export default function MarketChart({
     if (showRSI) {
       const rsiTop = padding.top + mainHeight + 15;
 
-      ctx.strokeStyle = "#1e222d";
+      ctx.strokeStyle = "#242428";
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(padding.left, rsiTop - 8);
@@ -345,14 +345,14 @@ export default function MarketChart({
 
       [70, 50, 30].forEach((level) => {
         const y = getRsiY(level);
-        ctx.strokeStyle = level === 50 ? "#1e222d" : "#334155";
+        ctx.strokeStyle = level === 50 ? "#242428" : "#36363d";
         ctx.setLineDash([3, 3]);
         ctx.beginPath();
         ctx.moveTo(padding.left, y);
         ctx.lineTo(width - padding.right, y);
         ctx.stroke();
 
-        ctx.fillStyle = "#64748b";
+        ctx.fillStyle = "#71717a";
         ctx.font = "9px monospace";
         ctx.fillText(level.toString(), width - padding.right + 8, y + 3);
       });
@@ -571,7 +571,7 @@ export default function MarketChart({
       </div>
 
       {/* Canvas chart */}
-      <div className="relative w-full p-2 bg-[#0f121a]">
+      <div className="relative w-full p-2 bg-surface-200">
         <canvas
           ref={canvasRef}
           onMouseMove={handleMouseMove}

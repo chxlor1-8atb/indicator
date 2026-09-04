@@ -17,7 +17,7 @@ const MarketChart = dynamic(() => import("@/components/MarketChart"), {
   loading: () => (
     <div className="bg-surface-100 border border-slate-800 rounded-2xl p-6 min-h-[440px] flex items-center justify-center text-center">
       <div className="space-y-2">
-        <div className="w-8 h-8 border-2 border-brand-blue border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <div className="w-8 h-8 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
         <p className="text-xs text-slate-400">Loading interactive candlestick chart...</p>
       </div>
     </div>

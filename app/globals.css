@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --background: #0b0d13;
-  --foreground: #f1f5f9;
+  --background: #111113;
+  --foreground: #f4f4f5;
 }
 
 body {
@@ -20,24 +20,28 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0f121a;
+  background: #161618;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2e39;
+  background: #2b2b30;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #363c4e;
+  background: #3e3e46;
 }
 
 .glow-green {
-  box-shadow: 0 0 15px rgba(8, 153, 129, 0.25);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
 }
 
 .glow-red {
-  box-shadow: 0 0 15px rgba(242, 54, 69, 0.25);
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
 }
 
 .glow-blue {
-  box-shadow: 0 0 15px rgba(41, 98, 255, 0.25);
+  box-shadow: 0 0 15px rgba(113, 113, 122, 0.25);
+}
+
+.glow-grey {
+  box-shadow: 0 0 15px rgba(161, 161, 170, 0.15);
 }
