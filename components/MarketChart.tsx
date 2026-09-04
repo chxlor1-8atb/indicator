@@ -216,38 +216,131 @@ export default function MarketChart({
       ctx.setLineDash([]);
     }
 
-    // ─── 2. Draw Support & Resistance Zones ───
+    // ─── 2. Draw Support & Resistance Zones (แนวรับ-แนวต้าน พร้อมระบบป้องกันข้อความซ้อนทับ) ───
     if (showSR) {
+      // 1. วาดเส้นประแนวนอนพาดยาวตลอดหน้ากราฟ
       indicators.supportLevels.forEach((sup) => {
         const y = getY(sup);
-        ctx.strokeStyle = "rgba(8, 153, 129, 0.6)";
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.7)";
         ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 4]);
         ctx.beginPath();
         ctx.moveTo(padding.left, y);
         ctx.lineTo(width - padding.right, y);
         ctx.stroke();
-
-        ctx.fillStyle = "#089981";
-        ctx.font = "bold 9px sans-serif";
-        ctx.fillText(`SUP: ${sup}`, padding.left + 8, y - 4);
       });
 
       indicators.resistanceLevels.forEach((res) => {
         const y = getY(res);
-        ctx.strokeStyle = "rgba(242, 54, 69, 0.6)";
+        ctx.strokeStyle = "rgba(244, 63, 94, 0.7)";
         ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 4]);
         ctx.beginPath();
         ctx.moveTo(padding.left, y);
         ctx.lineTo(width - padding.right, y);
         ctx.stroke();
-
-        ctx.fillStyle = "#f23645";
-        ctx.font = "bold 9px sans-serif";
-        ctx.fillText(`RES: ${res}`, padding.left + 8, y - 4);
       });
       ctx.setLineDash([]);
+
+      // 2. จัดรูปแบบตัวเลขทศนิยมให้สะอาดตา (ไม่แสดงทศนิยมยาวรกรุงรัง)
+      const formatSRPrice = (p: number) => {
+        if (p >= 1000) return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (p >= 1) return p.toFixed(2);
+        return p.toFixed(4);
+      };
+
+      interface SRBadge {
+        type: "RES" | "SUP";
+        price: number;
+        lineY: number;
+        badgeY: number;
+        badgeX: number;
+        text: string;
+        bgColor: string;
+        borderColor: string;
+        dotColor: string;
+        textColor: string;
+      }
+
+      const badges: SRBadge[] = [];
+
+      indicators.resistanceLevels.forEach((res) => {
+        const y = getY(res);
+        badges.push({
+          type: "RES",
+          price: res,
+          lineY: y,
+          badgeY: y - 16,
+          badgeX: padding.left + 8,
+          text: `แนวต้าน RES: ${formatSRPrice(res)}`,
+          bgColor: "rgba(24, 24, 27, 0.94)",
+          borderColor: "rgba(244, 63, 94, 0.7)",
+          dotColor: "#f43f5e",
+          textColor: "#fca5a5",
+        });
+      });
+
+      indicators.supportLevels.forEach((sup) => {
+        const y = getY(sup);
+        badges.push({
+          type: "SUP",
+          price: sup,
+          lineY: y,
+          badgeY: y + 2,
+          badgeX: padding.left + 8,
+          text: `แนวรับ SUP: ${formatSRPrice(sup)}`,
+          bgColor: "rgba(24, 24, 27, 0.94)",
+          borderColor: "rgba(16, 185, 129, 0.7)",
+          dotColor: "#10b981",
+          textColor: "#86efac",
+        });
+      });
+
+      // จัดเรียงป้ายตามพิกัดแนวตั้งบนลงล่าง
+      badges.sort((a, b) => a.badgeY - b.badgeY);
+
+      // Smart Anti-Collision: ตรวจจับระยะห่าง หากป้ายใกล้กันเกินไปจะขยับลงอย่างน้อย 18px ป้องกันตัวหนังสือซ้อนกัน 100%
+      for (let i = 1; i < badges.length; i++) {
+        const prev = badges[i - 1];
+        const curr = badges[i];
+        if (curr.badgeY - prev.badgeY < 18) {
+          curr.badgeY = prev.badgeY + 18;
+        }
+      }
+
+      // วาดป้ายข้อความพร้อมพื้นหลัง Pill สวยงาม ชัดเจน
+      ctx.font = "bold 9.5px sans-serif";
+      ctx.textAlign = "left";
+
+      badges.forEach((b) => {
+        const clampedY = Math.max(padding.top + 2, Math.min(padding.top + mainHeight - 16, b.badgeY));
+        const textMetrics = ctx.measureText(b.text);
+        const badgeWidth = textMetrics.width + 16;
+        const badgeHeight = 15;
+
+        // วาดกล่องพื้นหลังป้ายมน (Pill Badge)
+        ctx.fillStyle = b.bgColor;
+        ctx.strokeStyle = b.borderColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(b.badgeX, clampedY, badgeWidth, badgeHeight, 3);
+        } else {
+          ctx.rect(b.badgeX, clampedY, badgeWidth, badgeHeight);
+        }
+        ctx.fill();
+        ctx.stroke();
+
+        // จุดกลมระบุสี
+        ctx.fillStyle = b.dotColor;
+        ctx.beginPath();
+        ctx.arc(b.badgeX + 6.5, clampedY + badgeHeight / 2, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // ข้อความ
+        ctx.fillStyle = b.textColor;
+        ctx.fillText(b.text, b.badgeX + 13, clampedY + 11);
+      });
     }
 
     // ─── 3. Draw Volume Bars ───
@@ -554,11 +647,12 @@ export default function MarketChart({
 
       {/* Chart Control Toolbar */}
       <div className="px-4 py-2 border-b border-slate-800/80 bg-surface-200/50 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Indicator Suite Toggles (SuperTrend, Bollinger, EMA Ribbon, S/R) */}
           <div className="flex flex-wrap items-center gap-1">
             <button
               onClick={() => setShowSuperTrend(!showSuperTrend)}
+              title="SuperTrend: เส้นเขียว=เทรนด์ขาขึ้น, เส้นแดง=เทรนด์ขาลง"
               className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
                 showSuperTrend ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "text-slate-500 hover:text-slate-300"
               }`}
@@ -567,6 +661,7 @@ export default function MarketChart({
             </button>
             <button
               onClick={() => setShowBollinger(!showBollinger)}
+              title="Bollinger Bands: กรอบความผันผวนราคา"
               className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
                 showBollinger ? "bg-sky-500/20 text-sky-300 border border-sky-500/40" : "text-slate-500 hover:text-slate-300"
               }`}
@@ -575,6 +670,7 @@ export default function MarketChart({
             </button>
             <button
               onClick={() => setShowEMA(!showEMA)}
+              title="EMA Ribbon: เส้นค่าเฉลี่ยแนวโน้มราคา"
               className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-all ${
                 showEMA ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300"
               }`}
@@ -583,12 +679,25 @@ export default function MarketChart({
             </button>
             <button
               onClick={() => setShowSR(!showSR)}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
-                showSR ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" : "text-slate-500 hover:text-slate-300"
+              title="Support & Resistance: เส้นประเขียว=แนวรับ, เส้นประแดง=แนวต้าน"
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                showSR ? "bg-purple-500/20 text-purple-300 border border-purple-500/40" : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              S/R Zones
+              แนวรับ-ต้าน (S/R)
             </button>
+          </div>
+
+          {/* Mini Legend Guide (คำอธิบายสีเส้น) */}
+          <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-700/60 text-[10.5px] font-medium">
+            <span className="flex items-center gap-1 text-emerald-400">
+              <span className="w-2 h-0.5 bg-emerald-400 inline-block border-t border-dashed border-emerald-400"></span>
+              <span>เขียว = แนวรับ (SUP)</span>
+            </span>
+            <span className="flex items-center gap-1 text-rose-400">
+              <span className="w-2 h-0.5 bg-rose-400 inline-block border-t border-dashed border-rose-400"></span>
+              <span>แดง = แนวต้าน (RES)</span>
+            </span>
           </div>
         </div>
 
