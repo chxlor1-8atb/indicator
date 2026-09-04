@@ -140,7 +140,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
       )}
 
       {/* Content Feed */}
-      <div className="mt-3 space-y-2.5 overflow-y-auto flex-1 max-h-[520px] pr-1">
+      <div className="mt-3 space-y-2.5 overflow-y-auto flex-1 max-h-[520px] lg:max-h-[calc(100vh-220px)] pr-1">
         {viewMode === "CALENDAR" ? (
           /* Economic Calendar View */
           calendarEvents.map((evt) => {

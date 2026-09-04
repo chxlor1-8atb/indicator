@@ -31,6 +31,39 @@ export default function MarketChart({
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(0);
+
+  // Dynamic responsive ResizeObserver to seamlessly adapt canvas to full screen & ultrawide monitors
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+
+    updateWidth();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 0) {
+            setContainerWidth(Math.round(entry.contentRect.width));
+          }
+        }
+      });
+      ro.observe(container);
+    }
+
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, []);
 
   const emaFastLabel = optimizedConfig ? `EMA ${optimizedConfig.emaFast}` : "EMA 20";
   const emaSlowLabel = optimizedConfig ? `EMA ${optimizedConfig.emaSlow}` : "EMA 50";
@@ -48,8 +81,9 @@ export default function MarketChart({
 
       // High DPI - only resize buffer if dimensions actually changed
       const dpr = window.devicePixelRatio || 1;
-      const width = canvas.parentElement?.clientWidth || 800;
-      const height = showRSI ? 490 : 390;
+      const width = canvas.parentElement?.clientWidth || containerWidth || 800;
+      const baseHeight = width > 1400 ? 530 : width > 800 ? 490 : 420;
+      const height = showRSI ? baseHeight : baseHeight - 90;
 
       const targetW = Math.round(width * dpr);
       const targetH = Math.round(height * dpr);
@@ -418,7 +452,7 @@ export default function MarketChart({
 
   animId = requestAnimationFrame(render);
   return () => cancelAnimationFrame(animId);
-}, [candles, indicators, showSuperTrend, showBollinger, showEMA, showSR, showRSI, hoverIndex, mousePos, optimizedConfig]);
+}, [candles, indicators, showSuperTrend, showBollinger, showEMA, showSR, showRSI, hoverIndex, mousePos, optimizedConfig, containerWidth]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;

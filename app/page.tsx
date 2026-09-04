@@ -282,7 +282,7 @@ export default function DashboardPage() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 space-y-5">
+      <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-4 lg:py-6 space-y-4 lg:space-y-6">
         {/* Asset & Timeframe Bar */}
         <AssetSelector
           selectedAsset={selectedAsset}
@@ -295,10 +295,10 @@ export default function DashboardPage() {
           priceChangePercent={indicators.priceChangePercent24h}
         />
 
-        {/* 2-Column Grid Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          {/* Left Column (8 cols): Chart & AI Analysis */}
-          <div className="lg:col-span-8 space-y-5">
+        {/* 2-Column Responsive Grid Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 2xl:grid-cols-12 gap-4 lg:gap-6 w-full items-start">
+          {/* Left Column: Chart & AI Analysis & Signal Journal (8 cols on lg, 9 cols on 2xl) */}
+          <div className="lg:col-span-8 2xl:col-span-9 space-y-4 lg:space-y-6 min-w-0">
             {/* Candlestick & Indicator Chart */}
             <MarketChart
               candles={candles}
@@ -322,19 +322,21 @@ export default function DashboardPage() {
             <SignalJournalCard />
           </div>
 
-          {/* Right Column (4 cols): Real-time News Feed */}
-          <div className="lg:col-span-4">
-            <NewsFeed
-              news={news}
-              isLoading={isLoadingNews}
-              selectedAsset={selectedAsset}
-            />
+          {/* Right Column: Real-time News Feed & Calendar (4 cols on lg, 3 cols on 2xl) with sticky sidebar */}
+          <div className="lg:col-span-4 2xl:col-span-3 min-w-0">
+            <div className="lg:sticky lg:top-[68px] space-y-4">
+              <NewsFeed
+                news={news}
+                isLoading={isLoadingNews}
+                selectedAsset={selectedAsset}
+              />
+            </div>
           </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-4 px-6 text-center text-xs text-slate-500 bg-surface-200/40">
+      <footer className="border-t border-slate-800/80 py-4 px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500 bg-surface-200/40 w-full">
         AI Market & News Indicator • Ready for Vercel Deployment & Telegram Bot Automations • For Educational & Research Purposes
       </footer>
 

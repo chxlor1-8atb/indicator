@@ -27,8 +27,8 @@ export default function Header({
   }, []);
 
   return (
-    <header className="border-b border-slate-800/80 bg-surface-100/90 backdrop-blur sticky top-0 z-40 px-4 lg:px-6 py-3">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+    <header className="border-b border-slate-800/80 bg-surface-100/95 backdrop-blur sticky top-0 z-40 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 w-full">
+      <div className="w-full flex items-center justify-between gap-3 sm:gap-4">
         {/* Logo & Title */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-zinc-700 to-zinc-800 border border-zinc-600/40 flex items-center justify-center shadow-md shadow-black/40">

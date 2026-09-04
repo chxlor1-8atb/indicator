@@ -77,10 +77,10 @@ export default function AssetSelector({
   };
 
   return (
-    <div className="bg-surface-100 border border-slate-800 rounded-2xl p-4 shadow-sm relative z-30">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div className="bg-surface-100 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm relative z-30 w-full">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3.5 sm:gap-4">
         {/* Left: Category tabs & Searchable Asset Selector */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
           {/* Categories */}
           <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             {CATEGORIES.map((cat) => (
@@ -207,7 +207,7 @@ export default function AssetSelector({
         </div>
 
         {/* Right: Timeframes & AI Trigger Button */}
-        <div className="flex items-center justify-between sm:justify-end gap-2.5">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5">
           {/* Timeframe Chips */}
           <div className="flex items-center bg-surface-50 p-0.5 rounded-lg border border-slate-800">
             {TIMEFRAMES.map((tf) => (
