@@ -5,10 +5,10 @@ export const AVAILABLE_ASSETS: AssetInfo[] = [
   // ─── Commodities & Metals ───
   { symbol: "XAUUSD", name: "Gold / USD (ทองคำ)", category: "commodities", baseAsset: "XAU", quoteAsset: "USD", precision: 2 },
   { symbol: "XAGUSD", name: "Silver / USD (โลหะเงิน)", category: "commodities", baseAsset: "XAG", quoteAsset: "USD", precision: 3 },
-  { symbol: "USOIL", name: "Crude Oil WTI (น้ำมันดิบ)", category: "commodities", baseAsset: "OIL", quoteAsset: "USD", precision: 2 },
-  { symbol: "UKOIL", name: "Brent Crude Oil", category: "commodities", baseAsset: "BRENT", quoteAsset: "USD", precision: 2 },
+  { symbol: "USOIL", name: "Crude Oil WTI (น้ำมันดิบสหรัฐฯ)", category: "commodities", baseAsset: "OIL", quoteAsset: "USD", precision: 2 },
+  { symbol: "UKOIL", name: "Brent Crude Oil (น้ำมันดิบเบรนท์)", category: "commodities", baseAsset: "BRENT", quoteAsset: "USD", precision: 2 },
 
-  // ─── Forex Majors ───
+  // ─── Forex Majors (7 คู่หลักสากล) ───
   { symbol: "EURUSD", name: "EUR / USD (ยูโร/ดอลลาร์)", category: "forex", baseAsset: "EUR", quoteAsset: "USD", precision: 4 },
   { symbol: "GBPUSD", name: "GBP / USD (ปอนด์/ดอลลาร์)", category: "forex", baseAsset: "GBP", quoteAsset: "USD", precision: 4 },
   { symbol: "USDJPY", name: "USD / JPY (ดอลลาร์/เยน)", category: "forex", baseAsset: "USD", quoteAsset: "JPY", precision: 2 },
@@ -17,17 +17,41 @@ export const AVAILABLE_ASSETS: AssetInfo[] = [
   { symbol: "USDCAD", name: "USD / CAD (ดอลลาร์/แคนาดา)", category: "forex", baseAsset: "USD", quoteAsset: "CAD", precision: 4 },
   { symbol: "NZDUSD", name: "NZD / USD (นิวซีแลนด์/ดอลลาร์)", category: "forex", baseAsset: "NZD", quoteAsset: "USD", precision: 4 },
 
-  // ─── Forex Crosses ───
+  // ─── Forex Crosses (21 คู่ข้ามสกุลยอดนิยม) ───
   { symbol: "GBPJPY", name: "GBP / JPY (ปอนด์/เยน)", category: "forex", baseAsset: "GBP", quoteAsset: "JPY", precision: 2 },
   { symbol: "EURJPY", name: "EUR / JPY (ยูโร/เยน)", category: "forex", baseAsset: "EUR", quoteAsset: "JPY", precision: 2 },
   { symbol: "EURGBP", name: "EUR / GBP (ยูโร/ปอนด์)", category: "forex", baseAsset: "EUR", quoteAsset: "GBP", precision: 4 },
   { symbol: "AUDJPY", name: "AUD / JPY (ออสซี่/เยน)", category: "forex", baseAsset: "AUD", quoteAsset: "JPY", precision: 2 },
   { symbol: "CADJPY", name: "CAD / JPY (แคนาดา/เยน)", category: "forex", baseAsset: "CAD", quoteAsset: "JPY", precision: 2 },
   { symbol: "CHFJPY", name: "CHF / JPY (สวิสฟรังก์/เยน)", category: "forex", baseAsset: "CHF", quoteAsset: "JPY", precision: 2 },
-  { symbol: "EURAUD", name: "EUR / AUD (ยูโร/ออสซี่)", category: "forex", baseAsset: "EUR", quoteAsset: "AUD", precision: 4 },
-  { symbol: "GBPAUD", name: "GBP / AUD (ปอนด์/ออสซี่)", category: "forex", baseAsset: "GBP", quoteAsset: "AUD", precision: 4 },
-  { symbol: "AUDCAD", name: "AUD / CAD (ออสซี่/แคนาดา)", category: "forex", baseAsset: "AUD", quoteAsset: "CAD", precision: 4 },
   { symbol: "NZDJPY", name: "NZD / JPY (นิวซีแลนด์/เยน)", category: "forex", baseAsset: "NZD", quoteAsset: "JPY", precision: 2 },
+  { symbol: "EURAUD", name: "EUR / AUD (ยูโร/ออสซี่)", category: "forex", baseAsset: "EUR", quoteAsset: "AUD", precision: 4 },
+  { symbol: "EURCAD", name: "EUR / CAD (ยูโร/แคนาดา)", category: "forex", baseAsset: "EUR", quoteAsset: "CAD", precision: 4 },
+  { symbol: "EURCHF", name: "EUR / CHF (ยูโร/สวิสฟรังก์)", category: "forex", baseAsset: "EUR", quoteAsset: "CHF", precision: 4 },
+  { symbol: "EURNZD", name: "EUR / NZD (ยูโร/นิวซีแลนด์)", category: "forex", baseAsset: "EUR", quoteAsset: "NZD", precision: 4 },
+  { symbol: "GBPAUD", name: "GBP / AUD (ปอนด์/ออสซี่)", category: "forex", baseAsset: "GBP", quoteAsset: "AUD", precision: 4 },
+  { symbol: "GBPCAD", name: "GBP / CAD (ปอนด์/แคนาดา)", category: "forex", baseAsset: "GBP", quoteAsset: "CAD", precision: 4 },
+  { symbol: "GBPCHF", name: "GBP / CHF (ปอนด์/สวิสฟรังก์)", category: "forex", baseAsset: "GBP", quoteAsset: "CHF", precision: 4 },
+  { symbol: "GBPNZD", name: "GBP / NZD (ปอนด์/นิวซีแลนด์)", category: "forex", baseAsset: "GBP", quoteAsset: "NZD", precision: 4 },
+  { symbol: "AUDCAD", name: "AUD / CAD (ออสซี่/แคนาดา)", category: "forex", baseAsset: "AUD", quoteAsset: "CAD", precision: 4 },
+  { symbol: "AUDCHF", name: "AUD / CHF (ออสซี่/สวิสฟรังก์)", category: "forex", baseAsset: "AUD", quoteAsset: "CHF", precision: 4 },
+  { symbol: "AUDNZD", name: "AUD / NZD (ออสซี่/นิวซีแลนด์)", category: "forex", baseAsset: "AUD", quoteAsset: "NZD", precision: 4 },
+  { symbol: "CADCHF", name: "CAD / CHF (แคนาดา/สวิสฟรังก์)", category: "forex", baseAsset: "CAD", quoteAsset: "CHF", precision: 4 },
+  { symbol: "NZDCAD", name: "NZD / CAD (นิวซีแลนด์/แคนาดา)", category: "forex", baseAsset: "NZD", quoteAsset: "CAD", precision: 4 },
+  { symbol: "NZDCHF", name: "NZD / CHF (นิวซีแลนด์/สวิสฟรังก์)", category: "forex", baseAsset: "NZD", quoteAsset: "CHF", precision: 4 },
+
+  // ─── Forex Exotics & Asia (11 คู่พิเศษและเอเชีย เช่น THB, SGD, HKD) ───
+  { symbol: "USDTHB", name: "USD / THB (ดอลลาร์/บาทไทย)", category: "forex", baseAsset: "USD", quoteAsset: "THB", precision: 3 },
+  { symbol: "EURTHB", name: "EUR / THB (ยูโร/บาทไทย)", category: "forex", baseAsset: "EUR", quoteAsset: "THB", precision: 3 },
+  { symbol: "USDSGD", name: "USD / SGD (ดอลลาร์/สิงคโปร์)", category: "forex", baseAsset: "USD", quoteAsset: "SGD", precision: 4 },
+  { symbol: "USDHKD", name: "USD / HKD (ดอลลาร์/ฮ่องกง)", category: "forex", baseAsset: "USD", quoteAsset: "HKD", precision: 4 },
+  { symbol: "USDCNH", name: "USD / CNH (ดอลลาร์/หยวนนอกประเทศ)", category: "forex", baseAsset: "USD", quoteAsset: "CNH", precision: 4 },
+  { symbol: "USDTRY", name: "USD / TRY (ดอลลาร์/ลีราตุรกี)", category: "forex", baseAsset: "USD", quoteAsset: "TRY", precision: 4 },
+  { symbol: "USDZAR", name: "USD / ZAR (ดอลลาร์/แรนด์แอฟริกา)", category: "forex", baseAsset: "USD", quoteAsset: "ZAR", precision: 4 },
+  { symbol: "USDMXN", name: "USD / MXN (ดอลลาร์/เปโซเม็กซิโก)", category: "forex", baseAsset: "USD", quoteAsset: "MXN", precision: 4 },
+  { symbol: "USDSEK", name: "USD / SEK (ดอลลาร์/โครนาสวีเดน)", category: "forex", baseAsset: "USD", quoteAsset: "SEK", precision: 4 },
+  { symbol: "USDNOK", name: "USD / NOK (ดอลลาร์/โครนานอร์เวย์)", category: "forex", baseAsset: "USD", quoteAsset: "NOK", precision: 4 },
+  { symbol: "USDPLN", name: "USD / PLN (ดอลลาร์/ซลอตีโปแลนด์)", category: "forex", baseAsset: "USD", quoteAsset: "PLN", precision: 4 },
 
   // ─── Crypto Top Coins ───
   { symbol: "BTCUSDT", name: "Bitcoin / USDT", category: "crypto", baseAsset: "BTC", quoteAsset: "USDT", precision: 2 },
@@ -67,18 +91,30 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
   volume?: number;
 } | null> {
   const sym = symbol.toUpperCase();
-  let scannerEndpoint = "cfd";
-  let ticker = "";
+  let scannerEndpoint = "forex";
+  let tickers: string[] = [];
 
   if (sym === "XAUUSD" || sym === "GOLD") {
     scannerEndpoint = "cfd";
-    ticker = "OANDA:XAUUSD";
-  } else if (sym === "USOIL" || sym === "UKOIL") {
+    tickers = ["OANDA:XAUUSD", "TVC:GOLD", "CAPITALCOM:XAUUSD"];
+  } else if (sym === "XAGUSD" || sym === "SILVER") {
     scannerEndpoint = "cfd";
-    ticker = `TVC:${sym}`;
-  } else if (["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "GBPJPY", "EURJPY", "AUDJPY", "CADJPY", "EURGBP"].includes(sym)) {
+    tickers = ["TVC:SILVER", "OANDA:XAGUSD", "CAPITALCOM:XAGUSD"];
+  } else if (sym === "USOIL") {
+    scannerEndpoint = "cfd";
+    tickers = ["FX:USOIL", "TVC:USOIL", "PEPPERSTONE:USOIL"];
+  } else if (sym === "UKOIL") {
+    scannerEndpoint = "cfd";
+    tickers = ["FX:UKOIL", "TVC:UKOIL", "PEPPERSTONE:UKOIL"];
+  } else if (sym === "EURTHB") {
     scannerEndpoint = "forex";
-    ticker = `FX:${sym}`;
+    tickers = ["FX_IDC:EURTHB", "OANDA:EURTHB", "FX:EURTHB"];
+  } else if (["USDTHB", "USDSGD", "USDHKD"].includes(sym)) {
+    scannerEndpoint = "forex";
+    tickers = [`OANDA:${sym}`, `FX_IDC:${sym}`, `FX:${sym}`];
+  } else if (sym.length === 6 && !sym.includes("USDT")) {
+    scannerEndpoint = "forex";
+    tickers = [`FX:${sym}`, `OANDA:${sym}`, `FX_IDC:${sym}`];
   } else {
     return null;
   }
@@ -88,7 +124,7 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        symbols: { tickers: [ticker] },
+        symbols: { tickers },
         columns: ["close", "open", "high", "low", "change", "volume"]
       }),
       signal: AbortSignal.timeout(3500),
@@ -97,15 +133,19 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
 
     if (res.ok) {
       const json = await res.json();
-      if (json.data && json.data.length > 0 && Array.isArray(json.data[0].d)) {
-        const [close, open, high, low, change, volume] = json.data[0].d;
-        if (typeof close === "number" && !isNaN(close) && close > 0) {
-          return { price: close, open, high, low, change, volume };
+      if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+        for (const item of json.data) {
+          if (item && Array.isArray(item.d)) {
+            const [close, open, high, low, change, volume] = item.d;
+            if (typeof close === "number" && !isNaN(close) && close > 0) {
+              return { price: close, open, high, low, change, volume };
+            }
+          }
         }
       }
     }
   } catch (err) {
-    console.warn(`TradingView scanner quote fetch failed for ${ticker}:`, err);
+    console.warn(`TradingView scanner quote fetch failed for ${sym}:`, err);
   }
   return null;
 }
@@ -246,9 +286,31 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
     "CADJPY": "CADJPY=X",
     "CHFJPY": "CHFJPY=X",
     "EURAUD": "EURAUD=X",
+    "EURCAD": "EURCAD=X",
+    "EURCHF": "EURCHF=X",
+    "EURNZD": "EURNZD=X",
     "GBPAUD": "GBPAUD=X",
+    "GBPCAD": "GBPCAD=X",
+    "GBPCHF": "GBPCHF=X",
+    "GBPNZD": "GBPNZD=X",
     "AUDCAD": "AUDCAD=X",
+    "AUDCHF": "AUDCHF=X",
+    "AUDNZD": "AUDNZD=X",
+    "CADCHF": "CADCHF=X",
     "NZDJPY": "NZDJPY=X",
+    "NZDCAD": "NZDCAD=X",
+    "NZDCHF": "NZDCHF=X",
+    "USDTHB": "THB=X",
+    "EURTHB": "EURTHB=X",
+    "USDSGD": "SGD=X",
+    "USDHKD": "HKD=X",
+    "USDCNH": "CNH=X",
+    "USDTRY": "TRY=X",
+    "USDZAR": "ZAR=X",
+    "USDMXN": "MXN=X",
+    "USDSEK": "SEK=X",
+    "USDNOK": "NOK=X",
+    "USDPLN": "PLN=X",
     "SPY": "SPY",
     "QQQ": "QQQ",
     "DIA": "DIA",
@@ -467,8 +529,32 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
   // 4. Try Yahoo Finance for Commodities, Forex, Stocks, Indices
   try {
-    const candles = await fetchYahooCandles(symbol, interval);
+    let candles = await fetchYahooCandles(symbol, interval);
     if (candles.length >= 20) {
+      // Dynamic calibration against TradingView institutional quote for Forex & Commodities
+      const isInstitutional = asset?.category === "forex" || asset?.category === "commodities" || (symbol.length === 6 && !symbol.includes("USDT"));
+      if (isInstitutional) {
+        try {
+          const tvQuote = await fetchTradingViewSpotQuote(symbol);
+          if (tvQuote && tvQuote.price > 0) {
+            const lastRaw = candles[candles.length - 1];
+            const offset = tvQuote.price - lastRaw.close;
+            const precision = asset?.precision ?? (symbol.includes("JPY") ? 2 : 4);
+            candles = candles.map((c, idx) => {
+              const isLast = idx === candles.length - 1;
+              return {
+                ...c,
+                open: Number((c.open + offset).toFixed(precision)),
+                high: Number((Math.max(c.high + offset, isLast ? tvQuote.price : c.high + offset)).toFixed(precision)),
+                low: Number((Math.min(c.low + offset, isLast ? tvQuote.price : c.low + offset)).toFixed(precision)),
+                close: isLast ? tvQuote.price : Number((c.close + offset).toFixed(precision)),
+              };
+            });
+          }
+        } catch {
+          // Keep raw candles if quote fails
+        }
+      }
       return cacheAndPersist(symbol, interval, candles);
     }
   } catch (err) {
@@ -488,23 +574,49 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
   // 6. Last resort synthetic fallback base prices
   const fallbackPrices: Record<string, number> = {
-    XAUUSD: 2850.5,
-    XAGUSD: 32.5,
-    USOIL: 72.8,
-    UKOIL: 76.5,
-    EURUSD: 1.085,
-    GBPUSD: 1.295,
-    USDJPY: 152.3,
-    USDCHF: 0.885,
-    AUDUSD: 0.655,
-    USDCAD: 1.395,
-    NZDUSD: 0.595,
-    GBPJPY: 197.5,
-    EURJPY: 165.2,
-    EURGBP: 0.835,
-    AUDJPY: 99.8,
-    CADJPY: 109.2,
-    CHFJPY: 172.0,
+    XAUUSD: 4470.0,
+    XAGUSD: 66.8,
+    USOIL: 91.2,
+    UKOIL: 95.4,
+    EURUSD: 1.162,
+    GBPUSD: 1.354,
+    USDJPY: 156.3,
+    USDCHF: 0.808,
+    AUDUSD: 0.720,
+    USDCAD: 1.379,
+    NZDUSD: 0.588,
+    GBPJPY: 211.7,
+    EURJPY: 181.8,
+    EURGBP: 0.858,
+    AUDJPY: 112.5,
+    CADJPY: 113.3,
+    CHFJPY: 193.3,
+    NZDJPY: 92.0,
+    EURAUD: 1.614,
+    EURCAD: 1.603,
+    EURCHF: 0.940,
+    EURNZD: 1.975,
+    GBPAUD: 1.880,
+    GBPCAD: 1.868,
+    GBPCHF: 1.095,
+    GBPNZD: 2.302,
+    AUDCAD: 0.993,
+    AUDCHF: 0.582,
+    AUDNZD: 1.224,
+    CADCHF: 0.586,
+    NZDCAD: 0.812,
+    NZDCHF: 0.476,
+    USDTHB: 32.94,
+    EURTHB: 38.28,
+    USDSGD: 1.267,
+    USDHKD: 7.840,
+    USDCNH: 7.150,
+    USDTRY: 48.45,
+    USDZAR: 18.25,
+    USDMXN: 19.85,
+    USDSEK: 10.45,
+    USDNOK: 10.85,
+    USDPLN: 3.980,
     BTCUSDT: 88500,
     ETHUSDT: 2800,
     SOLUSDT: 195,

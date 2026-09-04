@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchTradingViewSpotQuote } from "@/lib/marketService";
+import { fetchTradingViewSpotQuote, getMarketCandles } from "@/lib/marketService";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +8,22 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get("symbol") || "XAUUSD";
 
-    const quote = await fetchTradingViewSpotQuote(symbol);
+    let quote = await fetchTradingViewSpotQuote(symbol);
+    if (!quote || quote.price <= 0) {
+      const candles = await getMarketCandles(symbol, "1h");
+      if (candles && candles.length > 0) {
+        const last = candles[candles.length - 1];
+        quote = {
+          price: last.close,
+          open: last.open,
+          high: last.high,
+          low: last.low,
+          change: ((last.close - candles[0].open) / (candles[0].open || 1)) * 100,
+          volume: last.volume,
+        };
+      }
+    }
+
     if (quote && quote.price > 0) {
       return NextResponse.json(
         {

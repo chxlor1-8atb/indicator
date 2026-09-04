@@ -18,8 +18,8 @@ interface AssetSelectorProps {
 
 const CATEGORIES: { id: "all" | AssetCategory; label: string }[] = [
   { id: "all", label: "All Assets" },
+  { id: "forex", label: "Forex (39 Pairs)" },
   { id: "commodities", label: "Gold & Commodities" },
-  { id: "forex", label: "Forex (All Pairs)" },
   { id: "crypto", label: "Crypto" },
   { id: "stocks", label: "Indices & Stocks" },
 ];
@@ -135,7 +135,7 @@ export default function AssetSelector({
                 </form>
 
                 {/* Asset List */}
-                <div className="max-h-60 overflow-y-auto space-y-0.5 pr-1">
+                <div className="max-h-80 overflow-y-auto space-y-0.5 pr-1">
                   {filteredAssets.length === 0 ? (
                     <div className="p-3 text-center">
                       <p className="text-xs text-slate-400">No preset match for &quot;{searchQuery}&quot;</p>

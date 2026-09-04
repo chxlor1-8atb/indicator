@@ -176,9 +176,10 @@ export default function DashboardPage() {
     const isInstitutionalAsset =
       selectedAsset === "XAUUSD" ||
       selectedAsset === "GOLD" ||
+      selectedAsset === "XAGUSD" ||
       selectedAsset === "USOIL" ||
       selectedAsset === "UKOIL" ||
-      ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "GBPJPY", "EURJPY"].includes(selectedAsset);
+      (selectedAsset.length === 6 && !selectedAsset.includes("USDT"));
 
     if (isInstitutionalAsset) {
       // Direct TradingView Institutional OANDA/Interbank Feed Polling (every 1.5s)
