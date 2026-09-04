@@ -15,6 +15,11 @@ import {
   TDSequentialInfo,
   SpreadImpactInfo,
   TrailingStopInfo,
+  KellySizingInfo,
+  AnchoredVWAPInfo,
+  CVDInfo,
+  OrderBlockValidatorInfo,
+  PriceFeedIntegrityInfo,
 } from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
@@ -32,6 +37,11 @@ import {
   calculateTDSequential,
   calculateSpreadImpact,
   calculateChandelierTrailingStop,
+  calculateKellyCriterionSizing,
+  calculateAnchoredVWAP,
+  calculateCumulativeVolumeDelta,
+  identifyOrderBlocksAndBreakers,
+  calculatePriceFeedIntegrity,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -219,6 +229,12 @@ export function generateRuleBasedAnalysis(
   const volumeProfile = indicators.volumeProfile || calculateSessionVolumeProfile(candles, precision);
   const tdSequential = indicators.tdSequential || calculateTDSequential(candles);
 
+  // ─── BATCH 5 PRE-COMPUTATIONS (PLANS 21-25) ───
+  const anchoredVwap = indicators.anchoredVwap || calculateAnchoredVWAP(candles, precision);
+  const cvd = indicators.cvd || calculateCumulativeVolumeDelta(candles);
+  const orderBlocks = indicators.orderBlocks || identifyOrderBlocksAndBreakers(candles, precision);
+  const priceFeedIntegrity = indicators.priceFeedIntegrity || calculatePriceFeedIntegrity(currentPrice, symbol, currentATR);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   let signal: AnalysisResult["signal"] = "WAIT";
@@ -264,6 +280,16 @@ export function generateRuleBasedAnalysis(
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 45);
+  }
+  // SAFETY LOCK 8: Extreme VWAP Exhaustion (> +3σ or < -3σ) [แผน 22]
+  else if (tier1Bias === "BULLISH" && anchoredVwap.pricePosition === "OVERBOUGHT_EXTREME") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  } else if (tier1Bias === "BEARISH" && anchoredVwap.pricePosition === "OVERSOLD_EXTREME") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
   }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
@@ -368,7 +394,20 @@ export function generateRuleBasedAnalysis(
   // [แผน 20] Automated Multi-Stage Trailing Stop Loss (Chandelier ATR Trail)
   const trailingStop = calculateChandelierTrailingStop(candles, tradeAction === "SELL" ? "SELL" : "BUY", currentATR, precision, symbol);
 
-  // 7-Point Confluence Checklist with News Shield, Order Flow & Volume Profile
+  // [แผน 21] Volatility-Adjusted Kelly Criterion Sizing
+  const winRate = historicalBacktest.winRate / 100 || 0.65;
+  const validATRs = atrs.filter((v): v is number => v !== null && !isNaN(v));
+  const avgATR = validATRs.length > 0 ? validATRs.slice(-30).reduce((a, b) => a + b, 0) / Math.min(30, validATRs.length) : currentATR;
+  const kellySizing = calculateKellyCriterionSizing(
+    winRate,
+    effectiveTPMultiplier,
+    currentATR,
+    avgATR,
+    precision,
+    symbol
+  );
+
+  // 8-Point Confluence Checklist with News Shield, Order Flow, Volume Profile & Anchored VWAP
   const confluenceChecklist: ConfluenceCheckItem[] = [
     {
       name: `Pillar 1: Trend & Regime (${regimeInfo.title})`,
@@ -407,6 +446,13 @@ export function generateRuleBasedAnalysis(
       passed: volumeProfile.isInsideValueArea || (tradeAction === "BUY" && currentPrice >= volumeProfile.poc),
       note: volumeProfile.description,
     },
+    {
+      name: `Pillar 8: Anchored VWAP & CVD Flow (${anchoredVwap.pricePosition})`,
+      passed: (tradeAction === "BUY" && (anchoredVwap.pricePosition === "ABOVE_VWAP" || cvd.divergence === "BULLISH_CVD_DIVERGENCE")) ||
+              (tradeAction === "SELL" && (anchoredVwap.pricePosition === "BELOW_VWAP" || cvd.divergence === "BEARISH_CVD_DIVERGENCE")) ||
+              orderBlocks.isRetestingBreaker,
+      note: `${anchoredVwap.description} • ${cvd.description}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -438,6 +484,11 @@ export function generateRuleBasedAnalysis(
     tdSequential,
     spreadImpact,
     trailingStop,
+    anchoredVwap,
+    cvd,
+    orderBlocks,
+    priceFeedIntegrity,
+    kellySizing,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -457,6 +508,10 @@ export function generateRuleBasedAnalysis(
         `TD Sequential: ${tdSequential.note}`,
         `Chandelier Trailing Stop: ${trailingStop.trailingStopPrice} (${trailingStop.instruction})`,
         `Spread Impact: ${spreadImpact.estimatedSpreadPips} pips (Net R:R: ${spreadImpact.effectiveRiskReward})`,
+        `Anchored VWAP: ${anchoredVwap.vwap} (Pos: ${anchoredVwap.pricePosition})`,
+        `CVD Divergence: ${cvd.divergence} (Buyer Vol: ${cvd.buyerVolumeRatio}%)`,
+        `SMC Breaker Blocks: ${orderBlocks.description}`,
+        `Kelly Sizing: Half-Kelly ${kellySizing.halfKellyPct}% -> Vol-Safe ${kellySizing.volatilityAdjustedPct}%`,
       ],
     },
     newsSentimentAnalysis: {
@@ -496,6 +551,10 @@ export function generateRuleBasedAnalysis(
       trailingStop,
       spreadImpact,
       volumeProfile,
+      kellySizing,
+      anchoredVwap,
+      cvd,
+      orderBlocks,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -811,6 +870,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.tdSequential = ruleAnalysis.tdSequential;
     parsed.spreadImpact = ruleAnalysis.spreadImpact;
     parsed.trailingStop = ruleAnalysis.trailingStop;
+    parsed.anchoredVwap = ruleAnalysis.anchoredVwap;
+    parsed.cvd = ruleAnalysis.cvd;
+    parsed.orderBlocks = ruleAnalysis.orderBlocks;
+    parsed.priceFeedIntegrity = ruleAnalysis.priceFeedIntegrity;
+    parsed.kellySizing = ruleAnalysis.kellySizing;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -820,6 +884,10 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.trailingStop = ruleAnalysis.tradeSetup.trailingStop;
       parsed.tradeSetup.spreadImpact = ruleAnalysis.tradeSetup.spreadImpact;
       parsed.tradeSetup.volumeProfile = ruleAnalysis.tradeSetup.volumeProfile;
+      parsed.tradeSetup.kellySizing = ruleAnalysis.tradeSetup.kellySizing;
+      parsed.tradeSetup.anchoredVwap = ruleAnalysis.tradeSetup.anchoredVwap;
+      parsed.tradeSetup.cvd = ruleAnalysis.tradeSetup.cvd;
+      parsed.tradeSetup.orderBlocks = ruleAnalysis.tradeSetup.orderBlocks;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

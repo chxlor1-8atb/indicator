@@ -179,6 +179,70 @@ export interface TrailingStopInfo {
   instruction: string;
 }
 
+// [แผน 21] Volatility-Adjusted Kelly Criterion Sizing
+export interface KellySizingInfo {
+  fullKellyPct: number; // e.g. 6.2%
+  halfKellyPct: number; // e.g. 3.1%
+  volatilityAdjustedPct: number; // e.g. 1.8%
+  suggestedLot10USD: number;
+  suggestedLot100USD: number;
+  suggestedLot1000USD: number;
+  winRateUsed: number;
+  riskRewardUsed: number;
+  rationale: string;
+}
+
+// [แผน 22] Anchored Multi-Band VWAP (±1σ, ±2σ, ±3σ)
+export interface AnchoredVWAPInfo {
+  vwap: number;
+  upperBand1: number; // +1 SD (68% boundary)
+  lowerBand1: number; // -1 SD
+  upperBand2: number; // +2 SD (95% Mean Reversion boundary)
+  lowerBand2: number; // -2 SD
+  upperBand3: number; // +3 SD (99.7% Extreme Exhaustion)
+  lowerBand3: number; // -3 SD
+  pricePosition: "ABOVE_VWAP" | "BELOW_VWAP" | "AT_VWAP" | "OVERBOUGHT_EXTREME" | "OVERSOLD_EXTREME";
+  description: string;
+}
+
+// [แผน 23] Cumulative Volume Delta (CVD) Divergence Engine
+export interface CVDInfo {
+  currentCVD: number;
+  cvdTrend: "RISING" | "FALLING" | "NEUTRAL";
+  divergence: "BULLISH_CVD_DIVERGENCE" | "BEARISH_CVD_DIVERGENCE" | "NONE";
+  absorptionDetected: boolean;
+  buyerVolumeRatio: number; // percentage e.g. 58%
+  description: string;
+}
+
+// [แผน 24] Order Block Mitigation & Breaker Block Validator
+export interface OrderBlockItem {
+  type: "BULLISH_OB" | "BEARISH_OB" | "BULLISH_BREAKER" | "BEARISH_BREAKER";
+  priceMin: number;
+  priceMax: number;
+  isMitigated: boolean;
+  isBreaker: boolean;
+  formedIndex: number;
+}
+
+export interface OrderBlockValidatorInfo {
+  activeBlocks: OrderBlockItem[];
+  nearestBlock?: OrderBlockItem;
+  hasUnmitigatedOB: boolean;
+  isRetestingBreaker: boolean;
+  breakerCount: number;
+  description: string;
+}
+
+// [แผน 25] Multi-Source Price Feed Divergence & Fair Market Value
+export interface PriceFeedIntegrityInfo {
+  fairMarketValue: number;
+  spreadHealth: "HEALTHY" | "WIDE" | "ANOMALOUS";
+  feedReliability: "EXCELLENT" | "GOOD" | "CAUTION";
+  syntheticDeviationPips: number;
+  description: string;
+}
+
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
   grade: "A+" | "A" | "B" | "C (Wait)";
@@ -295,6 +359,10 @@ export interface IndicatorData {
   roundLevel?: RoundLevelInfo;
   volumeProfile?: VolumeProfileInfo;
   tdSequential?: TDSequentialInfo;
+  anchoredVwap?: AnchoredVWAPInfo;
+  cvd?: CVDInfo;
+  orderBlocks?: OrderBlockValidatorInfo;
+  priceFeedIntegrity?: PriceFeedIntegrityInfo;
 }
 
 export interface NewsItem {
@@ -395,6 +463,11 @@ export interface AnalysisResult {
   tdSequential?: TDSequentialInfo;
   spreadImpact?: SpreadImpactInfo;
   trailingStop?: TrailingStopInfo;
+  anchoredVwap?: AnchoredVWAPInfo;
+  cvd?: CVDInfo;
+  orderBlocks?: OrderBlockValidatorInfo;
+  priceFeedIntegrity?: PriceFeedIntegrityInfo;
+  kellySizing?: KellySizingInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -439,6 +512,10 @@ export interface AnalysisResult {
     trailingStop?: TrailingStopInfo;
     spreadImpact?: SpreadImpactInfo;
     volumeProfile?: VolumeProfileInfo;
+    kellySizing?: KellySizingInfo;
+    anchoredVwap?: AnchoredVWAPInfo;
+    cvd?: CVDInfo;
+    orderBlocks?: OrderBlockValidatorInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;

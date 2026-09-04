@@ -81,6 +81,10 @@ export default function AnalysisCard({
     const td = analysis.tdSequential;
     const ts = analysis.tradeSetup.trailingStop || analysis.trailingStop;
     const sp = analysis.tradeSetup.spreadImpact || analysis.spreadImpact;
+    const vwap = analysis.tradeSetup.anchoredVwap || analysis.anchoredVwap;
+    const cvd = analysis.tradeSetup.cvd || analysis.cvd;
+    const ob = analysis.tradeSetup.orderBlocks || analysis.orderBlocks;
+    const kelly = analysis.tradeSetup.kellySizing || analysis.kellySizing;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
       `• Signal: ${analysis.signal} (Grade: ${analysis.setupGrade || "A"}, Confluence: ${mc?.totalScore || analysis.confidence}%)\n` +
@@ -89,10 +93,14 @@ export default function AnalysisCard({
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
       (vp ? `• Volume Profile Value Area: ${vp.val} - ${vp.vah} (POC: ${vp.poc})\n` : "") +
+      (vwap ? `• Anchored VWAP: ${vwap.vwap} (Pos: ${vwap.pricePosition} | ±2σ: ${vwap.lowerBand2}-${vwap.upperBand2})\n` : "") +
+      (cvd ? `• CVD Flow: ${cvd.cvdTrend} (${cvd.divergence !== "NONE" ? cvd.divergence : `Buyer ${cvd.buyerVolumeRatio}%`})\n` : "") +
+      (ob && ob.nearestBlock ? `• SMC Block: ${ob.nearestBlock.type} (${ob.nearestBlock.priceMin}-${ob.nearestBlock.priceMax})\n` : "") +
       `• Stop Loss: ${analysis.tradeSetup.stopLoss} (${analysis.tradeSetup.slPips || 0} Pips ${ssl ? `| ${ssl.protectionType}` : ""})\n` +
       `• Take Profit 1: ${analysis.tradeSetup.takeProfit1} (+${analysis.tradeSetup.tp1Pips || 0} Pips | Breakeven Point)\n` +
       `• Take Profit 2: ${analysis.tradeSetup.takeProfit2} (+${analysis.tradeSetup.tp2Pips || 0} Pips | Trend Runner)\n` +
       `• R:R: ${analysis.tradeSetup.riskRewardRatio}\n` +
+      (kelly ? `• Kelly Sizing: Half-Kelly ${kelly.halfKellyPct}% (แนะนำเสี่ยง ${kelly.volatilityAdjustedPct}% ต่อไม้)\n` : "") +
       (be ? `• Breakeven Shield (+1.0R): ${be.actionText}\n` : "") +
       (ts ? `• Chandelier Trailing Stop: ${ts.trailingStopPrice}\n` : "") +
       (sp ? `• Broker Spread Impact: ~${sp.estimatedSpreadPips} pips (Net R:R: ${sp.effectiveRiskReward})\n` : "") +
@@ -962,6 +970,166 @@ export default function AnalysisCard({
         </div>
       )}
 
+      {/* 5e. 🏛️ Institutional SMC, Anchored VWAP & CVD Matrix (Plans 21-25) */}
+      {(analysis.anchoredVwap || analysis.cvd || analysis.orderBlocks) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                <Layers className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Institutional SMC, Anchored VWAP & CVD Matrix (แผน 21-25)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                    Quant SMC Matrix
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  ผสานเส้นเฉลี่ยถ่วงน้ำหนักวอลุ่ม (Anchored VWAP ±3σ), การไหลของแรงซื้อขายสะสม (CVD) และโครงสร้างบล็อกสถาบัน (SMC Order & Breaker Block)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* 1. Anchored Multi-Band VWAP (±1σ, ±2σ, ±3σ) */}
+            {analysis.anchoredVwap && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌐 Anchored Multi-Band VWAP</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.anchoredVwap.pricePosition === "OVERBOUGHT_EXTREME"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                      : analysis.anchoredVwap.pricePosition === "OVERSOLD_EXTREME"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                      : analysis.anchoredVwap.pricePosition === "ABOVE_VWAP"
+                      ? "bg-teal-500/20 text-teal-300 border border-teal-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.anchoredVwap.pricePosition}
+                  </span>
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">เส้นหลักสถาบัน (VWAP):</span>
+                    <span className="font-mono font-black text-amber-300">
+                      {analysis.anchoredVwap.vwap}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Mean Reversion (±2σ):</span>
+                    <span className="font-mono font-bold text-teal-300">
+                      {analysis.anchoredVwap.lowerBand2} - {analysis.anchoredVwap.upperBand2}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Exhaustion Zone (±3σ):</span>
+                    <span className="font-mono text-rose-300">
+                      {analysis.anchoredVwap.lowerBand3} - {analysis.anchoredVwap.upperBand3}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.anchoredVwap.description}
+                </p>
+              </div>
+            )}
+
+            {/* 2. Cumulative Volume Delta (CVD) Divergence Engine */}
+            {analysis.cvd && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌊 CVD Flow & Divergence</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.cvd.divergence === "BULLISH_CVD_DIVERGENCE"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold"
+                      : analysis.cvd.divergence === "BEARISH_CVD_DIVERGENCE"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.cvd.divergence !== "NONE" ? analysis.cvd.divergence : `Trend: ${analysis.cvd.cvdTrend}`}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 pt-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-emerald-400 font-bold">ซื้อสะสม {analysis.cvd.buyerVolumeRatio}%</span>
+                    <span className="text-rose-400 font-bold">ขายสะสม {(100 - analysis.cvd.buyerVolumeRatio).toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                    <div className="h-full bg-emerald-500" style={{ width: `${analysis.cvd.buyerVolumeRatio}%` }}></div>
+                    <div className="h-full bg-rose-500" style={{ width: `${100 - analysis.cvd.buyerVolumeRatio}%` }}></div>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-400">Cumulative Delta:</span>
+                    <span className={`font-bold ${analysis.cvd.currentCVD >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                      {analysis.cvd.currentCVD > 0 ? `+${analysis.cvd.currentCVD}` : analysis.cvd.currentCVD}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.cvd.description}
+                </p>
+                {analysis.cvd.absorptionDetected && (
+                  <div className="p-1 rounded bg-teal-500/10 border border-teal-500/30 text-[10px] text-teal-300 font-bold text-center">
+                    ⚡ สถาบันซับแรงคำสั่งซื้อขาย (Absorption Divergence Active)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. SMC Order Block Mitigation & Breaker Block Validator */}
+            {analysis.orderBlocks && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🧱 SMC Order Block & Breakers</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.orderBlocks.isRetestingBreaker
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold animate-pulse"
+                      : analysis.orderBlocks.hasUnmitigatedOB
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.orderBlocks.isRetestingBreaker
+                      ? "🔥 Breaker Retest"
+                      : analysis.orderBlocks.hasUnmitigatedOB
+                      ? "🟢 Fresh OB"
+                      : "Mitigated"}
+                  </span>
+                </div>
+
+                {analysis.orderBlocks.nearestBlock ? (
+                  <div className="space-y-1 text-xs">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">บล็อกใกล้สุด ({analysis.orderBlocks.nearestBlock.type}):</span>
+                      <span className="font-mono font-bold text-indigo-300">
+                        {analysis.orderBlocks.nearestBlock.priceMin} - {analysis.orderBlocks.nearestBlock.priceMax}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">สถานะบล็อก:</span>
+                      <span className="font-mono text-slate-200">
+                        {analysis.orderBlocks.nearestBlock.isBreaker ? "⚡ Breaker Flipped" : analysis.orderBlocks.nearestBlock.isMitigated ? "Mitigated (ทดสอบแล้ว)" : "Unmitigated (สดใหม่)"}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-400">กำลังสแกนโครงสร้างบล็อกสถาบัน...</div>
+                )}
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.orderBlocks.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 6. 📱 MT4 / MT5 Mobile Pending Order Ticket */}
       <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-surface-50 to-indigo-950/20 border border-blue-500/40 space-y-3.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1284,6 +1452,53 @@ export default function AnalysisCard({
                   ))}
                 </div>
               </div>
+
+              {/* Kelly Criterion Math Sizing Advisor [แผน 21] */}
+              {(analysis.tradeSetup.kellySizing || analysis.kellySizing) && (() => {
+                const ks = analysis.tradeSetup.kellySizing || analysis.kellySizing!;
+                return (
+                  <div className="p-3 rounded-xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/30 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Calculator className="w-3.5 h-3.5 text-indigo-400" />
+                        <span className="font-bold text-white text-[11px]">
+                          Kelly Criterion Math Sizing (แผน 21):
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                        <span className="text-slate-400">Half-Kelly: <strong className="text-indigo-300">{ks.halfKellyPct}%</strong></span>
+                        <span className="text-slate-400">•</span>
+                        <span className="text-emerald-300 font-bold bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                          แนะนำเสี่ยง: {ks.volatilityAdjustedPct}%
+                        </span>
+                        <button
+                          onClick={() => setCustomRiskPct(ks.volatilityAdjustedPct)}
+                          className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-sans text-[10px] transition-all font-semibold cursor-pointer"
+                        >
+                          ใช้ค่านี้
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center font-mono text-[10px] pt-0.5">
+                      <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
+                        <span className="text-slate-400 block text-[9px]">พอร์ต $10 USD</span>
+                        <span className="text-xs font-bold text-amber-300">{ks.suggestedLot10USD} lot</span>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
+                        <span className="text-slate-400 block text-[9px]">พอร์ต $100 USD</span>
+                        <span className="text-xs font-bold text-emerald-300">{ks.suggestedLot100USD} lot</span>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
+                        <span className="text-slate-400 block text-[9px]">พอร์ต $1,000 USD</span>
+                        <span className="text-xs font-bold text-sky-300">{ks.suggestedLot1000USD} lot</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-tight border-t border-slate-800/80 pt-1">
+                      {ks.rationale}
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Detailed Real-Dollar Calculation Breakdown */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
