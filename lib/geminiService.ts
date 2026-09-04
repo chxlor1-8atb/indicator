@@ -20,6 +20,11 @@ import {
   CVDInfo,
   OrderBlockValidatorInfo,
   PriceFeedIntegrityInfo,
+  SessionSweepInfo,
+  FibonacciClusterInfo,
+  RealizedVolatilityInfo,
+  CandleMicrostructureInfo,
+  CorrelationShieldInfo,
 } from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
@@ -42,6 +47,11 @@ import {
   calculateCumulativeVolumeDelta,
   identifyOrderBlocksAndBreakers,
   calculatePriceFeedIntegrity,
+  calculateSessionLiquiditySweeps,
+  calculateFibonacciClusters,
+  calculateRealizedVolatility,
+  calculateCandleMicrostructure,
+  calculateCorrelationHedgeShield,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -235,10 +245,18 @@ export function generateRuleBasedAnalysis(
   const orderBlocks = indicators.orderBlocks || identifyOrderBlocksAndBreakers(candles, precision);
   const priceFeedIntegrity = indicators.priceFeedIntegrity || calculatePriceFeedIntegrity(currentPrice, symbol, currentATR);
 
+  // ─── BATCH 6 PRE-COMPUTATIONS (PLANS 26-30) ───
+  const sessionSweep = indicators.sessionSweep || calculateSessionLiquiditySweeps(candles, precision, symbol);
+  const fibonacciCluster = indicators.fibonacciCluster || calculateFibonacciClusters(candles, precision);
+  const realizedVolatility = indicators.realizedVolatility || calculateRealizedVolatility(candles, currentATR);
+  const candleMicrostructure = indicators.candleMicrostructure || calculateCandleMicrostructure(candles);
+  const correlationShield = indicators.correlationShield || calculateCorrelationHedgeShield(symbol, currentPrice, candles);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
+  const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
   let signal: AnalysisResult["signal"] = "WAIT";
-  let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier + (quadEma?.scoreBonus ?? 0)));
+  let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier + (quadEma?.scoreBonus ?? 0) + correlationScoreBonus));
   let setupGrade: AnalysisResult["setupGrade"] = masterConfluence.grade;
 
   // SAFETY LOCK 1: Red Folder News Freeze (30m before, 15m after)
@@ -291,6 +309,20 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 40);
   }
+  // SAFETY LOCK 9: Turtle Soup Liquidity Sweep & Correlation Anomaly Protection [แผน 26 & แผน 30]
+  else if (tier1Bias === "BULLISH" && sessionSweep.sweepType === "BEARISH_SWEEP" && sessionSweep.isTurtleSoup) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  } else if (tier1Bias === "BEARISH" && sessionSweep.sweepType === "BULLISH_SWEEP" && sessionSweep.isTurtleSoup) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  } else if (correlationShield.macroRegime === "LIQUIDATION_ANOMALY") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 45);
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -299,6 +331,7 @@ export function generateRuleBasedAnalysis(
     signal = (trend === "STRONG_UPTREND" || regimeInfo.regime === "EXPLOSIVE_TREND" || isQuadGoldenLong) && masterConfluence.totalScore >= 85 ? "STRONG_BUY" : "BUY";
     if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
     if (isOrbBullBreak) confidence = Math.min(95, confidence + 5);
+    if (sessionSweep.sweepType === "BULLISH_SWEEP") confidence = Math.min(98, confidence + 6);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -307,6 +340,7 @@ export function generateRuleBasedAnalysis(
     signal = (trend === "STRONG_DOWNTREND" || regimeInfo.regime === "EXPLOSIVE_TREND" || isQuadDeathShort) && masterConfluence.totalScore >= 85 ? "STRONG_SELL" : "SELL";
     if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
     if (isOrbBearBreak) confidence = Math.min(95, confidence + 5);
+    if (sessionSweep.sweepType === "BEARISH_SWEEP") confidence = Math.min(98, confidence + 6);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -342,9 +376,10 @@ export function generateRuleBasedAnalysis(
 
   if (signal === "STRONG_BUY" || signal === "BUY") {
     tradeAction = "BUY";
-    // [แผน 12] Liquidity Hunt Protection Stop Loss (ซ่อนหลัง Swing Low + Buffer)
+    // [แผน 12 & แผน 28] Liquidity Hunt Protection Stop Loss + Realized Volatility Buffer
     structuralSL = calculateStructuralStopLoss(candles, "BUY", currentATR, currentPrice, precision);
-    stopLoss = structuralSL.stopLoss;
+    const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
+    stopLoss = Number((structuralSL.stopLoss - slBufferExtra).toFixed(precision));
 
     // [แผน 11] OTE Zone Entry & Sweet Spot 70.5%
     pendingPrice = oteZone.sweetSpot || Number(Math.min(currentPrice, lastEMA20 * 1.002).toFixed(precision));
@@ -357,9 +392,10 @@ export function generateRuleBasedAnalysis(
     riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
-    // [แผน 12] Liquidity Hunt Protection Stop Loss (ซ่อนหลัง Swing High + Buffer)
+    // [แผน 12 & แผน 28] Liquidity Hunt Protection Stop Loss + Realized Volatility Buffer
     structuralSL = calculateStructuralStopLoss(candles, "SELL", currentATR, currentPrice, precision);
-    stopLoss = structuralSL.stopLoss;
+    const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
+    stopLoss = Number((structuralSL.stopLoss + slBufferExtra).toFixed(precision));
 
     // [แผน 11] OTE Zone Entry & Sweet Spot 70.5%
     pendingPrice = oteZone.sweetSpot || Number(Math.max(currentPrice, lastEMA20 * 0.998).toFixed(precision));
@@ -453,6 +489,13 @@ export function generateRuleBasedAnalysis(
               orderBlocks.isRetestingBreaker,
       note: `${anchoredVwap.description} • ${cvd.description}`,
     },
+    {
+      name: `Pillar 9: Session Sweeps & Fib Clusters (${sessionSweep.sweepType})`,
+      passed: (tradeAction === "BUY" && (sessionSweep.sweepType === "BULLISH_SWEEP" || fibonacciCluster.isPriceInCluster || candleMicrostructure.rejectionStrength === "STRONG_BUY_REJECTION")) ||
+              (tradeAction === "SELL" && (sessionSweep.sweepType === "BEARISH_SWEEP" || fibonacciCluster.isPriceInCluster || candleMicrostructure.rejectionStrength === "STRONG_SELL_REJECTION")) ||
+              sessionSweep.sweepType === "NONE",
+      note: `${sessionSweep.description} • ${fibonacciCluster.description}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -488,6 +531,11 @@ export function generateRuleBasedAnalysis(
     cvd,
     orderBlocks,
     priceFeedIntegrity,
+    sessionSweep,
+    fibonacciCluster,
+    realizedVolatility,
+    candleMicrostructure,
+    correlationShield,
     kellySizing,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
@@ -511,6 +559,11 @@ export function generateRuleBasedAnalysis(
         `Anchored VWAP: ${anchoredVwap.vwap} (Pos: ${anchoredVwap.pricePosition})`,
         `CVD Divergence: ${cvd.divergence} (Buyer Vol: ${cvd.buyerVolumeRatio}%)`,
         `SMC Breaker Blocks: ${orderBlocks.description}`,
+        `Session Liquidity Sweep: ${sessionSweep.sweepType} (${sessionSweep.sweptLevel ? `Level ${sessionSweep.sweptLevel} | ${sessionSweep.sweptSession}` : "No Sweep"})`,
+        `Fibonacci Clusters: ${fibonacciCluster.confluenceCount} Confluences (Golden Zone: ${fibonacciCluster.clusterZone.min}-${fibonacciCluster.clusterZone.max})`,
+        `Realized Volatility: ${realizedVolatility.volState} (${realizedVolatility.realizedVol}%, Buffer ${realizedVolatility.recommendedBufferMultiplier}x)`,
+        `Candle Microstructure: ${candleMicrostructure.rejectionStrength} (Wick: ${candleMicrostructure.wickRatio}%)`,
+        `Correlation Hedge Shield: ${correlationShield.macroRegime} (${correlationShield.shieldStatus} | DXY: ${correlationShield.dxyTrend})`,
         `Kelly Sizing: Half-Kelly ${kellySizing.halfKellyPct}% -> Vol-Safe ${kellySizing.volatilityAdjustedPct}%`,
       ],
     },
@@ -555,6 +608,11 @@ export function generateRuleBasedAnalysis(
       anchoredVwap,
       cvd,
       orderBlocks,
+      sessionSweep,
+      fibonacciCluster,
+      realizedVolatility,
+      candleMicrostructure,
+      correlationShield,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -874,6 +932,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.cvd = ruleAnalysis.cvd;
     parsed.orderBlocks = ruleAnalysis.orderBlocks;
     parsed.priceFeedIntegrity = ruleAnalysis.priceFeedIntegrity;
+    parsed.sessionSweep = ruleAnalysis.sessionSweep;
+    parsed.fibonacciCluster = ruleAnalysis.fibonacciCluster;
+    parsed.realizedVolatility = ruleAnalysis.realizedVolatility;
+    parsed.candleMicrostructure = ruleAnalysis.candleMicrostructure;
+    parsed.correlationShield = ruleAnalysis.correlationShield;
     parsed.kellySizing = ruleAnalysis.kellySizing;
 
     if (parsed.tradeSetup) {
@@ -888,6 +951,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.anchoredVwap = ruleAnalysis.tradeSetup.anchoredVwap;
       parsed.tradeSetup.cvd = ruleAnalysis.tradeSetup.cvd;
       parsed.tradeSetup.orderBlocks = ruleAnalysis.tradeSetup.orderBlocks;
+      parsed.tradeSetup.sessionSweep = ruleAnalysis.tradeSetup.sessionSweep;
+      parsed.tradeSetup.fibonacciCluster = ruleAnalysis.tradeSetup.fibonacciCluster;
+      parsed.tradeSetup.realizedVolatility = ruleAnalysis.tradeSetup.realizedVolatility;
+      parsed.tradeSetup.candleMicrostructure = ruleAnalysis.tradeSetup.candleMicrostructure;
+      parsed.tradeSetup.correlationShield = ruleAnalysis.tradeSetup.correlationShield;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

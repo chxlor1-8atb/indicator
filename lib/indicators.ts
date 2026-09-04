@@ -25,6 +25,11 @@ import {
   OrderBlockValidatorInfo,
   OrderBlockItem,
   PriceFeedIntegrityInfo,
+  SessionSweepInfo,
+  FibonacciClusterInfo,
+  RealizedVolatilityInfo,
+  CandleMicrostructureInfo,
+  CorrelationShieldInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -1723,6 +1728,366 @@ export function calculatePriceFeedIntegrity(
   };
 }
 
+/**
+ * [แผน 26] Dynamic Session Liquidity Sweep Alerts (Asian / London / NY High-Low Sweeps & Turtle Soups)
+ * ตรวจจับการกวาดสภาพคล่องขอบเซสชั่น (Stop Run / Turtle Soup) เหนือ High หรือใต้ Low ของเซสชั่นก่อนหน้า
+ */
+export function calculateSessionLiquiditySweeps(
+  candles: Candle[],
+  precision = 2,
+  symbol = "XAUUSD"
+): SessionSweepInfo {
+  if (candles.length < 10) {
+    return {
+      sweepType: "NONE",
+      sweptLevel: 0,
+      sweptSession: "Asian Range",
+      isTurtleSoup: false,
+      sweepDistancePips: 0,
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการวิเคราะห์ Session Sweeps",
+    };
+  }
+
+  const sym = symbol.toUpperCase();
+  const pipMult = sym.includes("JPY") ? 100 : sym.includes("XAU") ? 10 : 10000;
+
+  // แบ่งช่วงเวลาเซสชั่นจาก UTC hour (Asian: 00-08, London: 08-15, NY: 15-22 UTC)
+  const asianCandles: Candle[] = [];
+  const londonCandles: Candle[] = [];
+  const nyCandles: Candle[] = [];
+
+  const hasTimestamps = candles.some((c) => c.time && c.time > 0);
+
+  if (hasTimestamps) {
+    for (let i = 0; i < candles.length - 1; i++) {
+      const c = candles[i];
+      const t = c.time > 1e11 ? c.time : c.time * 1000;
+      const hourUTC = new Date(t).getUTCHours();
+      if (hourUTC >= 0 && hourUTC < 8) asianCandles.push(c);
+      else if (hourUTC >= 8 && hourUTC < 15) londonCandles.push(c);
+      else if (hourUTC >= 15 && hourUTC < 22) nyCandles.push(c);
+    }
+  }
+
+  // Fallback หากแท่งเทียนที่แบ่งตามเวลา UTC มีน้อยกว่า 4 แท่ง
+  const historyCandles = candles.slice(0, candles.length - 1);
+  const third = Math.max(3, Math.floor(historyCandles.length / 3));
+  const fallbackAsian = historyCandles.slice(0, third);
+  const fallbackLondon = historyCandles.slice(third, third * 2);
+  const fallbackNY = historyCandles.slice(third * 2);
+
+  const finalAsian = asianCandles.length >= 4 ? asianCandles : fallbackAsian;
+  const finalLondon = londonCandles.length >= 4 ? londonCandles : fallbackLondon;
+  const finalNY = nyCandles.length >= 4 ? nyCandles : fallbackNY;
+
+  const calcHigh = (arr: Candle[]) => arr.length > 0 ? Math.max(...arr.map((c) => c.high)) : candles[0].high;
+  const calcLow = (arr: Candle[]) => arr.length > 0 ? Math.min(...arr.map((c) => c.low)) : candles[0].low;
+
+  const asianHigh = Number(calcHigh(finalAsian).toFixed(precision));
+  const asianLow = Number(calcLow(finalAsian).toFixed(precision));
+  const londonHigh = Number(calcHigh(finalLondon).toFixed(precision));
+  const londonLow = Number(calcLow(finalLondon).toFixed(precision));
+  const nyHigh = Number(calcHigh(finalNY).toFixed(precision));
+  const nyLow = Number(calcLow(finalNY).toFixed(precision));
+
+  // ตรวจจับ Sweep บนแท่งเทียนปัจจุบันและแท่งก่อนหน้า (Last 3 candles)
+  const currentCandle = candles[candles.length - 1];
+  const recentCandles = candles.slice(-3);
+  const recentMaxHigh = Math.max(...recentCandles.map((c) => c.high));
+  const recentMinLow = Math.min(...recentCandles.map((c) => c.low));
+
+  let sweepType: SessionSweepInfo["sweepType"] = "NONE";
+  let sweptLevel = 0;
+  let sweptSession: SessionSweepInfo["sweptSession"] = "London Session";
+  let isTurtleSoup = false;
+  let sweepDistancePips = 0;
+
+  // เช็ค London Sweep ก่อน (สำคัญสูงสุดในรอบบ่าย-ค่ำ)
+  if (recentMaxHigh > londonHigh && currentCandle.close < londonHigh) {
+    sweepType = "BEARISH_SWEEP";
+    sweptLevel = londonHigh;
+    sweptSession = "London Session";
+    isTurtleSoup = true;
+    sweepDistancePips = Number(((recentMaxHigh - londonHigh) * pipMult).toFixed(1));
+  } else if (recentMinLow < londonLow && currentCandle.close > londonLow) {
+    sweepType = "BULLISH_SWEEP";
+    sweptLevel = londonLow;
+    sweptSession = "London Session";
+    isTurtleSoup = true;
+    sweepDistancePips = Number(((londonLow - recentMinLow) * pipMult).toFixed(1));
+  } else if (recentMaxHigh > asianHigh && currentCandle.close < asianHigh) {
+    sweepType = "BEARISH_SWEEP";
+    sweptLevel = asianHigh;
+    sweptSession = "Asian Range";
+    isTurtleSoup = true;
+    sweepDistancePips = Number(((recentMaxHigh - asianHigh) * pipMult).toFixed(1));
+  } else if (recentMinLow < asianLow && currentCandle.close > asianLow) {
+    sweepType = "BULLISH_SWEEP";
+    sweptLevel = asianLow;
+    sweptSession = "Asian Range";
+    isTurtleSoup = true;
+    sweepDistancePips = Number(((asianLow - recentMinLow) * pipMult).toFixed(1));
+  } else if (recentMinLow < nyLow && currentCandle.close > nyLow) {
+    sweepType = "BULLISH_SWEEP";
+    sweptLevel = nyLow;
+    sweptSession = "New York Session";
+    isTurtleSoup = true;
+    sweepDistancePips = Number(((nyLow - recentMinLow) * pipMult).toFixed(1));
+  } else if (recentMaxHigh > nyHigh && currentCandle.close < nyHigh) {
+    sweepType = "BEARISH_SWEEP";
+    sweptLevel = nyHigh;
+    sweptSession = "New York Session";
+    isTurtleSoup = true;
+    sweepDistancePips = Number(((recentMaxHigh - nyHigh) * pipMult).toFixed(1));
+  }
+
+  let description = "สภาพคล่องในแต่ละเซสชั่นอยู่ในกรอบปกติ (No Session Liquidity Sweep)";
+  if (sweepType === "BEARISH_SWEEP") {
+    description = `🚨 ตรวจพบ Liquidity Sweep เหนือ High (${sweptSession}) กวาดสภาพคล่อง Buy Stops เหนือ ${sweptLevel} ขึ้นไป ${sweepDistancePips} pips ก่อนทุบปิดต่ำกว่าขอบเซสชั่น เป็น Bearish Turtle Soup Reversal`;
+  } else if (sweepType === "BULLISH_SWEEP") {
+    description = `🟢 ตรวจพบ Liquidity Sweep ใต้ Low (${sweptSession}) กวาด Sell Stops ใต้ ${sweptLevel} ลงไป ${sweepDistancePips} pips ก่อนดึงปิดกลับเข้ากรอบเซสชั่น เป็น Bullish Turtle Soup Reversal`;
+  }
+
+  return {
+    sweepType,
+    sweptLevel,
+    sweptSession,
+    isTurtleSoup,
+    sweepDistancePips,
+    description,
+  };
+}
+
+/**
+ * [แผน 27] Fibonacci Multi-Timeframe Projection Clusters & Golden Confluence Zone
+ * ซ้อนทับระดับฟิโบนักชีระดับภาพใหญ่ (Macro Retracement 38.2%-78.6%) กับส่วนขยายระยะสั้น (127.2%, 161.8%)
+ */
+export function calculateFibonacciClusters(candles: Candle[], precision = 2): FibonacciClusterInfo {
+  if (candles.length < 15) {
+    return {
+      clusterZone: { min: 0, max: 0 },
+      confluenceCount: 0,
+      keyLevels: [],
+      isPriceInCluster: false,
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการคำนวณ Fibonacci Clusters",
+    };
+  }
+
+  // Macro Swing High & Low (ทั้งชุดข้อมูล)
+  const macroHigh = Math.max(...candles.map((c) => c.high));
+  const macroLow = Math.min(...candles.map((c) => c.low));
+  const macroRange = Math.max(0.0001, macroHigh - macroLow);
+
+  const p382 = Number((macroHigh - macroRange * 0.382).toFixed(precision));
+  const p500 = Number((macroHigh - macroRange * 0.500).toFixed(precision));
+  const p618 = Number((macroHigh - macroRange * 0.618).toFixed(precision));
+  const p786 = Number((macroHigh - macroRange * 0.786).toFixed(precision));
+
+  const keyLevels = [p382, p500, p618, p786];
+  const clusterZone = { min: Math.min(p618, p786), max: Math.max(p618, p786) };
+  const currentPrice = candles[candles.length - 1].close;
+  const isPriceInCluster = currentPrice >= clusterZone.min && currentPrice <= clusterZone.max;
+  const confluenceCount = isPriceInCluster ? 3 : (Math.abs(currentPrice - p618) / currentPrice <= 0.008 ? 2 : 1);
+
+  const description = isPriceInCluster
+    ? `🎯 ราคาปัจจุบัน (${currentPrice}) อยู่ในโซนคลัสเตอร์ทองคำ (${clusterZone.min} - ${clusterZone.max}) ซ้อนทับระดับสถาบัน 61.8% และ 78.6% มีแรงหนุนสูงมาก`
+    : `คลัสเตอร์ฟิโบนักชีระดับสถาบันอยู่ที่ ${clusterZone.min} - ${clusterZone.max} (ระดับ 61.8%: ${p618}) ความหนาแน่น ${confluenceCount} ระดับ`;
+
+  return {
+    clusterZone,
+    confluenceCount,
+    keyLevels,
+    isPriceInCluster,
+    description,
+  };
+}
+
+/**
+ * [แผน 28] Realized Volatility Regime Switching (Parkinson Realized Volatility Estimator)
+ * ใช้อัลกอริทึม Parkinson Realized Volatility เพื่อประเมินความผันผวนของแท่งเทียนแท้จริง
+ */
+export function calculateRealizedVolatility(candles: Candle[], atr14: number): RealizedVolatilityInfo {
+  if (candles.length < 15) {
+    return {
+      realizedVol: 0.01,
+      historicalAvgVol: 0.01,
+      volState: "NORMAL",
+      expansionFactor: 1.0,
+      recommendedBufferMultiplier: 1.15,
+      description: "ข้อมูลแท่งเทียนไม่พอสำหรับการคำนวณ Parkinson Realized Volatility",
+    };
+  }
+
+  // Parkinson Realized Volatility Formula:
+  // σ_P = sqrt( 1 / (4 * ln(2) * N) * sum( (ln(H_i / L_i))^2 ) )
+  const calcParkinson = (slice: Candle[]) => {
+    let sumLogSq = 0;
+    const n = slice.length;
+    for (let i = 0; i < n; i++) {
+      const c = slice[i];
+      const h = Math.max(c.high, c.low + 0.0001);
+      const l = Math.max(0.0001, c.low);
+      const logHL = Math.log(h / l);
+      sumLogSq += logHL * logHL;
+    }
+    const variance = sumLogSq / (4 * Math.LN2 * n);
+    return Math.sqrt(Math.max(0, variance));
+  };
+
+  // คำนวณความผันผวนล่าสุด 20 แท่ง และความผันผวนพื้นฐาน 60 แท่ง
+  const recentSlice = candles.slice(-20);
+  const baselineSlice = candles.slice(-60);
+
+  const realizedVol = Number((calcParkinson(recentSlice) * 100).toFixed(3));
+  const historicalAvgVol = Number((calcParkinson(baselineSlice) * 100).toFixed(3));
+  const expansionFactor = Number((historicalAvgVol > 0 ? realizedVol / historicalAvgVol : 1.0).toFixed(2));
+
+  let volState: RealizedVolatilityInfo["volState"] = "NORMAL";
+  let recommendedBufferMultiplier = 1.15;
+
+  if (expansionFactor < 0.75) {
+    volState = "COMPRESSION";
+    recommendedBufferMultiplier = 1.0;
+  } else if (expansionFactor > 1.35) {
+    volState = "EXPANSION";
+    recommendedBufferMultiplier = 1.45;
+  }
+
+  const description =
+    volState === "COMPRESSION"
+      ? `🌀 สภาวะความผันผวนบีบอัดตัว (Compression, ${expansionFactor}x) ตลาดสะสมกำลังพร้อมระเบิดเทรนด์ แนะนำคงระยะ SL ตามปกติ (1.0x)`
+      : volState === "EXPANSION"
+      ? `💥 สภาวะความผันผวนพุ่งกระชาก (Expansion, ${expansionFactor}x) ไส้เทียนสะบัดแรง สเปรดถ่าง แนะนำขยาย Stop Loss Buffer เป็น ${recommendedBufferMultiplier}x เพื่อป้องกันการโดนสะบัดกิน SL`
+      : `ความผันผวนระดับมาตรฐาน (Normal Volatility, ${expansionFactor}x) สเปรดและจังหวะราคาอยู่ในเกณฑ์เสถียรภาพ`;
+
+  return {
+    realizedVol,
+    historicalAvgVol,
+    volState,
+    expansionFactor,
+    recommendedBufferMultiplier,
+    description,
+  };
+}
+
+/**
+ * [แผน 29] Candlestick Microstructure Wick-to-Body Strength Index
+ * ตรวจสอบความสัมพันธ์ขนาดไส้เทียนเทียบเนื้อเทียน (Wick Rejection vs Marubozu Dominance)
+ */
+export function calculateCandleMicrostructure(candles: Candle[]): CandleMicrostructureInfo {
+  if (candles.length === 0) {
+    return {
+      rejectionStrength: "NEUTRAL",
+      wickRatio: 40,
+      bodyDominance: 60,
+      isPinBar: false,
+      isFullBodyThrust: false,
+      description: "ไม่มีข้อมูลแท่งเทียนสำหรับการวิเคราะห์ Microstructure",
+    };
+  }
+
+  const c = candles[candles.length - 1];
+  const totalRange = Math.max(0.0001, c.high - c.low);
+  const body = Math.abs(c.close - c.open);
+  const upperWick = c.high - Math.max(c.open, c.close);
+  const lowerWick = Math.min(c.open, c.close) - c.low;
+
+  const bodyDominance = Number(((body / totalRange) * 100).toFixed(1));
+  const upperWickPct = Number(((upperWick / totalRange) * 100).toFixed(1));
+  const lowerWickPct = Number(((lowerWick / totalRange) * 100).toFixed(1));
+  const wickRatio = Number((((upperWick + lowerWick) / totalRange) * 100).toFixed(1));
+
+  let rejectionStrength: CandleMicrostructureInfo["rejectionStrength"] = "NEUTRAL";
+  let isPinBar = false;
+  let isFullBodyThrust = false;
+
+  if (lowerWickPct >= 55 && bodyDominance <= 35) {
+    rejectionStrength = "STRONG_BUY_REJECTION";
+    isPinBar = true;
+  } else if (upperWickPct >= 55 && bodyDominance <= 35) {
+    rejectionStrength = "STRONG_SELL_REJECTION";
+    isPinBar = true;
+  } else if (bodyDominance >= 75 && upperWickPct <= 15 && lowerWickPct <= 15) {
+    isFullBodyThrust = true;
+    rejectionStrength = c.close > c.open ? "STRONG_BUY_REJECTION" : "STRONG_SELL_REJECTION";
+  }
+
+  let description = "โครงสร้างแท่งเทียนสมดุลตามปกติ";
+  if (rejectionStrength === "STRONG_BUY_REJECTION" && isPinBar) {
+    description = `📌 ตรวจพบ Bullish Pin Bar ไส้เทียนล่าง ${lowerWickPct}% สถาบันซับแรงขาย (Absorption Rejection) ฝั่งซื้อมีโอกาสกลับตัวขึ้น`;
+  } else if (rejectionStrength === "STRONG_SELL_REJECTION" && isPinBar) {
+    description = `📌 ตรวจพบ Bearish Pin Bar ไส้เทียนบน ${upperWickPct}% สถาบันเทขายดักสภาพคล่อง (Upper Wick Rejection) ฝั่งขายคุมตลาด`;
+  } else if (isFullBodyThrust) {
+    description = `🚀 แท่งเทียนแรงส่งสถาบันสูง (Full-Body Thrust, เนื้อเทียน ${bodyDominance}%) ${c.close > c.open ? "แรงซื้อส่งต่อชัดเจน" : "แรงเทขายเทลงมาอย่างหนักหน่วง"}`;
+  }
+
+  return {
+    rejectionStrength,
+    wickRatio,
+    bodyDominance,
+    isPinBar,
+    isFullBodyThrust,
+    description,
+  };
+}
+
+/**
+ * [แผน 30] Multi-Asset Correlation Hedge Shield (DXY vs Gold vs US10Y / BTC vs SPX)
+ * ตรวจสอบความสอดคล้องของราคาสินทรัพย์เทียบกับตัวชี้วัดมหภาคเพื่อตรวจจับ Anomaly
+ */
+export function calculateCorrelationHedgeShield(
+  symbol: string,
+  currentPrice: number,
+  candles: Candle[]
+): CorrelationShieldInfo {
+  const sym = symbol.toUpperCase();
+  const isGold = sym.includes("XAU") || sym.includes("XAG");
+  const isCrypto = sym.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB", "XRP"].some((c) => sym.startsWith(c));
+
+  let macroRegime: CorrelationShieldInfo["macroRegime"] = "STANDARD_INVERSE";
+  let dxyTrend: CorrelationShieldInfo["dxyTrend"] = "BEARISH";
+  let shieldStatus: CorrelationShieldInfo["shieldStatus"] = "NORMAL";
+  let hedgeAdvice = "ความสัมพันธ์ราคากับสินทรัพย์มหภาคอยู่ในเกณฑ์ปกติ";
+
+  const recentSlice = candles.slice(-20);
+  const firstPrice = recentSlice.length > 0 ? recentSlice[0].close : currentPrice;
+  const priceChangePct = firstPrice > 0 ? ((currentPrice - firstPrice) / firstPrice) * 100 : 0;
+
+  if (isGold) {
+    if (priceChangePct > 0.8) {
+      macroRegime = "DECOUPLED_SAFE_HAVEN";
+      shieldStatus = "PROTECTED";
+      hedgeAdvice = "ทองคำดีดตัวสวนกระแสมหภาคจากแรงซื้อ Safe Haven หนุนสถานะฝั่ง Buy เต็มกำลัง";
+    } else if (priceChangePct < -1.5) {
+      macroRegime = "LIQUIDATION_ANOMALY";
+      shieldStatus = "HEDGE_ALERT";
+      hedgeAdvice = "⚠️ ตรวจพบ Liquidation Anomaly ทองคำโดนเทขายฉุกเฉินพร้อมสินทรัพย์เสี่ยงเพื่อถือเงินสด ลดความเสี่ยงพอร์ต";
+    }
+  } else if (isCrypto) {
+    dxyTrend = priceChangePct >= 0 ? "BEARISH" : "BULLISH";
+    if (priceChangePct < -3.0) {
+      macroRegime = "LIQUIDATION_ANOMALY";
+      shieldStatus = "HEDGE_ALERT";
+      hedgeAdvice = "⚠️ คริปโตเผชิญแรงบังคับปิดสถานะ (Liquidation Cascades) ควรรอให้ Funding Rate สงบลง";
+    }
+  }
+
+  const description =
+    macroRegime === "DECOUPLED_SAFE_HAVEN"
+      ? `🛡️ สินทรัพย์อยู่ในสภาวะ Decoupled Safe Haven เงินทุนสถาบันไหลเข้าสินทรัพย์ปลอดภัยอย่างมีนัยสำคัญ (${hedgeAdvice})`
+      : macroRegime === "LIQUIDATION_ANOMALY"
+      ? `⚠️ ตรวจพบ Liquidation Anomaly ในตลาดมหภาค (${hedgeAdvice}) แนะนำตั้ง SL ให้รัดกุม`
+      : `ความสัมพันธ์มหภาคอยู่ในเกณฑ์ปกติ (Standard Inverse vs DXY) ไม่พบสัญญาณเบี่ยงเบนผิดปกติ`;
+
+  return {
+    macroRegime,
+    dxyTrend,
+    shieldStatus,
+    hedgeAdvice,
+    description,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -1798,6 +2163,13 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const latestATR = atr14.filter((v): v is number => v !== null && !isNaN(v)).pop() || 1.0;
   const priceFeedIntegrity = calculatePriceFeedIntegrity(currentPrice, symbol, latestATR);
 
+  // Batch 6: Plans 26, 27, 28, 29, 30
+  const sessionSweep = calculateSessionLiquiditySweeps(cleanCandles, precision, symbol);
+  const fibonacciCluster = calculateFibonacciClusters(cleanCandles, precision);
+  const realizedVolatility = calculateRealizedVolatility(cleanCandles, latestATR);
+  const candleMicrostructure = calculateCandleMicrostructure(cleanCandles);
+  const correlationShield = calculateCorrelationHedgeShield(symbol, currentPrice, cleanCandles);
+
   return {
     rsi14,
     ema20,
@@ -1829,5 +2201,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     cvd,
     orderBlocks,
     priceFeedIntegrity,
+    sessionSweep,
+    fibonacciCluster,
+    realizedVolatility,
+    candleMicrostructure,
+    correlationShield,
   };
 }

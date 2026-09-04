@@ -85,6 +85,11 @@ export default function AnalysisCard({
     const cvd = analysis.tradeSetup.cvd || analysis.cvd;
     const ob = analysis.tradeSetup.orderBlocks || analysis.orderBlocks;
     const kelly = analysis.tradeSetup.kellySizing || analysis.kellySizing;
+    const swp = analysis.tradeSetup.sessionSweep || analysis.sessionSweep;
+    const fib = analysis.tradeSetup.fibonacciCluster || analysis.fibonacciCluster;
+    const rv = analysis.tradeSetup.realizedVolatility || analysis.realizedVolatility;
+    const micro = analysis.tradeSetup.candleMicrostructure || analysis.candleMicrostructure;
+    const shield = analysis.tradeSetup.correlationShield || analysis.correlationShield;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
       `• Signal: ${analysis.signal} (Grade: ${analysis.setupGrade || "A"}, Confluence: ${mc?.totalScore || analysis.confidence}%)\n` +
@@ -96,6 +101,11 @@ export default function AnalysisCard({
       (vwap ? `• Anchored VWAP: ${vwap.vwap} (Pos: ${vwap.pricePosition} | ±2σ: ${vwap.lowerBand2}-${vwap.upperBand2})\n` : "") +
       (cvd ? `• CVD Flow: ${cvd.cvdTrend} (${cvd.divergence !== "NONE" ? cvd.divergence : `Buyer ${cvd.buyerVolumeRatio}%`})\n` : "") +
       (ob && ob.nearestBlock ? `• SMC Block: ${ob.nearestBlock.type} (${ob.nearestBlock.priceMin}-${ob.nearestBlock.priceMax})\n` : "") +
+      (swp && swp.sweepType !== "NONE" ? `• Liquidity Sweep: ${swp.sweepType} (${swp.sweptLevel ? `Level ${swp.sweptLevel} | ${swp.sweptSession} (+${swp.sweepDistancePips} pips)` : ""})\n` : "") +
+      (fib ? `• Fibonacci Clusters: ${fib.confluenceCount} Levels (${fib.clusterZone.min}-${fib.clusterZone.max})\n` : "") +
+      (rv ? `• Realized Volatility: ${rv.volState} (${rv.realizedVol}%, Buffer ${rv.recommendedBufferMultiplier}x)\n` : "") +
+      (micro ? `• Microstructure: ${micro.rejectionStrength} (Wick: ${micro.wickRatio}%)\n` : "") +
+      (shield ? `• Macro Correlation Shield: ${shield.macroRegime} (${shield.shieldStatus})\n` : "") +
       `• Stop Loss: ${analysis.tradeSetup.stopLoss} (${analysis.tradeSetup.slPips || 0} Pips ${ssl ? `| ${ssl.protectionType}` : ""})\n` +
       `• Take Profit 1: ${analysis.tradeSetup.takeProfit1} (+${analysis.tradeSetup.tp1Pips || 0} Pips | Breakeven Point)\n` +
       `• Take Profit 2: ${analysis.tradeSetup.takeProfit2} (+${analysis.tradeSetup.tp2Pips || 0} Pips | Trend Runner)\n` +
@@ -1123,6 +1133,170 @@ export default function AnalysisCard({
 
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.orderBlocks.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5f. 🏹 Institutional Sweeps, Fib Clusters & Correlation Shield (Plans 26-30) */}
+      {(analysis.sessionSweep || analysis.fibonacciCluster || analysis.realizedVolatility || analysis.correlationShield) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                <Target className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Session Liquidity Sweeps, Fib Clusters & Macro Shield (แผน 26-30)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    Institutional Liquidity & Volatility
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  ตรวจจับการกวาดสภาพคล่องเซสชั่น (Turtle Soup), คลัสเตอร์ฟิโบนักชี 3D, ความผันผวน Parkinson Realized Volatility และ Macro Correlation Hedge Shield
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* 1. Session Liquidity Sweeps */}
+            {analysis.sessionSweep && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🏹 Session Sweep Alert</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.sessionSweep.sweepType !== "NONE"
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold animate-pulse"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.sessionSweep.sweepType !== "NONE" ? analysis.sessionSweep.sweepType : "No Sweep"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Swept Session:</span>
+                    <span className="font-mono text-slate-300">{analysis.sessionSweep.sweptSession}</span>
+                  </div>
+                  {analysis.sessionSweep.sweptLevel > 0 && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Swept Level:</span>
+                      <span className="font-mono font-bold text-rose-300">
+                        {analysis.sessionSweep.sweptLevel} (+{analysis.sessionSweep.sweepDistancePips} pips)
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Turtle Soup:</span>
+                    <span className="font-mono text-emerald-400">{analysis.sessionSweep.isTurtleSoup ? "⚡ Active Setup" : "None"}</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.sessionSweep.description}
+                </p>
+              </div>
+            )}
+
+            {/* 2. Fibonacci Multi-Timeframe Clusters */}
+            {analysis.fibonacciCluster && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📐 Fibonacci 3D Clusters</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.fibonacciCluster.isPriceInCluster
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold"
+                      : analysis.fibonacciCluster.confluenceCount >= 2
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.fibonacciCluster.confluenceCount} Confluences
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Golden Zone:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {analysis.fibonacciCluster.clusterZone.min} - {analysis.fibonacciCluster.clusterZone.max}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">สถานะราคา:</span>
+                    <span className="font-mono text-slate-200">
+                      {analysis.fibonacciCluster.isPriceInCluster ? "🎯 Inside Golden Zone" : "Outside Zone"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.fibonacciCluster.description}
+                </p>
+              </div>
+            )}
+
+            {/* 3. Realized Volatility & Microstructure */}
+            {(analysis.realizedVolatility || analysis.candleMicrostructure) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚡ Realized Vol & Micro</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.realizedVolatility?.volState === "EXPANSION"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold"
+                      : analysis.realizedVolatility?.volState === "COMPRESSION"
+                      ? "bg-teal-500/20 text-teal-300 border border-teal-500/30 font-bold"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.realizedVolatility?.volState || "NORMAL"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.realizedVolatility && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Parkinson Vol:</span>
+                      <span className="font-mono text-slate-200">{analysis.realizedVolatility.realizedVol}% (Buffer {analysis.realizedVolatility.recommendedBufferMultiplier}x)</span>
+                    </div>
+                  )}
+                  {analysis.candleMicrostructure && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Micro Pattern:</span>
+                      <span className="font-mono text-sky-300">{analysis.candleMicrostructure.rejectionStrength}</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.candleMicrostructure?.description || analysis.realizedVolatility?.description}
+                </p>
+              </div>
+            )}
+
+            {/* 4. Multi-Asset Correlation Hedge Shield */}
+            {analysis.correlationShield && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🛡️ Correlation Hedge</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.correlationShield.macroRegime === "LIQUIDATION_ANOMALY"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold animate-pulse"
+                      : analysis.correlationShield.macroRegime === "DECOUPLED_SAFE_HAVEN"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.correlationShield.macroRegime}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Shield Status:</span>
+                    <span className="font-mono text-slate-300 text-[10px]">{analysis.correlationShield.shieldStatus}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">DXY Trend:</span>
+                    <span className="font-mono font-bold text-indigo-300">{analysis.correlationShield.dxyTrend}</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.correlationShield.description}
                 </p>
               </div>
             )}

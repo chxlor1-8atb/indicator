@@ -243,6 +243,54 @@ export interface PriceFeedIntegrityInfo {
   description: string;
 }
 
+// [แผน 26] Dynamic Session Liquidity Sweep Alerts & Turtle Soups
+export interface SessionSweepInfo {
+  sweepType: "BULLISH_SWEEP" | "BEARISH_SWEEP" | "NONE";
+  sweptLevel: number;
+  sweptSession: "Asian Range" | "London Session" | "New York Session" | "Previous Day";
+  isTurtleSoup: boolean;
+  sweepDistancePips: number;
+  description: string;
+}
+
+// [แผน 27] Fibonacci Multi-Timeframe Projection Clusters & Golden Confluence Zone
+export interface FibonacciClusterInfo {
+  clusterZone: { min: number; max: number };
+  confluenceCount: number;
+  keyLevels: number[];
+  isPriceInCluster: boolean;
+  description: string;
+}
+
+// [แผน 28] Realized Volatility Regime Switching
+export interface RealizedVolatilityInfo {
+  realizedVol: number; // e.g. 0.85%
+  historicalAvgVol: number;
+  volState: "COMPRESSION" | "NORMAL" | "EXPANSION";
+  expansionFactor: number;
+  recommendedBufferMultiplier: number;
+  description: string;
+}
+
+// [แผน 29] Candlestick Microstructure Wick-to-Body Strength Index
+export interface CandleMicrostructureInfo {
+  rejectionStrength: "STRONG_BUY_REJECTION" | "STRONG_SELL_REJECTION" | "NEUTRAL";
+  wickRatio: number; // percentage e.g. 68%
+  bodyDominance: number; // percentage e.g. 32%
+  isPinBar: boolean;
+  isFullBodyThrust: boolean;
+  description: string;
+}
+
+// [แผน 30] Multi-Asset Correlation Hedge Shield
+export interface CorrelationShieldInfo {
+  macroRegime: "STANDARD_INVERSE" | "DECOUPLED_SAFE_HAVEN" | "LIQUIDATION_ANOMALY";
+  dxyTrend: "BULLISH" | "BEARISH" | "NEUTRAL";
+  shieldStatus: "PROTECTED" | "HEDGE_ALERT" | "NORMAL";
+  hedgeAdvice: string;
+  description: string;
+}
+
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
   grade: "A+" | "A" | "B" | "C (Wait)";
@@ -363,6 +411,11 @@ export interface IndicatorData {
   cvd?: CVDInfo;
   orderBlocks?: OrderBlockValidatorInfo;
   priceFeedIntegrity?: PriceFeedIntegrityInfo;
+  sessionSweep?: SessionSweepInfo;
+  fibonacciCluster?: FibonacciClusterInfo;
+  realizedVolatility?: RealizedVolatilityInfo;
+  candleMicrostructure?: CandleMicrostructureInfo;
+  correlationShield?: CorrelationShieldInfo;
 }
 
 export interface NewsItem {
@@ -468,6 +521,11 @@ export interface AnalysisResult {
   orderBlocks?: OrderBlockValidatorInfo;
   priceFeedIntegrity?: PriceFeedIntegrityInfo;
   kellySizing?: KellySizingInfo;
+  sessionSweep?: SessionSweepInfo;
+  fibonacciCluster?: FibonacciClusterInfo;
+  realizedVolatility?: RealizedVolatilityInfo;
+  candleMicrostructure?: CandleMicrostructureInfo;
+  correlationShield?: CorrelationShieldInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -516,6 +574,11 @@ export interface AnalysisResult {
     anchoredVwap?: AnchoredVWAPInfo;
     cvd?: CVDInfo;
     orderBlocks?: OrderBlockValidatorInfo;
+    sessionSweep?: SessionSweepInfo;
+    fibonacciCluster?: FibonacciClusterInfo;
+    realizedVolatility?: RealizedVolatilityInfo;
+    candleMicrostructure?: CandleMicrostructureInfo;
+    correlationShield?: CorrelationShieldInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
