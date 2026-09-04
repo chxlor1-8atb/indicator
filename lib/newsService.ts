@@ -1,10 +1,39 @@
 import { NewsItem } from "./types";
 
+function cleanHtmlText(raw: string): string {
+  if (!raw) return "";
+  let val = raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1").trim();
+  // Unescape standard HTML entities (&lt; &gt; &quot; &amp; &nbsp;)
+  val = val
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ");
+
+  // Strip all HTML tags
+  val = val.replace(/<[^>]+>/g, " ");
+  // Collapse whitespace
+  val = val.replace(/\s+/g, " ").trim();
+
+  // If text is purely an URL or anchor link leftover, discard it
+  if (/^https?:\/\//i.test(val) || /^href=/i.test(val) || val.includes("news.google.com/rss/articles")) {
+    return "";
+  }
+  return val;
+}
+
 function extractTagValue(xml: string, tag: string): string {
   const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
   if (!match) return "";
-  let val = match[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1").trim();
-  return val.replace(/<[^>]+>/g, ""); // strip inner html
+  return cleanHtmlText(match[1]);
+}
+
+function extractTagRaw(xml: string, tag: string): string {
+  const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  if (!match) return "";
+  return match[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1").trim();
 }
 
 function parseRssItems(xmlText: string, source: string): NewsItem[] {
@@ -13,11 +42,29 @@ function parseRssItems(xmlText: string, source: string): NewsItem[] {
 
   for (const itemXml of itemMatches.slice(0, 8)) {
     const title = extractTagValue(itemXml, "title");
-    const description = extractTagValue(itemXml, "description");
-    const link = extractTagValue(itemXml, "link");
-    const pubDate = extractTagValue(itemXml, "pubDate");
+    let description = extractTagValue(itemXml, "description");
+    let link = extractTagRaw(itemXml, "link");
+    const pubDate = extractTagRaw(itemXml, "pubDate");
+
+    // If link is empty, search for actual article url in guid or href attributes
+    if (!link || !link.startsWith("http")) {
+      const guid = extractTagRaw(itemXml, "guid");
+      if (guid && guid.startsWith("http")) {
+        link = guid;
+      } else {
+        const hrefMatch = itemXml.match(/href=["'](https?:\/\/[^"']+)["']/i) || itemXml.match(/href=&quot;(https?:\/\/[^&]+)&quot;/i);
+        if (hrefMatch) link = hrefMatch[1];
+      }
+    }
 
     if (title) {
+      // If description is empty or just duplicate of title, don't show duplicate summary
+      if (description) {
+        if (description.toLowerCase().includes(title.toLowerCase()) && description.length < title.length + 25) {
+          description = "";
+        }
+      }
+
       const lower = (title + " " + description).toLowerCase();
       let sentiment: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
       let impact: "HIGH" | "MEDIUM" | "LOW" = "MEDIUM";
@@ -38,7 +85,7 @@ function parseRssItems(xmlText: string, source: string): NewsItem[] {
       items.push({
         id: Buffer.from(title).toString("base64").substring(0, 16),
         title,
-        summary: description ? description.substring(0, 180) + "..." : "No additional description available.",
+        summary: description ? description.substring(0, 180) + (description.length > 180 ? "..." : "") : "",
         url: link || "https://finance.yahoo.com",
         source,
         publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),

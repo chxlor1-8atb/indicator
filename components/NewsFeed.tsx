@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { NewsItem } from "@/lib/types";
-import { Newspaper, ExternalLink, Flame, TrendingUp, TrendingDown, Minus, Filter, Calendar, Clock, AlertOctagon } from "lucide-react";
+import { Newspaper, ExternalLink, Flame, TrendingUp, TrendingDown, Minus, Filter, Calendar, Clock, AlertOctagon, Copy, Check } from "lucide-react";
 import { getDailyEconomicCalendar } from "@/lib/calendarEngine";
 
 interface NewsFeedProps {
@@ -14,6 +14,17 @@ interface NewsFeedProps {
 export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedProps) {
   const [viewMode, setViewMode] = useState<"NEWS" | "CALENDAR">("NEWS");
   const [filter, setFilter] = useState<"ALL" | "RELEVANT" | "HIGH_IMPACT">("ALL");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyNewsLink = (e: React.MouseEvent, item: NewsItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (item.url) {
+      navigator.clipboard.writeText(item.url);
+      setCopiedId(item.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
+  };
 
   const calendarEvents = getDailyEconomicCalendar(selectedAsset);
 
@@ -241,30 +252,70 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
                 <ExternalLink className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5 text-slate-400" />
               </a>
 
-              {/* Summary */}
-              {item.summary && (
+              {/* Summary (Clean text only - ซ่อนลิงก์ดิบและโค้ด HTML รกตาทั้งหมด) */}
+              {item.summary && 
+               !item.summary.includes("&lt;") && 
+               !item.summary.includes("<a") && 
+               !item.summary.includes("href=") && 
+               !item.summary.startsWith("http") && (
                 <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-normal">
                   {item.summary}
                 </p>
               )}
 
-              {/* Related tags */}
-              {item.relatedSymbols.length > 0 && (
-                <div className="flex items-center gap-1 mt-2">
-                  {item.relatedSymbols.map((sym) => (
-                    <span
-                      key={sym}
-                      className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
-                        sym === selectedAsset
-                          ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                          : "bg-surface-100 text-slate-500 border-slate-800"
-                      }`}
-                    >
-                      #{sym}
-                    </span>
-                  ))}
+              {/* Card Footer: Related tags & Copy Link action */}
+              <div className="flex items-center justify-between gap-2 mt-2.5 pt-2 border-t border-slate-800/60">
+                {/* Related tags */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  {item.relatedSymbols.length > 0 ? (
+                    item.relatedSymbols.map((sym) => (
+                      <span
+                        key={sym}
+                        className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                          sym === selectedAsset
+                            ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                            : "bg-surface-100 text-slate-500 border-slate-800"
+                        }`}
+                      >
+                        #{sym}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[9px] text-slate-600 font-mono">#Market</span>
+                  )}
                 </div>
-              )}
+
+                {/* Copy Link & Source Link Actions */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={(e) => handleCopyNewsLink(e, item)}
+                    title="คัดลอกลิงก์ข่าวต้นทาง"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-surface-100 hover:bg-slate-700/80 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-all active:scale-95"
+                  >
+                    {copiedId === item.id ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400 font-semibold">คัดลอกแล้ว</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 text-slate-400" />
+                        <span>คัดลอกลิงก์</span>
+                      </>
+                    )}
+                  </button>
+
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="เปิดอ่านข่าวต้นทาง"
+                    className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-700/80 transition-all flex items-center"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
             </div>
           ))
         )}
