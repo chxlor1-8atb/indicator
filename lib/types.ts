@@ -73,6 +73,30 @@ export interface IntraBarMomentum {
   bias: "STRONG_BUYERS" | "STRONG_SELLERS" | "BALANCED";
 }
 
+export interface Rolling24hRange {
+  high24h: number;
+  low24h: number;
+  currentPrice: number;
+  percentPosition: number; // 0 - 100%
+  isNearTop: boolean;
+  isNearBottom: boolean;
+  warning?: string;
+}
+
+export interface QuadEmaConfluence {
+  isQuadGoldenStack: boolean;
+  isQuadDeathStack: boolean;
+  status: "GOLDEN_STACK" | "DEATH_STACK" | "MIXED";
+  scoreBonus: number;
+}
+
+export interface SessionORB {
+  session: "LONDON" | "NEW_YORK" | "ASIAN" | "NONE";
+  high: number;
+  low: number;
+  status: "BREAKOUT_BULL" | "BREAKOUT_BEAR" | "INSIDE_RANGE";
+}
+
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
   grade: "A+" | "A" | "B" | "C (Wait)";
@@ -126,6 +150,8 @@ export interface SessionStatus {
   spreadStatus: "NORMAL" | "TIGHT" | "WIDE_DANGER";
   tradeAllowed: boolean;
   confidenceModifier: number;
+  isWeekendCloseFreeze?: boolean;
+  orb?: SessionORB;
 }
 
 export type CalendarImpact = "HIGH" | "MEDIUM" | "LOW" | "HOLIDAY";
@@ -180,6 +206,8 @@ export interface IndicatorData {
   vwap?: (VWAPPoint | null)[];
   volumeAnomalies?: VolumeAnomalyItem[];
   intraBarMomentum?: IntraBarMomentum;
+  rolling24h?: Rolling24hRange;
+  quadEma?: QuadEmaConfluence;
 }
 
 export interface NewsItem {
@@ -280,6 +308,7 @@ export interface AnalysisResult {
     alignmentScore?: number;
     assetCategory?: "forex" | "crypto" | "commodities" | "stocks";
     summary?: string;
+    quadEma?: QuadEmaConfluence;
   };
   technicalAnalysis: {
     trend: "STRONG_UPTREND" | "UPTREND" | "SIDEWAYS" | "DOWNTREND" | "STRONG_DOWNTREND";

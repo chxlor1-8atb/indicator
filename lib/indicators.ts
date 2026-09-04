@@ -9,6 +9,7 @@ import {
   VWAPPoint,
   VolumeAnomalyItem,
   IntraBarMomentum,
+  Rolling24hRange,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -655,6 +656,89 @@ export function calculateIntraBarMomentum(candle: Candle, livePrice: number): In
   return { percentInRange, bias };
 }
 
+// ─── [แผน 6] High/Low Outlier Rejection (Spread Wicks Filter) ───
+export function filterOutlierWicks(candles: Candle[], maxWickMultiplier = 3.5): Candle[] {
+  if (!candles || candles.length < 15) return candles;
+
+  const ranges = candles.map((c) => c.high - c.low);
+  const avgRange = ranges.slice(-30).reduce((a, b) => a + b, 0) / Math.min(30, ranges.length);
+  const maxAllowedWick = avgRange * maxWickMultiplier;
+
+  return candles.map((c) => {
+    const bodyTop = Math.max(c.open, c.close);
+    const bodyBottom = Math.min(c.open, c.close);
+    const upperWick = c.high - bodyTop;
+    const lowerWick = bodyBottom - c.low;
+
+    let clippedHigh = c.high;
+    let clippedLow = c.low;
+
+    if (upperWick > maxAllowedWick) {
+      clippedHigh = Number((bodyTop + maxAllowedWick).toFixed(4));
+    }
+    if (lowerWick > maxAllowedWick) {
+      clippedLow = Number((bodyBottom - maxAllowedWick).toFixed(4));
+    }
+
+    if (clippedHigh !== c.high || clippedLow !== c.low) {
+      return {
+        ...c,
+        high: clippedHigh,
+        low: clippedLow,
+      };
+    }
+    return c;
+  });
+}
+
+// ─── [แผน 7] Rolling 24-Hour High/Low Breakout Filter ───
+export function calculateRolling24hRange(candles: Candle[], currentPrice: number): Rolling24hRange {
+  if (!candles || candles.length === 0) {
+    return {
+      high24h: currentPrice,
+      low24h: currentPrice,
+      currentPrice,
+      percentPosition: 50,
+      isNearTop: false,
+      isNearBottom: false,
+    };
+  }
+
+  // Sample last 24 candles of the series
+  const sample = candles.slice(-24);
+  let high24h = -Infinity;
+  let low24h = Infinity;
+
+  sample.forEach((c) => {
+    if (c.high > high24h) high24h = c.high;
+    if (c.low < low24h) low24h = c.low;
+  });
+
+  const range = high24h - low24h || 1;
+  const rawPct = ((currentPrice - low24h) / range) * 100;
+  const percentPosition = Math.max(0, Math.min(100, Math.round(rawPct * 10) / 10));
+
+  const isNearTop = percentPosition >= 92;
+  const isNearBottom = percentPosition <= 8;
+
+  let warning: string | undefined;
+  if (isNearTop) {
+    warning = "ราคาชิดขอบบนรอบ 24 ชม. (>92%) เสี่ยงติดดอยหากไม่มี Volume สถาบันหนุน";
+  } else if (isNearBottom) {
+    warning = "ราคาชิดขอบล่างรอบ 24 ชม. (<8%) เสี่ยงเด้งกลับหากไม่มี Volume ขายหนุน";
+  }
+
+  return {
+    high24h: Number(high24h.toFixed(4)),
+    low24h: Number(low24h.toFixed(4)),
+    currentPrice,
+    percentPosition,
+    isNearTop,
+    isNearBottom,
+    warning,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[]): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -671,31 +755,37 @@ export function calculateAllIndicators(candles: Candle[]): IndicatorData {
     };
   }
 
+  // [แผน 6] กรองไส้เทียนสเปรดถ่าง (Outlier Wicks) ก่อนส่งคำนวณแนวรับ-ต้านและแบนด์
+  const cleanCandles = filterOutlierWicks(candles, 3.5);
+
   const currentPrice = candles[candles.length - 1].close;
   const firstPrice = candles[0].close;
   const priceChange24h = Number((currentPrice - firstPrice).toFixed(4));
   const priceChangePercent24h = Number(((priceChange24h / firstPrice) * 100).toFixed(2));
 
-  const rsi14 = calculateRSI(candles, 14);
-  const atr14 = calculateATR(candles, 14);
-  const atr10 = calculateATR(candles, 10);
+  const rsi14 = calculateRSI(cleanCandles, 14);
+  const atr14 = calculateATR(cleanCandles, 14);
+  const atr10 = calculateATR(cleanCandles, 10);
   const ema20 = calculateEMA(candles, 20);
   const ema50 = calculateEMA(candles, 50);
   const ema200 = calculateEMA(candles, 200);
   const macd = calculateMACD(candles, 12, 26, 9);
-  const superTrend = calculateSuperTrend(candles, 10, 3.0, atr10);
-  const bollingerBands = calculateBollingerBands(candles, 20, 2.0);
-  const stochRSI = calculateStochRSI(candles, 14, 14, 3, 3, rsi14);
-  const adx = calculateADX(candles, 14);
+  const superTrend = calculateSuperTrend(cleanCandles, 10, 3.0, atr10);
+  const bollingerBands = calculateBollingerBands(cleanCandles, 20, 2.0);
+  const stochRSI = calculateStochRSI(cleanCandles, 14, 14, 3, 3, rsi14);
+  const adx = calculateADX(cleanCandles, 14);
   const obv = calculateOBV(candles);
-  const fvgs = detectFairValueGaps(candles, atr14);
-  const { support, resistance } = calculateSupportResistance(candles);
+  const fvgs = detectFairValueGaps(cleanCandles, atr14);
+  const { support, resistance } = calculateSupportResistance(cleanCandles);
 
   // Batch 1: Quant-grade Accuracy Indicators
   const heikinAshi = calculateHeikinAshi(candles);
   const vwap = calculateVWAP(candles);
   const volumeAnomalies = detectVolumeAnomalies(candles, 20, 2.5);
   const intraBarMomentum = calculateIntraBarMomentum(candles[candles.length - 1], currentPrice);
+
+  // Batch 2: Plans 6 & 7
+  const rolling24h = calculateRolling24hRange(cleanCandles, currentPrice);
 
   return {
     rsi14,
@@ -718,5 +808,6 @@ export function calculateAllIndicators(candles: Candle[]): IndicatorData {
     vwap,
     volumeAnomalies,
     intraBarMomentum,
+    rolling24h,
   };
 }

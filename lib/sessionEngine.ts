@@ -1,3 +1,5 @@
+import { Candle, SessionORB } from "./types";
+
 export interface SessionStatus {
   thaiTimeStr: string;
   hour: number;
@@ -18,6 +20,8 @@ export interface SessionStatus {
   spreadStatus: "NORMAL" | "TIGHT" | "WIDE_DANGER";
   tradeAllowed: boolean;
   confidenceModifier: number;
+  isWeekendCloseFreeze?: boolean;
+  orb?: SessionORB;
 }
 
 export function isDaylightSavingTime(date: Date): boolean {
@@ -70,7 +74,7 @@ export function getThaiTimeParts(date: Date = new Date()) {
   return { hour, minute, day, month, year, dayOfWeek };
 }
 
-export function getMarketSessionStatus(symbol: string, customDate?: Date): SessionStatus {
+export function getMarketSessionStatus(symbol: string, customDate?: Date, candles?: Candle[]): SessionStatus {
   const now = customDate || new Date();
   
   // Convert to Thailand Time (GMT+7) with Serverless-safe Intl format
@@ -107,6 +111,11 @@ export function getMarketSessionStatus(symbol: string, customDate?: Date): Sessi
   // Monday 04:00 - 06:00: Weekend Gap risk
   const isMondayOpenGapRisk = dayOfWeek === 1 && hour >= 4 && hour < 6;
 
+  // ─── [แผน 10] Market Close Freeze Buffer (Forex Friday Night Close & Weekend) ───
+  // Friday night close (after 23:00 Fri until 05:00 Sat Thai time) or Weekend
+  const isFridayNightClose = (dayOfWeek === 5 && hour >= 23) || (dayOfWeek === 6 && hour < 5);
+  const isWeekendClosed = (dayOfWeek === 6 && hour >= 5) || dayOfWeek === 0 || (dayOfWeek === 1 && hour < 4);
+
   // ─── Golden Hours (Forex & Gold) ───
   // London/Tokyo Overlap: 14:00 - 16:00
   // London/NY Overlap (The Peak): 19:00 - 22:00
@@ -130,8 +139,18 @@ export function getMarketSessionStatus(symbol: string, customDate?: Date): Sessi
   const isGold = symbol.toUpperCase().includes("XAU") || symbol.toUpperCase() === "GOLD";
   const isCrypto = symbol.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB", "XRP"].some((c) => symbol.startsWith(c));
   const isIndex = ["SPY", "QQQ", "DIA", "US30", "NAS100"].some((idx) => symbol.toUpperCase().includes(idx));
+  const isWeekendCloseFreeze = (isFridayNightClose || isWeekendClosed) && !isCrypto;
 
-  if (isWitchingHour && !isCrypto) {
+  if (isWeekendCloseFreeze) {
+    spreadStatus = "WIDE_DANGER";
+    tradeAllowed = false;
+    confidenceModifier = -40;
+    sessionBadgeText = isWeekendClosed ? "🔒 MARKET CLOSED (ตลาดปิดสุดสัปดาห์)" : "🛑 FRIDAY CLOSE FREEZE (ตลาดใกล้ปิดสัปดาห์)";
+    sessionBadgeColor = "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse";
+    assetSessionAdvice = isWeekendClosed
+      ? "ตลาดปิดทำการสุดสัปดาห์ สัญญาณใหม่จะประเมินเมื่อตลาดเปิดเช้าวันจันทร์"
+      : "ตลาดใกล้ปิดสุดสัปดาห์ สเปรดถ่างกว้างมากและเสี่ยงต่อ Weekend Gap วันจันทร์ งดเปิดออเดอร์ใหม่โดยเด็ดขาด!";
+  } else if (isWitchingHour && !isCrypto) {
     spreadStatus = "WIDE_DANGER";
     tradeAllowed = false;
     confidenceModifier = -30;
@@ -234,6 +253,44 @@ export function getMarketSessionStatus(symbol: string, customDate?: Date): Sessi
     }
   }
 
+  // ─── [แผน 9] Session Open Range Breakout (ORB) ───
+  let orb: SessionORB | undefined;
+  if (candles && candles.length > 0) {
+    const isLondonTime = hour >= 14 && hour < 17;
+    const isNYTime = hour >= 19 && hour < 22;
+
+    if (isLondonTime || isNYTime) {
+      const targetSession: "LONDON" | "NEW_YORK" = isLondonTime ? "LONDON" : "NEW_YORK";
+      const targetHour = isLondonTime ? 14 : 19;
+
+      const orbCandles = candles.filter((c) => {
+        const { hour: cHour, minute: cMin } = getThaiTimeParts(new Date(c.time * 1000));
+        return cHour === targetHour && cMin < 30;
+      });
+
+      if (orbCandles.length > 0) {
+        let orbHigh = -Infinity;
+        let orbLow = Infinity;
+        orbCandles.forEach((c) => {
+          if (c.high > orbHigh) orbHigh = c.high;
+          if (c.low < orbLow) orbLow = c.low;
+        });
+
+        const currentPrice = candles[candles.length - 1].close;
+        let orbStatus: "BREAKOUT_BULL" | "BREAKOUT_BEAR" | "INSIDE_RANGE" = "INSIDE_RANGE";
+        if (currentPrice > orbHigh) orbStatus = "BREAKOUT_BULL";
+        else if (currentPrice < orbLow) orbStatus = "BREAKOUT_BEAR";
+
+        orb = {
+          session: targetSession,
+          high: Number(orbHigh.toFixed(4)),
+          low: Number(orbLow.toFixed(4)),
+          status: orbStatus,
+        };
+      }
+    }
+  }
+
   return {
     thaiTimeStr,
     hour,
@@ -254,5 +311,7 @@ export function getMarketSessionStatus(symbol: string, customDate?: Date): Sessi
     spreadStatus,
     tradeAllowed,
     confidenceModifier,
+    isWeekendCloseFreeze,
+    orb,
   };
 }

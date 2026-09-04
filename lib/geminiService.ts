@@ -1,4 +1,4 @@
-import { AnalysisResult, Candle, IndicatorData, NewsItem, ConfluenceCheckItem, TraderTierHierarchy } from "./types";
+import { AnalysisResult, Candle, IndicatorData, NewsItem, ConfluenceCheckItem, TraderTierHierarchy, QuadEmaConfluence } from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
 import { calculateATR, calculateEMA, detectCandleRejection, detectRSIDivergence } from "./indicators";
@@ -25,7 +25,7 @@ export function generateRuleBasedAnalysis(
   const historicalBacktest = runAutomatedBacktest(candles);
   const optimizedConfig = optimizeIndicatorParameters(candles);
   const regimeInfo = classifyMarketRegime(candles, indicators);
-  const sessionStatus = getMarketSessionStatus(symbol);
+  const sessionStatus = getMarketSessionStatus(symbol, undefined, candles);
   const calendarSafety = getNewsSafetyShieldStatus(symbol);
 
   // Determine asset precision dynamically (Forex = 4, Crypto under $10 = 4, JPY/Gold/Stocks = 2)
@@ -154,6 +154,7 @@ export function generateRuleBasedAnalysis(
     alignmentScore: rawMtf.alignmentScore ?? mtfAlignment.alignmentScore,
     assetCategory: rawMtf.assetCategory ?? mtfAlignment.assetCategory,
     summary: rawMtf.summary ?? mtfAlignment.summary,
+    quadEma: rawMtf.quadEma,
   };
 
   // SAFETY LOCK 4: Higher-Timeframe (H4/D1) Trend Filter & Dynamic Asset-Weighted Alignment
@@ -165,10 +166,28 @@ export function generateRuleBasedAnalysis(
   const isInstitutionalAligned = (tier1Bias === "BULLISH" && (macroBullish || mtfScore >= 45)) ||
                                  (tier1Bias === "BEARISH" && (macroBearish || mtfScore <= -45));
 
+  // [แผน 7] Rolling 24-Hour Range Traps (Buying at Peak / Selling at Bottom)
+  const rolling24h = indicators.rolling24h;
+  const hasBuyingVolumeSpike = indicators.volumeAnomalies?.some((a) => a.type === "BUYING_SPIKE");
+  const hasSellingVolumeSpike = indicators.volumeAnomalies?.some((a) => a.type === "SELLING_SPIKE");
+  const isBuyAtTopTrap = tier1Bias === "BULLISH" && (rolling24h?.isNearTop ?? false) && !hasBuyingVolumeSpike;
+  const isSellAtBottomTrap = tier1Bias === "BEARISH" && (rolling24h?.isNearBottom ?? false) && !hasSellingVolumeSpike;
+
+  // [แผน 8] Quad-EMA 200 Confluence
+  const quadEma = mtfMatrix.quadEma;
+  const isQuadGoldenLong = quadEma?.isQuadGoldenStack && tier1Bias === "BULLISH";
+  const isQuadDeathShort = quadEma?.isQuadDeathStack && tier1Bias === "BEARISH";
+  const isQuadConflict = (tier1Bias === "BULLISH" && (quadEma?.isQuadDeathStack ?? false)) ||
+                         (tier1Bias === "BEARISH" && (quadEma?.isQuadGoldenStack ?? false));
+
+  // [แผน 9] Session Open Range Breakout (ORB)
+  const isOrbBullBreak = sessionStatus.orb?.status === "BREAKOUT_BULL" && tier1Bias === "BULLISH";
+  const isOrbBearBreak = sessionStatus.orb?.status === "BREAKOUT_BEAR" && tier1Bias === "BEARISH";
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   let signal: AnalysisResult["signal"] = "WAIT";
-  let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier));
+  let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier + (quadEma?.scoreBonus ?? 0)));
   let setupGrade: AnalysisResult["setupGrade"] = masterConfluence.grade;
 
   // SAFETY LOCK 1: Red Folder News Freeze (30m before, 15m after)
@@ -177,28 +196,50 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = 30;
   }
-  // SAFETY LOCK 2: The Witching Hour (03:55 - 05:05) or Monday Open Gap
+  // SAFETY LOCK 2: Market Close Freeze (Forex Friday Night / Weekend) [แผน 10]
+  else if (sessionStatus.isWeekendCloseFreeze) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = 25;
+  }
+  // SAFETY LOCK 3: The Witching Hour (03:55 - 05:05) or Monday Open Gap
   else if (!sessionStatus.tradeAllowed) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = 35;
   }
-  // SAFETY LOCK 3: Counter-Trend Trap on Higher Timeframes (4H & Daily)
-  else if (isCounterTrend) {
+  // SAFETY LOCK 4: Counter-Trend Trap on Higher Timeframes or Quad-EMA 200 Conflict [แผน 8]
+  else if (isCounterTrend || isQuadConflict) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 45);
+    confidence = Math.min(confidence, 40);
   }
-  // SAFETY LOCK 4: Choppy Deadzone or Overextended
+  // SAFETY LOCK 5: Buying at 24h Top / Selling at 24h Bottom without Volume Anomaly [แผน 7]
+  else if (isBuyAtTopTrap || isSellAtBottomTrap) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 50);
+  }
+  // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
   } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= minThreshold) {
-    signal = (trend === "STRONG_UPTREND" || regimeInfo.regime === "EXPLOSIVE_TREND") && masterConfluence.totalScore >= 85 ? "STRONG_BUY" : "BUY";
+    signal = (trend === "STRONG_UPTREND" || regimeInfo.regime === "EXPLOSIVE_TREND" || isQuadGoldenLong) && masterConfluence.totalScore >= 85 ? "STRONG_BUY" : "BUY";
     if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
+    if (isOrbBullBreak) confidence = Math.min(95, confidence + 5);
+    if (isQuadGoldenLong) {
+      confidence = Math.min(98, confidence + 5);
+      setupGrade = "A+";
+    }
   } else if (tier1Bias === "BEARISH" && inSellValueZone && hasSellTrigger && masterConfluence.totalScore >= minThreshold) {
-    signal = (trend === "STRONG_DOWNTREND" || regimeInfo.regime === "EXPLOSIVE_TREND") && masterConfluence.totalScore >= 85 ? "STRONG_SELL" : "SELL";
+    signal = (trend === "STRONG_DOWNTREND" || regimeInfo.regime === "EXPLOSIVE_TREND" || isQuadDeathShort) && masterConfluence.totalScore >= 85 ? "STRONG_SELL" : "SELL";
     if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
+    if (isOrbBearBreak) confidence = Math.min(95, confidence + 5);
+    if (isQuadDeathShort) {
+      confidence = Math.min(98, confidence + 5);
+      setupGrade = "A+";
+    }
   } else {
     signal = "WAIT";
     setupGrade = masterConfluence.totalScore >= 60 ? "B" : "C (Wait)";
@@ -441,11 +482,34 @@ export async function calculateTrueMultiTimeframeMatrix(
 
     const alignment = computeMtfAlignment(symbol, rawMtf);
 
+    // [แผน 8] Quad-EMA 200 Confluence Analysis across 15m, 1h, 4h, 1D
+    const currentPrice = c15m[c15m.length - 1]?.close || c1h[c1h.length - 1]?.close || 0;
+    const ema200_15m = (c15m.length > 20 ? calculateEMA(c15m, 200).slice(-1)[0] : null) ?? currentPrice;
+    const ema200_1h = (c1h.length > 20 ? calculateEMA(c1h, 200).slice(-1)[0] : null) ?? currentPrice;
+    const ema200_4h = (c4h.length > 20 ? calculateEMA(c4h, 200).slice(-1)[0] : null) ?? currentPrice;
+    const ema200_1d = (c1d.length > 20 ? calculateEMA(c1d, 200).slice(-1)[0] : null) ?? currentPrice;
+
+    const above15m = currentPrice >= ema200_15m;
+    const above1h = currentPrice >= ema200_1h;
+    const above4h = currentPrice >= ema200_4h;
+    const above1d = currentPrice >= ema200_1d;
+
+    const isQuadGoldenStack = above15m && above1h && above4h && above1d;
+    const isQuadDeathStack = !above15m && !above1h && !above4h && !above1d;
+
+    const quadEma: QuadEmaConfluence = {
+      isQuadGoldenStack,
+      isQuadDeathStack,
+      status: isQuadGoldenStack ? "GOLDEN_STACK" : isQuadDeathStack ? "DEATH_STACK" : "MIXED",
+      scoreBonus: isQuadGoldenStack ? 10 : isQuadDeathStack ? -10 : 0,
+    };
+
     return {
       ...rawMtf,
       alignmentScore: alignment.alignmentScore,
       assetCategory: alignment.assetCategory,
       summary: alignment.summary,
+      quadEma,
     };
   } catch (err) {
     console.warn("Failed to calculate true MTF matrix from Neon:", err);

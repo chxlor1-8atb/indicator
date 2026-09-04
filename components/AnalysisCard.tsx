@@ -658,6 +658,50 @@ export default function AnalysisCard({
               );
             })}
           </div>
+
+          {/* [แผน 8] Quad-EMA 200 Confluence Badge */}
+          {analysis.timeframeMatrix.quadEma && analysis.timeframeMatrix.quadEma.status !== "MIXED" && (
+            <div className={`p-2.5 rounded-lg text-xs font-bold flex items-center justify-between border ${
+              analysis.timeframeMatrix.quadEma.status === "GOLDEN_STACK"
+                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                : "bg-rose-500/15 border-rose-500/40 text-rose-300"
+            }`}>
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4" />
+                <span>
+                  {analysis.timeframeMatrix.quadEma.status === "GOLDEN_STACK"
+                    ? "🔥 QUAD-EMA 200 GOLDEN STACK: ราคายืนเหนือ EMA 200 ครบทั้ง 4 ไทม์เฟรม (แรงซื้อสถาบันครบทุกมิติ)"
+                    : "🛑 QUAD-EMA 200 DEATH STACK: ราคาอยู่ใต้ EMA 200 ครบทั้ง 4 ไทม์เฟรม (แรงขายคุมทุกมิติ ห้ามสวนเทรนด์)"}
+                </span>
+              </div>
+              <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-black/40 border border-slate-700">
+                {analysis.timeframeMatrix.quadEma.status === "GOLDEN_STACK" ? "+10 Confluence" : "-10 Penalty"}
+              </span>
+            </div>
+          )}
+
+          {/* [แผน 9] Session Open Range Breakout (ORB) */}
+          {analysis.sessionStatus?.orb && (
+            <div className={`p-2.5 rounded-lg text-xs font-bold flex items-center justify-between border ${
+              analysis.sessionStatus.orb.status === "BREAKOUT_BULL"
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                : analysis.sessionStatus.orb.status === "BREAKOUT_BEAR"
+                ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                : "bg-surface-50 border-slate-800 text-slate-400"
+            }`}>
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span>
+                  30-Min Opening Range ({analysis.sessionStatus.orb.session}):{" "}
+                  {analysis.sessionStatus.orb.status === "BREAKOUT_BULL"
+                    ? `เบรกทะลุกรอบบน (${analysis.sessionStatus.orb.high}) ยืนยันทิศทางขึ้น ▲`
+                    : analysis.sessionStatus.orb.status === "BREAKOUT_BEAR"
+                    ? `เบรกหลุดกรอบล่าง (${analysis.sessionStatus.orb.low}) ยืนยันทิศทางลง ▼`
+                    : `กำลังสะสมในกรอบ (${analysis.sessionStatus.orb.low} - ${analysis.sessionStatus.orb.high})`}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
