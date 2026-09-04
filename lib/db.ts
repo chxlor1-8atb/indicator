@@ -274,3 +274,52 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
     console.error("Error resolving open signals:", err);
   }
 }
+
+/**
+ * Saves a debounced market snapshot.
+ * Skips saving if a snapshot for the same symbol & timeframe was saved within 1 hour to save bandwidth.
+ */
+export async function saveMarketSnapshot(
+  symbol: string,
+  timeframe: string,
+  closePrice: number,
+  rsi?: number,
+  supertrend?: string,
+  regime?: string
+) {
+  if (!sql || closePrice <= 0) return;
+  try {
+    const recent = await sql.query(
+      `SELECT id FROM market_snapshots WHERE symbol = $1 AND timeframe = $2 AND created_at >= NOW() - INTERVAL '1 hour' LIMIT 1`,
+      [symbol, timeframe]
+    );
+    if (recent.length > 0) return;
+
+    await sql.query(
+      `INSERT INTO market_snapshots (symbol, timeframe, close_price, rsi, supertrend, regime) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [symbol, timeframe, closePrice, rsi || 50, supertrend || "UP", regime || "Trending"]
+    );
+  } catch (err) {
+    console.error("Error saving market snapshot:", err);
+  }
+}
+
+/**
+ * Registers or updates a Telegram subscriber.
+ */
+export async function saveTelegramSubscriber(chatId: string, username?: string, alertSymbol = "ALL", minGrade = "B") {
+  if (!sql || !chatId) return { success: false, error: "No database or chat ID" };
+  try {
+    await sql.query(
+      `INSERT INTO telegram_subscribers (chat_id, username, alert_symbol, min_grade, is_active)
+       VALUES ($1, $2, $3, $4, TRUE)
+       ON CONFLICT (chat_id) DO UPDATE SET alert_symbol = $3, min_grade = $4, is_active = TRUE`,
+      [chatId, username || "trader", alertSymbol, minGrade]
+    );
+    return { success: true };
+  } catch (err) {
+    console.error("Error saving telegram subscriber:", err);
+    return { success: false, error: String(err) };
+  }
+}
+

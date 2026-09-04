@@ -3,7 +3,7 @@ import { getMarketCandles } from "@/lib/marketService";
 import { calculateAllIndicators } from "@/lib/indicators";
 import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
-import { saveAiSignal, resolveOpenSignals } from "@/lib/db";
+import { saveAiSignal, resolveOpenSignals, saveMarketSnapshot } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +32,12 @@ export async function POST(request: NextRequest) {
     );
 
     // 4. Ultra-efficient Event-Driven DB Hook (Non-blocking):
-    // Check open signals against current price & record new actionable setup
+    // Check open signals, record snapshot & store new actionable trade
     if (indicators.currentPrice > 0) {
       resolveOpenSignals(symbol, indicators.currentPrice).catch(console.error);
+      const lastRSI = indicators.rsi[indicators.rsi.length - 1] || 50;
+      const lastST = indicators.superTrend?.[indicators.superTrend.length - 1]?.direction || "UP";
+      saveMarketSnapshot(symbol, timeframe, indicators.currentPrice, lastRSI, lastST, analysis.regimeInfo?.title).catch(console.error);
     }
     if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
       saveAiSignal(analysis).catch(console.error);

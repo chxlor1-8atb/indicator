@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendTelegramMessage } from "@/lib/telegramService";
+import { saveTelegramSubscriber } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,11 @@ export async function POST(request: NextRequest) {
     const chatId = body.chatId || process.env.TELEGRAM_CHAT_ID;
     const analysis = body.analysis;
     const message = body.message;
+
+    // Asynchronously save subscriber to Neon
+    if (chatId) {
+      saveTelegramSubscriber(chatId).catch(console.error);
+    }
 
     if (!botToken || !chatId) {
       return NextResponse.json(
