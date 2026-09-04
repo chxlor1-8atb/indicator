@@ -5,6 +5,8 @@ import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
 import { sendTelegramMessage } from "@/lib/telegramService";
 
+import { resolveOpenSignals, saveAiSignal } from "@/lib/db";
+
 export const dynamic = "force-dynamic";
 
 export const maxDuration = 60;
@@ -35,12 +37,31 @@ export async function GET(request: NextRequest) {
       )
     );
 
-    // 2. Scan core assets for AI Signals & Telegram notifications
+    // 2. Closed-Loop 24/7 Trade Resolution & Learning Attribution
+    // Check open ACTIVE trades against latest price and record lessons upon TP/SL hit
+    for (const symbol of watchList) {
+      try {
+        const hourlyCandles = await getMarketCandles(symbol, "1h");
+        const latestPrice = hourlyCandles[hourlyCandles.length - 1]?.close;
+        if (latestPrice && latestPrice > 0) {
+          await resolveOpenSignals(symbol, latestPrice);
+        }
+      } catch (err) {
+        console.warn(`Cron trade resolution failed for ${symbol}:`, err);
+      }
+    }
+
+    // 3. Scan core assets for AI Signals & Telegram notifications
     const alertAssets = ["XAUUSD", "BTCUSDT", "EURUSD"];
     for (const symbol of alertAssets) {
       const candles = await getMarketCandles(symbol, "1h");
       const indicators = calculateAllIndicators(candles);
       const analysis = await analyzeWithGemini(symbol, "1h", candles, indicators, news);
+
+      // Record actionable trades with state-transition deduplication
+      if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
+        await saveAiSignal(analysis).catch(console.error);
+      }
 
       // If high confidence signal (Strong Buy/Sell or >= 80% confidence), send alert
       if (

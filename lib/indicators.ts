@@ -181,17 +181,30 @@ export function calculateBollingerBands(
   const result: (BollingerBandPoint | null)[] = new Array(len).fill(null);
   if (len < period) return result;
 
-  for (let i = period - 1; i < len; i++) {
-    const slice = candles.slice(i - period + 1, i + 1);
-    const sum = slice.reduce((acc, c) => acc + c.close, 0);
-    const middle = sum / period;
+  let sum = 0;
+  let sumSq = 0;
 
-    const variance = slice.reduce((acc, c) => acc + Math.pow(c.close - middle, 2), 0) / period;
+  for (let i = 0; i < period; i++) {
+    const c = candles[i].close;
+    sum += c;
+    sumSq += c * c;
+  }
+
+  for (let i = period - 1; i < len; i++) {
+    if (i >= period) {
+      const added = candles[i].close;
+      const removed = candles[i - period].close;
+      sum += added - removed;
+      sumSq += added * added - removed * removed;
+    }
+
+    const middle = sum / period;
+    const variance = Math.max(0, sumSq / period - middle * middle);
     const std = Math.sqrt(variance);
 
     const upper = middle + stdDev * std;
     const lower = middle - stdDev * std;
-    const bandwidth = Number((((upper - lower) / middle) * 100).toFixed(2));
+    const bandwidth = middle !== 0 ? Number((((upper - lower) / middle) * 100).toFixed(2)) : 0;
 
     result[i] = {
       upper: Number(upper.toFixed(2)),

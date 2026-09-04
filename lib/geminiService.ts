@@ -1,12 +1,12 @@
 import { AnalysisResult, Candle, IndicatorData, NewsItem, ConfluenceCheckItem, TraderTierHierarchy } from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
-import { calculateATR, detectCandleRejection, detectRSIDivergence } from "./indicators";
+import { calculateATR, calculateEMA, detectCandleRejection, detectRSIDivergence } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
 import { getMarketSessionStatus } from "./sessionEngine";
 import { getNewsSafetyShieldStatus } from "./calendarEngine";
-import { getRecentLessons, getAdaptiveWeights, AdaptiveWeightsConfig } from "./db";
+import { getRecentLessons, getAdaptiveWeights, AdaptiveWeightsConfig, getCachedCandles } from "./db";
 
 export function generateRuleBasedAnalysis(
   symbol: string,
@@ -14,7 +14,8 @@ export function generateRuleBasedAnalysis(
   candles: Candle[],
   indicators: IndicatorData,
   news: NewsItem[],
-  adaptiveConfig?: AdaptiveWeightsConfig
+  adaptiveConfig?: AdaptiveWeightsConfig,
+  multiTimeframeMatrix?: AnalysisResult["timeframeMatrix"]
 ): AnalysisResult {
   const currentPrice = indicators.currentPrice;
   const lastCandle = candles[candles.length - 1];
@@ -126,6 +127,20 @@ export function generateRuleBasedAnalysis(
   if (sentimentScore >= 20) overallSentiment = "BULLISH";
   else if (sentimentScore <= -20) overallSentiment = "BEARISH";
 
+  // MTF Matrix Resolution (True candles from DB if provided, else fallback to current series)
+  const mtfMatrix: AnalysisResult["timeframeMatrix"] = multiTimeframeMatrix || {
+    m15: isUptrend ? "BULLISH" : isDowntrend ? "BEARISH" : "NEUTRAL",
+    h1: isUptrend ? "BULLISH" : isDowntrend ? "BEARISH" : "NEUTRAL",
+    h4: currentPrice > lastEMA200 ? "BULLISH" : "BEARISH",
+    d1: currentPrice > lastEMA200 ? "BULLISH" : "BEARISH",
+  };
+
+  // SAFETY LOCK 4: Higher-Timeframe (H4/D1) Trend Filter
+  const macroBullish = mtfMatrix.h4 === "BULLISH" && mtfMatrix.d1 === "BULLISH";
+  const macroBearish = mtfMatrix.h4 === "BEARISH" && mtfMatrix.d1 === "BEARISH";
+  const isCounterTrend = (tier1Bias === "BULLISH" && macroBearish) || (tier1Bias === "BEARISH" && macroBullish);
+  const isInstitutionalAligned = (tier1Bias === "BULLISH" && macroBullish) || (tier1Bias === "BEARISH" && macroBearish);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   let signal: AnalysisResult["signal"] = "WAIT";
@@ -144,14 +159,22 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = 35;
   }
-  // SAFETY LOCK 3: Choppy Deadzone or Overextended
+  // SAFETY LOCK 3: Counter-Trend Trap on Higher Timeframes (4H & Daily)
+  else if (isCounterTrend) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 45);
+  }
+  // SAFETY LOCK 4: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
   } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= minThreshold) {
     signal = (trend === "STRONG_UPTREND" || regimeInfo.regime === "EXPLOSIVE_TREND") && masterConfluence.totalScore >= 85 ? "STRONG_BUY" : "BUY";
+    if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
   } else if (tier1Bias === "BEARISH" && inSellValueZone && hasSellTrigger && masterConfluence.totalScore >= minThreshold) {
     signal = (trend === "STRONG_DOWNTREND" || regimeInfo.regime === "EXPLOSIVE_TREND") && masterConfluence.totalScore >= 85 ? "STRONG_SELL" : "SELL";
+    if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
   } else {
     signal = "WAIT";
     setupGrade = masterConfluence.totalScore >= 60 ? "B" : "C (Wait)";
@@ -241,12 +264,7 @@ export function generateRuleBasedAnalysis(
     regimeInfo,
     sessionStatus,
     calendarSafety,
-    timeframeMatrix: {
-      m15: isUptrend ? "BULLISH" : isDowntrend ? "BEARISH" : "NEUTRAL",
-      h1: isUptrend ? "BULLISH" : isDowntrend ? "BEARISH" : "NEUTRAL",
-      h4: currentPrice > lastEMA200 ? "BULLISH" : "BEARISH",
-      d1: currentPrice > lastEMA200 ? "BULLISH" : "BEARISH",
-    },
+    timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
       rsiStatus: `RSI(${regimeInfo.optimalParams.rsiPeriod}): ${lastRSI.toFixed(1)} (StochRSI K: ${indicators.stochRSI?.slice(-1)[0]?.k ?? 50})`,
@@ -308,6 +326,44 @@ export function generateRuleBasedAnalysis(
   };
 }
 
+/**
+ * Computes true Multi-Timeframe Alignment (M15, H1, H4, D1) directly from
+ * actual historical candlestick data in Neon PostgreSQL.
+ */
+export async function calculateTrueMultiTimeframeMatrix(
+  symbol: string
+): Promise<AnalysisResult["timeframeMatrix"]> {
+  try {
+    const [c15m, c1h, c4h, c1d] = await Promise.all([
+      getCachedCandles(symbol, "15m", 50),
+      getCachedCandles(symbol, "1h", 50),
+      getCachedCandles(symbol, "4h", 50),
+      getCachedCandles(symbol, "1D", 50),
+    ]);
+
+    const determineBias = (candles: Candle[]): "BULLISH" | "BEARISH" | "NEUTRAL" => {
+      if (!candles || candles.length < 15) return "NEUTRAL";
+      const last = candles[candles.length - 1];
+      const ema20 = calculateEMA(candles, 20).slice(-1)[0] ?? last.close;
+      const ema50 = calculateEMA(candles, 50).slice(-1)[0] ?? last.close;
+
+      if (last.close > ema50 && ema20 >= ema50) return "BULLISH";
+      if (last.close < ema50 && ema20 <= ema50) return "BEARISH";
+      return "NEUTRAL";
+    };
+
+    return {
+      m15: determineBias(c15m),
+      h1: determineBias(c1h),
+      h4: determineBias(c4h),
+      d1: determineBias(c1d),
+    };
+  } catch (err) {
+    console.warn("Failed to calculate true MTF matrix from Neon:", err);
+    return { m15: "NEUTRAL", h1: "NEUTRAL", h4: "NEUTRAL", d1: "NEUTRAL" };
+  }
+}
+
 export async function analyzeWithGemini(
   symbol: string,
   timeframe: string,
@@ -318,13 +374,22 @@ export async function analyzeWithGemini(
 ): Promise<AnalysisResult> {
   const apiKey = customApiKey || process.env.GEMINI_API_KEY;
 
-  // Closed-loop reinforcement: Retrieve dynamic weights and past win/loss lessons
-  const [adaptiveConfig, recentLessons] = await Promise.all([
+  // Closed-loop reinforcement: Retrieve dynamic weights, past win/loss lessons, and True MTF Matrix
+  const [adaptiveConfig, recentLessons, trueMTFMatrix] = await Promise.all([
     getAdaptiveWeights(symbol).catch(() => undefined),
     getRecentLessons(symbol, 4).catch(() => []),
+    calculateTrueMultiTimeframeMatrix(symbol).catch(() => undefined),
   ]);
 
-  const ruleAnalysis = generateRuleBasedAnalysis(symbol, timeframe, candles, indicators, news, adaptiveConfig);
+  const ruleAnalysis = generateRuleBasedAnalysis(
+    symbol,
+    timeframe,
+    candles,
+    indicators,
+    news,
+    adaptiveConfig,
+    trueMTFMatrix
+  );
 
   if (!apiKey) {
     return ruleAnalysis;
@@ -435,7 +500,13 @@ Respond ONLY with valid JSON matching this schema:
     if (!rawText) return ruleAnalysis;
 
     const cleanedText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-    const parsed: AnalysisResult = JSON.parse(cleanedText);
+    const firstBrace = cleanedText.indexOf("{");
+    const lastBrace = cleanedText.lastIndexOf("}");
+    const jsonStr =
+      firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace
+        ? cleanedText.substring(firstBrace, lastBrace + 1)
+        : cleanedText;
+    const parsed: AnalysisResult = JSON.parse(jsonStr);
     parsed.historicalBacktest = ruleAnalysis.historicalBacktest;
     parsed.optimizedConfig = ruleAnalysis.optimizedConfig;
     parsed.traderHierarchy = ruleAnalysis.traderHierarchy;

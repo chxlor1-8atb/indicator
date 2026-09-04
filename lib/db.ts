@@ -6,6 +6,27 @@ const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL ||
 
 export const sql = connectionString ? neon(connectionString) : null;
 
+/**
+ * Resilient query wrapper with exponential backoff for transient network issues.
+ */
+export async function resilientQuery<T = unknown[]>(
+  queryText: string,
+  params: unknown[] = [],
+  retries = 1,
+  delayMs = 200
+): Promise<T> {
+  if (!sql) return [] as unknown as T;
+  try {
+    return (await sql.query(queryText, params)) as unknown as T;
+  } catch (err) {
+    if (retries > 0) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      return resilientQuery<T>(queryText, params, retries - 1, delayMs * 1.5);
+    }
+    throw err;
+  }
+}
+
 export interface DbAiSignal {
   id: number;
   symbol: string;
@@ -163,24 +184,44 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
   }
 
   try {
-    // 1. Deduplication check: Check if an identical active signal was generated in the last 2 hours
-    const recent = await sql.query(
-      `
-      SELECT id FROM ai_signals 
-      WHERE symbol = $1 AND timeframe = $2 AND action = $3 
-        AND created_at >= NOW() - INTERVAL '2 hours'
-      LIMIT 1;
-      `,
-      [symbol, timeframe, signal]
-    );
-
-    if (recent.length > 0) {
-      return { saved: false, reason: "Duplicate signal within 2-hour window skipped (bandwidth-saving)" };
-    }
-
     const entryPrice = tradeSetup.pendingPrice || (tradeSetup.entryZone.min + tradeSetup.entryZone.max) / 2;
 
-    await sql.query(
+    // 1. Smart State-Transition & Deduplication Filter:
+    // Check the latest recorded signal for this symbol and timeframe
+    const latestRows = await resilientQuery<Array<{
+      id: number;
+      action: string;
+      entry_price: number | string;
+      status: string;
+      created_at: string;
+    }>>(
+      `
+      SELECT id, action, entry_price, status, created_at
+      FROM ai_signals 
+      WHERE symbol = $1 AND timeframe = $2
+      ORDER BY created_at DESC
+      LIMIT 1;
+      `,
+      [symbol, timeframe]
+    );
+
+    if (latestRows && latestRows.length > 0) {
+      const latest = latestRows[0];
+      const prevPrice = Number(latest.entry_price);
+      const isSameDirection = latest.action === signal;
+      const isStillActive = latest.status === "ACTIVE";
+
+      // Price distance from previous entry (threshold approx 0.5% or entry zone width)
+      const priceDistance = Math.abs(entryPrice - prevPrice);
+      const threshold = Math.max(entryPrice * 0.005, 1);
+
+      // If active, same direction, and price hasn't moved significantly, skip duplicate signal
+      if (isStillActive && isSameDirection && priceDistance < threshold) {
+        return { saved: false, reason: "Signal skipped: Active trade already exists within the same entry zone" };
+      }
+    }
+
+    await resilientQuery(
       `
       INSERT INTO ai_signals (
         symbol, timeframe, action, order_type, entry_price, 
@@ -295,10 +336,10 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
   if (!sql || currentPrice <= 0) return;
 
   try {
-    const activeSignals = (await sql.query(
+    const activeSignals = await resilientQuery<DbAiSignal[]>(
       `SELECT * FROM ai_signals WHERE symbol = $1 AND status = 'ACTIVE'`,
       [symbol]
-    )) as unknown as DbAiSignal[];
+    );
 
     const updates: Promise<unknown>[] = [];
 
@@ -317,7 +358,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
         pips = Math.abs(sig.take_profit2 - sig.entry_price) * pipMultiplier;
         lesson = `🎯 ชนะเป้าสูงสุด TP2 (+${pips.toFixed(1)} pips): สัญญาณ ${sig.action} สอดคล้องกับแนวโน้มหลักอย่างสมบูรณ์ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade})`;
         updates.push(
-          sql.query(
+          resilientQuery(
             `UPDATE ai_signals SET status = 'HIT_TP2', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
             [Number(pips.toFixed(1)), sig.id]
           )
@@ -329,7 +370,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
         pips = Math.abs(sig.take_profit1 - sig.entry_price) * pipMultiplier;
         lesson = `✅ ชนะเป้าแรก TP1 (+${pips.toFixed(1)} pips): ราคาไปถึงเป้าหมายแรกได้ตามโครงสร้าง (Confluence ${sig.confluence_score}%) ก่อนเกิดการพักตัว`;
         updates.push(
-          sql.query(
+          resilientQuery(
             `UPDATE ai_signals SET status = 'HIT_TP1', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
             [Number(pips.toFixed(1)), sig.id]
           )
@@ -341,7 +382,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
         pips = -Math.abs(sig.entry_price - sig.stop_loss) * pipMultiplier;
         lesson = `⚠️ ชนจุดตัดขาดทุน SL (${pips.toFixed(1)} pips): เกิดการทะลุหลอกหรือมีแรงกระชากขัดแย้งเทรนด์ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade}) ให้ระวังจุดเข้าในลักษณะนี้`;
         updates.push(
-          sql.query(
+          resilientQuery(
             `UPDATE ai_signals SET status = 'HIT_SL', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
             [Number(pips.toFixed(1)), sig.id]
           )
@@ -351,7 +392,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
       // Record Attribution Lesson for Closed-Loop Learning
       if (outcome && lesson) {
         updates.push(
-          sql.query(
+          resilientQuery(
             `INSERT INTO signal_feedback_lessons (signal_id, symbol, timeframe, outcome, pnl_pips, confluence_score, setup_grade, lesson_summary)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
             [sig.id, sig.symbol, sig.timeframe, outcome, Number(pips.toFixed(1)), sig.confluence_score, sig.setup_grade, lesson]
@@ -494,10 +535,10 @@ export async function saveCandlesRollingBuffer(
         volume = EXCLUDED.volume;
     `;
 
-    await sql.query(batchInsertQuery, params);
+    await resilientQuery(batchInsertQuery, params);
 
     // FIFO Pruning: Keep only the latest `maxRetention` candles, delete older ones
-    await sql.query(
+    await resilientQuery(
       `
       DELETE FROM market_candles
       WHERE id IN (
@@ -526,7 +567,14 @@ export async function getCachedCandles(
   if (!sql) return [];
 
   try {
-    const rows = (await sql.query(
+    const rows = await resilientQuery<Array<{
+      time: string | number;
+      open: string | number;
+      high: string | number;
+      low: string | number;
+      close: string | number;
+      volume: string | number;
+    }>>(
       `
       SELECT time, open, high, low, close, volume FROM (
         SELECT time, open, high, low, close, volume
@@ -538,14 +586,7 @@ export async function getCachedCandles(
       ORDER BY time ASC;
       `,
       [symbol.toUpperCase(), timeframe, limit]
-    )) as unknown as Array<{
-      time: string | number;
-      open: string | number;
-      high: string | number;
-      low: string | number;
-      close: string | number;
-      volume: string | number;
-    }>;
+    );
 
     if (!rows || rows.length === 0) return [];
 

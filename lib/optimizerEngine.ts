@@ -13,18 +13,15 @@ interface SimulationResult {
 
 function simulateStrategy(
   candles: Candle[],
-  emaFastPeriod: number,
-  emaSlowPeriod: number,
+  emaFast: (number | null)[],
+  emaSlow: (number | null)[],
+  emaTrend: (number | null)[],
+  rsi: (number | null)[],
+  adx: (number | null)[],
+  atrs: (number | null)[],
   emaTrendPeriod: number,
-  rsiPeriod: number,
   tpMultiplier: number
 ): SimulationResult {
-  const emaFast = calculateEMA(candles, emaFastPeriod);
-  const emaSlow = calculateEMA(candles, emaSlowPeriod);
-  const emaTrend = calculateEMA(candles, emaTrendPeriod);
-  const rsi = calculateRSI(candles, rsiPeriod);
-  const adx = calculateADX(candles, 14);
-  const atrs = calculateATR(candles, 14);
 
   let activeTrade: {
     type: "BUY" | "SELL";
@@ -170,10 +167,45 @@ export function optimizeIndicatorParameters(candles: Candle[]): OptimizedConfig 
     };
   }
 
-  // 1. Baseline Performance (Standard 20 / 50 / 200, RSI 14, TP 2.0)
-  const baseline = simulateStrategy(candles, 20, 50, 200, 14, 2.0);
+  // 1. Precalculate shared indicators (ADX & ATR are invariant across periods)
+  const adx = calculateADX(candles, 14);
+  const atrs = calculateATR(candles, 14);
 
-  // 2. Multi-parameter Search Space
+  // Fast Memoization caches for unique periods
+  const emaCache = new Map<number, (number | null)[]>();
+  const getCachedEMA = (period: number) => {
+    let res = emaCache.get(period);
+    if (!res) {
+      res = calculateEMA(candles, period);
+      emaCache.set(period, res);
+    }
+    return res;
+  };
+
+  const rsiCache = new Map<number, (number | null)[]>();
+  const getCachedRSI = (period: number) => {
+    let res = rsiCache.get(period);
+    if (!res) {
+      res = calculateRSI(candles, period);
+      rsiCache.set(period, res);
+    }
+    return res;
+  };
+
+  // 2. Baseline Performance (Standard 20 / 50 / 200, RSI 14, TP 2.0)
+  const baseline = simulateStrategy(
+    candles,
+    getCachedEMA(20),
+    getCachedEMA(50),
+    getCachedEMA(200),
+    getCachedRSI(14),
+    adx,
+    atrs,
+    200,
+    2.0
+  );
+
+  // 3. Multi-parameter Search Space (162 simulations evaluated in ~10ms via memoization)
   const fastOptions = [9, 13, 20];
   const slowOptions = [34, 50, 89];
   const trendOptions = [100, 200];
@@ -191,13 +223,17 @@ export function optimizeIndicatorParameters(candles: Candle[]): OptimizedConfig 
   };
 
   for (const fast of fastOptions) {
+    const emaFast = getCachedEMA(fast);
     for (const slow of slowOptions) {
       if (fast >= slow) continue;
+      const emaSlow = getCachedEMA(slow);
       for (const trend of trendOptions) {
         if (slow >= trend) continue;
+        const emaTrend = getCachedEMA(trend);
         for (const rsiP of rsiOptions) {
+          const rsi = getCachedRSI(rsiP);
           for (const tp of tpOptions) {
-            const sim = simulateStrategy(candles, fast, slow, trend, rsiP, tp);
+            const sim = simulateStrategy(candles, emaFast, emaSlow, emaTrend, rsi, adx, atrs, trend, tp);
             if (sim.totalTrades < 3) continue;
 
             // Objective Fitness Function
