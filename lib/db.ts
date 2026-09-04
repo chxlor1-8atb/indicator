@@ -363,8 +363,36 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
     if (updates.length > 0) {
       await Promise.all(updates);
     }
+
+    // Trigger background data hygiene check (debounced every 6 hours)
+    runDataHygiene().catch((err) => console.error("Data hygiene trigger error:", err));
   } catch (err) {
     console.error("Error resolving open signals in batch:", err);
+  }
+}
+
+let lastPurgeTime = 0;
+const PURGE_INTERVAL_MS = 6 * 3600 * 1000; // 6 hours
+
+/**
+ * Housekeeping Data Hygiene:
+ * Purges old market snapshots (>14 days), feedback lessons (>30 days), and resolved signals (>60 days).
+ * Keeps Neon Serverless Database permanently below 5MB to never exhaust free-tier limits.
+ */
+export async function runDataHygiene(): Promise<void> {
+  if (!sql) return;
+  const now = Date.now();
+  if (now - lastPurgeTime < PURGE_INTERVAL_MS) return;
+  lastPurgeTime = now;
+
+  try {
+    await Promise.all([
+      sql.query(`DELETE FROM market_snapshots WHERE created_at < NOW() - INTERVAL '14 days'`),
+      sql.query(`DELETE FROM signal_feedback_lessons WHERE created_at < NOW() - INTERVAL '30 days'`),
+      sql.query(`DELETE FROM ai_signals WHERE status != 'ACTIVE' AND created_at < NOW() - INTERVAL '60 days'`),
+    ]);
+  } catch (err) {
+    console.error("Error during background data hygiene purge:", err);
   }
 }
 

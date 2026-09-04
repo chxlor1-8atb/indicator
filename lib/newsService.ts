@@ -85,19 +85,27 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
     },
   ];
 
-  for (const feed of feeds) {
+  const feedPromises = feeds.map(async (feed) => {
     try {
       const res = await fetch(feed.url, {
         headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(4000),
         next: { revalidate: 60 },
       });
       if (res.ok) {
         const xml = await res.text();
-        const parsed = parseRssItems(xml, feed.source);
-        allNews.push(...parsed);
+        return parseRssItems(xml, feed.source);
       }
     } catch (err) {
       console.warn(`Feed error for ${feed.source}:`, err);
+    }
+    return [];
+  });
+
+  const results = await Promise.allSettled(feedPromises);
+  for (const r of results) {
+    if (r.status === "fulfilled" && Array.isArray(r.value)) {
+      allNews.push(...r.value);
     }
   }
 

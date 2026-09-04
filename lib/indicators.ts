@@ -118,13 +118,14 @@ export function calculateATR(candles: Candle[], period = 14): (number | null)[] 
 export function calculateSuperTrend(
   candles: Candle[],
   period = 10,
-  multiplier = 3.0
+  multiplier = 3.0,
+  precalculatedATR?: (number | null)[]
 ): (SuperTrendPoint | null)[] {
   const len = candles.length;
   const result: (SuperTrendPoint | null)[] = new Array(len).fill(null);
   if (len < period) return result;
 
-  const atrValues = calculateATR(candles, period);
+  const atrValues = precalculatedATR || calculateATR(candles, period);
 
   let prevUpper = 0;
   let prevLower = 0;
@@ -269,11 +270,12 @@ export function calculateStochRSI(
   rsiPeriod = 14,
   stochPeriod = 14,
   smoothK = 3,
-  smoothD = 3
+  smoothD = 3,
+  precalculatedRSI?: (number | null)[]
 ): (StochRSIPoint | null)[] {
   const len = candles.length;
   const result: (StochRSIPoint | null)[] = new Array(len).fill({ k: 50, d: 50 });
-  const rsi = calculateRSI(candles, rsiPeriod);
+  const rsi = precalculatedRSI || calculateRSI(candles, rsiPeriod);
 
   const rawStoch: number[] = [];
   for (let i = stochPeriod - 1; i < len; i++) {
@@ -334,11 +336,11 @@ export function calculateOBV(candles: Candle[]): (number | null)[] {
 }
 
 // ─── 6. Smart Money Fair Value Gaps (FVG) ───
-export function detectFairValueGaps(candles: Candle[]): FVGItem[] {
+export function detectFairValueGaps(candles: Candle[], precalculatedATR?: (number | null)[]): FVGItem[] {
   const fvgs: FVGItem[] = [];
   if (candles.length < 5) return fvgs;
 
-  const atrs = calculateATR(candles, 14);
+  const atrs = precalculatedATR || calculateATR(candles, 14);
 
   for (let i = 2; i < candles.length; i++) {
     const c1 = candles[i - 2];
@@ -549,16 +551,18 @@ export function calculateAllIndicators(candles: Candle[]): IndicatorData {
   const priceChangePercent24h = Number(((priceChange24h / firstPrice) * 100).toFixed(2));
 
   const rsi14 = calculateRSI(candles, 14);
+  const atr14 = calculateATR(candles, 14);
+  const atr10 = calculateATR(candles, 10);
   const ema20 = calculateEMA(candles, 20);
   const ema50 = calculateEMA(candles, 50);
   const ema200 = calculateEMA(candles, 200);
   const macd = calculateMACD(candles, 12, 26, 9);
-  const superTrend = calculateSuperTrend(candles, 10, 3.0);
+  const superTrend = calculateSuperTrend(candles, 10, 3.0, atr10);
   const bollingerBands = calculateBollingerBands(candles, 20, 2.0);
-  const stochRSI = calculateStochRSI(candles, 14, 14, 3, 3);
+  const stochRSI = calculateStochRSI(candles, 14, 14, 3, 3, rsi14);
   const adx = calculateADX(candles, 14);
   const obv = calculateOBV(candles);
-  const fvgs = detectFairValueGaps(candles);
+  const fvgs = detectFairValueGaps(candles, atr14);
   const { support, resistance } = calculateSupportResistance(candles);
 
   return {

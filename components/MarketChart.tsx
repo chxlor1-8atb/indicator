@@ -59,8 +59,10 @@ export default function MarketChart({
         canvas.height = targetH;
         canvas.style.width = `${width}px`;
         canvas.style.height = `${height}px`;
-        ctx.scale(dpr, dpr);
       }
+
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       // Layout configuration
       const padding = { top: 25, right: 75, bottom: 25, left: 10 };
@@ -410,6 +412,8 @@ export default function MarketChart({
       const stats = `[${dt}] O: ${c.open} H: ${c.high} L: ${c.low} C: ${c.close} Vol: ${c.volume}`;
       ctx.fillText(stats, padding.left + 5, padding.top - 8);
     }
+
+    ctx.restore();
   };
 
   animId = requestAnimationFrame(render);

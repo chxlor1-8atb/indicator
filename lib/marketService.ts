@@ -72,7 +72,7 @@ export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKe
     const fromDate = new Date(Date.now() - 45 * 86400000).toISOString().split("T")[0];
 
     const url = `https://api.massive.com/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${fromDate}/${toDate}?adjusted=true&sort=asc&limit=250&apiKey=${apiKey}`;
-    const res = await fetch(url, { cache: "no-store" });
+    const res = await fetch(url, { signal: AbortSignal.timeout(4500), cache: "no-store" });
     
     if (res.ok) {
       const data = await res.json();
@@ -104,7 +104,7 @@ export async function fetchCryptoCandles(symbol: string, interval = "1h", limit 
   const bSymbol = symbol.endsWith("USDT") ? symbol : `${symbol}USDT`;
   const url = `https://api.binance.com/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${limit}`;
 
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, { signal: AbortSignal.timeout(4500), cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Binance API error: ${res.statusText}`);
   }
@@ -118,6 +118,53 @@ export async function fetchCryptoCandles(symbol: string, interval = "1h", limit 
     close: parseFloat(item[4] as string),
     volume: parseFloat(item[5] as string),
   }));
+}
+
+/**
+ * Resamples consecutive hourly candles into true 4-hour OHLCV candles,
+ * aligning boundaries with standard 4-hour UTC blocks (00:00, 04:00, 08:00, 12:00, 16:00, 20:00).
+ */
+export function resampleCandlesTo4H(hourlyCandles: Candle[]): Candle[] {
+  if (!hourlyCandles || hourlyCandles.length === 0) return [];
+
+  const fourHourCandles: Candle[] = [];
+  const FOUR_HOURS_SEC = 4 * 3600;
+
+  let currentBucketTime = -1;
+  let currentGroup: Candle[] = [];
+
+  for (const c of hourlyCandles) {
+    const bucketTime = Math.floor(c.time / FOUR_HOURS_SEC) * FOUR_HOURS_SEC;
+    if (bucketTime !== currentBucketTime) {
+      if (currentGroup.length > 0) {
+        fourHourCandles.push({
+          time: currentBucketTime,
+          open: currentGroup[0].open,
+          high: Math.max(...currentGroup.map((g) => g.high)),
+          low: Math.min(...currentGroup.map((g) => g.low)),
+          close: currentGroup[currentGroup.length - 1].close,
+          volume: currentGroup.reduce((acc, g) => acc + (g.volume || 0), 0),
+        });
+      }
+      currentBucketTime = bucketTime;
+      currentGroup = [c];
+    } else {
+      currentGroup.push(c);
+    }
+  }
+
+  if (currentGroup.length > 0) {
+    fourHourCandles.push({
+      time: currentBucketTime,
+      open: currentGroup[0].open,
+      high: Math.max(...currentGroup.map((g) => g.high)),
+      low: Math.min(...currentGroup.map((g) => g.low)),
+      close: currentGroup[currentGroup.length - 1].close,
+      volume: currentGroup.reduce((acc, g) => acc + (g.volume || 0), 0),
+    });
+  }
+
+  return fourHourCandles;
 }
 
 export async function fetchYahooCandles(symbol: string, interval = "1h"): Promise<Candle[]> {
@@ -179,7 +226,7 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
     "1D": "1d",
   };
   const yInterval = yahooIntervalMap[interval] || "60m";
-  const yRange = interval === "15m" ? "5d" : interval === "1D" ? "1y" : "1mo";
+  const yRange = interval === "15m" ? "5d" : interval === "4h" ? "3mo" : interval === "1D" ? "1y" : "1mo";
 
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySymbol)}?interval=${yInterval}&range=${yRange}&_t=${Date.now()}`;
   
@@ -187,6 +234,7 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     },
+    signal: AbortSignal.timeout(4500),
     cache: "no-store",
   });
 
@@ -230,6 +278,11 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
     last.close = Number(currentLivePrice.toFixed(4));
     last.high = Math.max(last.high, last.close);
     last.low = Math.min(last.low, last.close);
+  }
+
+  // If 4h requested, resample hourly candles into accurate 4h bars
+  if (interval === "4h") {
+    return resampleCandlesTo4H(candles);
   }
 
   return candles;
