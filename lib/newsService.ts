@@ -3,14 +3,31 @@ import { NewsItem } from "./types";
 function cleanHtmlText(raw: string): string {
   if (!raw) return "";
   let val = raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1").trim();
-  // Unescape standard HTML entities (&lt; &gt; &quot; &amp; &nbsp;)
+  // Unescape standard HTML entities (&lt; &gt; &quot; &amp; &nbsp; &apos;)
   val = val
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
     .replace(/&amp;/g, "&")
     .replace(/&nbsp;/g, " ");
+
+  // Decode numeric entities (e.g. &#8217; &#8220; &#8221;)
+  val = val.replace(/&#(\d+);/g, (_, dec) => {
+    try {
+      return String.fromCharCode(Number(dec));
+    } catch {
+      return "";
+    }
+  });
+  val = val.replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+    try {
+      return String.fromCharCode(parseInt(hex, 16));
+    } catch {
+      return "";
+    }
+  });
 
   // Strip all HTML tags
   val = val.replace(/<[^>]+>/g, " ");

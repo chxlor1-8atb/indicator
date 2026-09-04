@@ -7,55 +7,82 @@ export interface SendTelegramOptions {
   analysis?: AnalysisResult;
 }
 
-export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string {
-  const signalEmoji = {
-    STRONG_BUY: "???? *STRONG BUY*",
-    BUY: "?? *BUY*",
-    WAIT: "?? *WAIT / NEUTRAL*",
-    SELL: "?? *SELL*",
-    STRONG_SELL: "???? *STRONG SELL*",
-  }[analysis.signal] || "? *NEUTRAL*";
+function escapeHtml(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
-  const sentimentEmoji = {
-    BULLISH: "?? Bullish",
-    BEARISH: "?? Bearish",
-    NEUTRAL: "?? Neutral",
+function formatPrice(num: number, symbol: string): string {
+  const sym = symbol.toUpperCase();
+  const precision = sym.includes("JPY")
+    ? 2
+    : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some((c) => sym.startsWith(c) || sym.endsWith(c))
+    ? 4
+    : ["XRP", "ADA", "DOGE", "SUI"].some((c) => sym.startsWith(c))
+    ? 4
+    : num < 10 && num > 0
+    ? 4
+    : 2;
+  return num.toLocaleString(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision });
+}
+
+export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string {
+  const signalBadge = {
+    STRONG_BUY: "🟢🟢 <b>STRONG BUY</b>",
+    BUY: "🟢 <b>BUY</b>",
+    WAIT: "⚪ <b>WAIT / NEUTRAL</b>",
+    SELL: "🔴 <b>SELL</b>",
+    STRONG_SELL: "🔴🔴 <b>STRONG SELL</b>",
+  }[analysis.signal] || "⚪ <b>NEUTRAL</b>";
+
+  const sentimentBadge = {
+    BULLISH: "🟢 Bullish (แรงซื้อหนุน)",
+    BEARISH: "🔴 Bearish (แรงขายกดดัน)",
+    NEUTRAL: "⚪ Neutral (ทรงตัว)",
   }[analysis.newsSentimentAnalysis.overallSentiment];
 
+  const cal = analysis.calendarSafety;
+  const sess = analysis.sessionStatus;
+
   const lines = [
-    `?? *AI MARKET & NEWS ANALYSIS ALERT* ??`,
-    `????????????????????`,
-    `?? *Asset:* \`${analysis.symbol}\`  |  ? *TF:* \`${analysis.timeframe}\``,
-    `?? *Current Price:* \`${analysis.currentPrice.toLocaleString()}\``,
-    `?? *AI Signal:* ${signalEmoji} (Confidence: *${analysis.confidence}%*)`,
-    `????????????????????`,
-    `?? *TECHNICAL STRUCTURE:*`,
-    `• Trend: *${analysis.technicalAnalysis.trend}*`,
-    `• RSI(14): *${analysis.technicalAnalysis.rsiStatus}*`,
-    `• EMA: *${analysis.technicalAnalysis.emaStatus}*`,
-    `• Support: \`${analysis.technicalAnalysis.keySupport}\``,
-    `• Resistance: \`${analysis.technicalAnalysis.keyResistance}\``,
+    `🚀 <b>AI MARKET & NEWS INTELLIGENCE ALERT</b> 🚀`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `📊 <b>Asset:</b> <code>${analysis.symbol}</code>  |  ⏱️ <b>TF:</b> <code>${analysis.timeframe}</code>`,
+    `💰 <b>Live Price:</b> <code>${formatPrice(analysis.currentPrice, analysis.symbol)} USD</code>`,
+    `🎯 <b>AI Signal:</b> ${signalBadge} (Score: <b>${analysis.confidence}%</b> | Grade: <b>${analysis.setupGrade || "A"}</b>)`,
+    cal ? `🛡️ <b>News Shield:</b> <code>${cal.badgeText || "SAFE"}</code>` : "",
+    sess ? `🕒 <b>Market Session:</b> ${sess.sessionBadge?.text || "NORMAL"} (${sess.thaiTimeStr || ""})` : "",
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `📈 <b>TECHNICAL STRUCTURE:</b>`,
+    `• Trend: <b>${escapeHtml(analysis.technicalAnalysis.trend)}</b>`,
+    `• RSI Status: <b>${escapeHtml(analysis.technicalAnalysis.rsiStatus)}</b>`,
+    `• EMA Ribbon: <b>${escapeHtml(analysis.technicalAnalysis.emaStatus)}</b>`,
+    `• Support: <code>${analysis.technicalAnalysis.keySupport}</code>`,
+    `• Resistance: <code>${analysis.technicalAnalysis.keyResistance}</code>`,
     ``,
-    `?? *NEWS & MACRO SENTIMENT:*`,
-    `• Market Tone: ${sentimentEmoji} (Score: *${analysis.newsSentimentAnalysis.sentimentScore}*)`,
+    `📰 <b>NEWS & MACRO SENTIMENT:</b>`,
+    `• Sentiment: ${sentimentBadge} (Score: <b>${analysis.newsSentimentAnalysis.sentimentScore}</b>)`,
     `• Key Catalysts:`,
-    ...analysis.newsSentimentAnalysis.topHeadlines.slice(0, 2).map((h) => `  ?? _${h.title}_`),
+    ...analysis.newsSentimentAnalysis.topHeadlines.slice(0, 2).map((h) => `  ▪️ <i>${escapeHtml(h.title)}</i>`),
     ``,
-    `????????????????????`,
-    `?? *ACTIONABLE TRADE SETUP:*`,
-    `• Action: *${analysis.tradeSetup.action}*`,
-    `• Entry Zone: \`${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max}\``,
-    `• Stop Loss (SL): \`${analysis.tradeSetup.stopLoss}\``,
-    `• Take Profit 1 (TP1): \`${analysis.tradeSetup.takeProfit1}\``,
-    `• Take Profit 2 (TP2): \`${analysis.tradeSetup.takeProfit2}\``,
-    `• R:R Ratio: *${analysis.tradeSetup.riskRewardRatio}*`,
-    `• Invalidation: _${analysis.tradeSetup.invalidationNote}_`,
-    `????????????????????`,
-    `?? *AI Summary:*`,
-    `_${analysis.summary}_`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `⚡ <b>ACTIONABLE TRADE SETUP:</b>`,
+    `• Action: <b>${analysis.tradeSetup.action}</b> (${analysis.tradeSetup.orderType})`,
+    `• Entry Zone: <code>${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max}</code>`,
+    `• Stop Loss (SL): <code>${analysis.tradeSetup.stopLoss}</code> (-${analysis.tradeSetup.slPips || 0} pips)`,
+    `• Take Profit 1 (TP1): <code>${analysis.tradeSetup.takeProfit1}</code> (+${analysis.tradeSetup.tp1Pips || 0} pips)`,
+    `• Take Profit 2 (TP2): <code>${analysis.tradeSetup.takeProfit2}</code> (+${analysis.tradeSetup.tp2Pips || 0} pips)`,
+    `• R:R Ratio: <b>${analysis.tradeSetup.riskRewardRatio}</b>`,
+    `• Invalidation: <i>${escapeHtml(analysis.tradeSetup.invalidationNote)}</i>`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `💡 <b>AI Confluence Summary:</b>`,
+    `<i>${escapeHtml(analysis.summary)}</i>`,
     ``,
-    `? *Analyzed at:* \`${new Date(analysis.timestamp).toUTCString()}\``,
-  ];
+    `🕒 <b>Time:</b> <code>${new Date(analysis.timestamp).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,
+  ].filter(Boolean);
 
   return lines.join("\n");
 }
@@ -67,7 +94,7 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
     return { success: false, error: "Telegram Bot Token and Chat ID are required." };
   }
 
-  const textToSend = analysis ? formatTelegramAnalysisMessage(analysis) : message || "Test Notification from AI Indicator Bot";
+  const textToSend = analysis ? formatTelegramAnalysisMessage(analysis) : escapeHtml(message || "Test Notification from AI Indicator Bot");
 
   try {
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -77,7 +104,7 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
       body: JSON.stringify({
         chat_id: chatId,
         text: textToSend,
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
       }),
     });
 

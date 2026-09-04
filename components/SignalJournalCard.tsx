@@ -39,6 +39,23 @@ export default function SignalJournalCard() {
     fetchSignals();
   }, []);
 
+  const formatJournalPrice = (price: number | string, sym: string) => {
+    const num = Number(price);
+    if (isNaN(num)) return "0.00";
+    const s = sym.toUpperCase();
+    const precision = s.includes("JPY")
+      ? 2
+      : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some(c => s.startsWith(c) || s.endsWith(c))
+      ? 4
+      : ["XRP", "ADA", "DOGE", "SUI"].some(c => s.startsWith(c))
+      ? 4
+      : num < 10 && num > 0
+      ? 4
+      : 2;
+    if (num >= 1000) return num.toLocaleString(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision });
+    return num.toFixed(precision);
+  };
+
   const getStatusBadge = (status: DbAiSignal["status"], pnl: number) => {
     switch (status) {
       case "HIT_TP2":
@@ -194,9 +211,9 @@ export default function SignalJournalCard() {
                     </div>
 
                     <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
-                      <span>เข้า: <strong className="text-amber-300">{Number(sig.entry_price).toFixed(2)}</strong></span>
-                      <span>SL: <strong className="text-rose-400">{Number(sig.stop_loss).toFixed(2)}</strong></span>
-                      <span>TP1: <strong className="text-emerald-400">{Number(sig.take_profit1).toFixed(2)}</strong></span>
+                      <span>เข้า: <strong className="text-amber-300">{formatJournalPrice(sig.entry_price, sig.symbol)}</strong></span>
+                      <span>SL: <strong className="text-rose-400">{formatJournalPrice(sig.stop_loss, sig.symbol)}</strong></span>
+                      <span>TP1: <strong className="text-emerald-400">{formatJournalPrice(sig.take_profit1, sig.symbol)}</strong></span>
                     </div>
                   </div>
                 </div>

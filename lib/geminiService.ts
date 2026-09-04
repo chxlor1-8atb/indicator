@@ -28,10 +28,24 @@ export function generateRuleBasedAnalysis(
   const sessionStatus = getMarketSessionStatus(symbol);
   const calendarSafety = getNewsSafetyShieldStatus(symbol);
 
+  // Determine asset precision dynamically (Forex = 4, Crypto under $10 = 4, JPY/Gold/Stocks = 2)
+  const sym = symbol.toUpperCase();
+  const precision = sym.includes("JPY")
+    ? 2
+    : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some(c => sym.startsWith(c) || sym.endsWith(c))
+    ? 4
+    : ["XRP", "ADA", "DOGE", "SUI"].some(c => sym.startsWith(c))
+    ? 4
+    : sym === "XAGUSD"
+    ? 3
+    : currentPrice < 10 && currentPrice > 0
+    ? 4
+    : 2;
+
   const lastRSI = indicators.rsi14.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? 50.0;
-  const lastEMA20 = indicators.ema20.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.998).toFixed(2));
-  const lastEMA50 = indicators.ema50.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.995).toFixed(2));
-  const lastEMA200 = indicators.ema200.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.985).toFixed(2));
+  const lastEMA20 = indicators.ema20.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.998).toFixed(precision));
+  const lastEMA50 = indicators.ema50.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.995).toFixed(precision));
+  const lastEMA200 = indicators.ema200.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.985).toFixed(precision));
 
   // ATR for volatility measurement
   const atrs = calculateATR(candles, 14);
@@ -180,32 +194,32 @@ export function generateRuleBasedAnalysis(
     setupGrade = masterConfluence.totalScore >= 60 ? "B" : "C (Wait)";
   }
 
-  // Calculate Trade Setup Levels with Dynamic TP Multiplier
+  // Calculate Trade Setup Levels with Dynamic TP Multiplier & Asset Precision
   const effectiveTPMultiplier = regimeInfo.optimalParams.tpMultiplier || optimizedConfig.tpMultiplier;
-  const nearestSupport = indicators.supportLevels[0] || Number((currentPrice - currentATR * 1.5).toFixed(2));
-  const nearestResistance = indicators.resistanceLevels[0] || Number((currentPrice + currentATR * 1.5).toFixed(2));
+  const nearestSupport = indicators.supportLevels[0] || Number((currentPrice - currentATR * 1.5).toFixed(precision));
+  const nearestResistance = indicators.resistanceLevels[0] || Number((currentPrice + currentATR * 1.5).toFixed(precision));
 
   let tradeAction: "BUY" | "SELL" | "NO_TRADE" = "NO_TRADE";
-  let stopLoss = Number((currentPrice - currentATR * 1.2).toFixed(2));
-  let takeProfit1 = Number((currentPrice + currentATR * 1.0).toFixed(2));
-  let takeProfit2 = Number((currentPrice + currentATR * effectiveTPMultiplier).toFixed(2));
+  let stopLoss = Number((currentPrice - currentATR * 1.2).toFixed(precision));
+  let takeProfit1 = Number((currentPrice + currentATR * 1.0).toFixed(precision));
+  let takeProfit2 = Number((currentPrice + currentATR * effectiveTPMultiplier).toFixed(precision));
   let riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
 
   if (signal === "STRONG_BUY" || signal === "BUY") {
     tradeAction = "BUY";
     const slCandidate = Math.min(lastCandle.low, lastEMA50) - currentATR * 0.3;
-    stopLoss = Number(slCandidate.toFixed(2));
+    stopLoss = Number(slCandidate.toFixed(precision));
     const risk = currentPrice - stopLoss;
-    takeProfit1 = Number((currentPrice + risk * 1.0).toFixed(2));
-    takeProfit2 = Number((currentPrice + risk * effectiveTPMultiplier).toFixed(2));
+    takeProfit1 = Number((currentPrice + risk * 1.0).toFixed(precision));
+    takeProfit2 = Number((currentPrice + risk * effectiveTPMultiplier).toFixed(precision));
     riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
     const slCandidate = Math.max(lastCandle.high, lastEMA50) + currentATR * 0.3;
-    stopLoss = Number(slCandidate.toFixed(2));
+    stopLoss = Number(slCandidate.toFixed(precision));
     const risk = stopLoss - currentPrice;
-    takeProfit1 = Number((currentPrice - risk * 1.0).toFixed(2));
-    takeProfit2 = Number((currentPrice - risk * effectiveTPMultiplier).toFixed(2));
+    takeProfit1 = Number((currentPrice - risk * 1.0).toFixed(precision));
+    takeProfit2 = Number((currentPrice - risk * effectiveTPMultiplier).toFixed(precision));
     riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
   }
 
@@ -300,13 +314,13 @@ export function generateRuleBasedAnalysis(
         ? (currentPrice < lastEMA20 ? "SELL_LIMIT" : "SELL_LIMIT")
         : "WAIT_NO_ORDER",
       pendingPrice: tradeAction === "BUY"
-        ? Number((Math.min(currentPrice, lastEMA20 * 1.002)).toFixed(2))
+        ? Number((Math.min(currentPrice, lastEMA20 * 1.002)).toFixed(precision))
         : tradeAction === "SELL"
-        ? Number((Math.max(currentPrice, lastEMA20 * 0.998)).toFixed(2))
+        ? Number((Math.max(currentPrice, lastEMA20 * 0.998)).toFixed(precision))
         : currentPrice,
       entryZone: {
-        min: Number((currentPrice * 0.998).toFixed(2)),
-        max: Number((currentPrice * 1.002).toFixed(2)),
+        min: Number((currentPrice * 0.998).toFixed(precision)),
+        max: Number((currentPrice * 1.002).toFixed(precision)),
       },
       stopLoss,
       takeProfit1,

@@ -65,6 +65,16 @@ export default function MarketChart({
     };
   }, []);
 
+  const assetPrecision = (() => {
+    const sym = symbol.toUpperCase();
+    if (sym.includes("JPY")) return 2;
+    if (["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some(c => sym.startsWith(c) || sym.endsWith(c))) return 4;
+    if (["XRP", "ADA", "DOGE", "SUI"].some(c => sym.startsWith(c))) return 4;
+    if (sym === "XAGUSD") return 3;
+    if (candles[0] && candles[0].close < 10 && candles[0].close > 0) return 4;
+    return 2;
+  })();
+
   const emaFastLabel = optimizedConfig ? `EMA ${optimizedConfig.emaFast}` : "EMA 20";
   const emaSlowLabel = optimizedConfig ? `EMA ${optimizedConfig.emaSlow}` : "EMA 50";
 
@@ -149,7 +159,7 @@ export default function MarketChart({
       ctx.fillStyle = "#71717a";
       ctx.font = "10px monospace";
       ctx.textAlign = "left";
-      ctx.fillText(p.toFixed(2), width - padding.right + 8, y + 3);
+      ctx.fillText(p.toFixed(assetPrecision), width - padding.right + 8, y + 3);
     }
     ctx.setLineDash([]);
 
@@ -242,11 +252,9 @@ export default function MarketChart({
       });
       ctx.setLineDash([]);
 
-      // 2. จัดรูปแบบตัวเลขทศนิยมให้สะอาดตา (ไม่แสดงทศนิยมยาวรกรุงรัง)
+      // 2. จัดรูปแบบตัวเลขทศนิยมให้สะอาดตาตามความละเอียดของสินทรัพย์
       const formatSRPrice = (p: number) => {
-        if (p >= 1000) return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        if (p >= 1) return p.toFixed(2);
-        return p.toFixed(4);
+        return p.toLocaleString(undefined, { minimumFractionDigits: assetPrecision, maximumFractionDigits: assetPrecision });
       };
 
       interface SRBadge {
@@ -455,7 +463,7 @@ export default function MarketChart({
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 10px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(currentPrice.toFixed(2), width - padding.right / 2, currentPriceY + 3.5);
+    ctx.fillText(currentPrice.toFixed(assetPrecision), width - padding.right / 2, currentPriceY + 3.5);
 
     // ─── 8. Draw RSI Subpane ───
     if (showRSI) {
@@ -536,7 +544,7 @@ export default function MarketChart({
       ctx.font = "11px monospace";
       ctx.textAlign = "left";
       const dt = new Date(c.time * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-      const stats = `[${dt}] O: ${c.open} H: ${c.high} L: ${c.low} C: ${c.close} Vol: ${c.volume}`;
+      const stats = `[${dt}] O: ${c.open.toFixed(assetPrecision)} H: ${c.high.toFixed(assetPrecision)} L: ${c.low.toFixed(assetPrecision)} C: ${c.close.toFixed(assetPrecision)} Vol: ${c.volume.toLocaleString()}`;
       ctx.fillText(stats, padding.left + 5, padding.top - 8);
     }
 
@@ -607,7 +615,7 @@ export default function MarketChart({
             <span className={`text-2xl sm:text-3xl font-black font-mono tracking-tight transition-colors duration-150 ${
               isPositive ? "text-emerald-400" : "text-rose-400"
             }`}>
-              {liveClose > 0 ? liveClose.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
+              {liveClose > 0 ? liveClose.toLocaleString(undefined, { minimumFractionDigits: assetPrecision, maximumFractionDigits: assetPrecision }) : "-"}
             </span>
             <span className="text-xs text-slate-500 font-bold">USD</span>
           </div>
@@ -619,7 +627,7 @@ export default function MarketChart({
               : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
           }`}>
             <span>{isPositive ? "▲ +" : "▼ "}</span>
-            <span>{Math.abs(priceChange).toFixed(2)}</span>
+            <span>{Math.abs(priceChange).toFixed(assetPrecision)}</span>
             <span>({isPositive ? "+" : ""}{priceChangePct.toFixed(2)}%)</span>
           </div>
         </div>
@@ -628,11 +636,11 @@ export default function MarketChart({
         <div className="flex items-center gap-3 sm:gap-5 text-xs font-mono">
           <div className="hidden xs:block">
             <div className="text-[10px] uppercase text-slate-500 font-medium">24h High</div>
-            <div className="text-slate-200 font-bold">{high24h > -Infinity ? high24h.toFixed(2) : "-"}</div>
+            <div className="text-slate-200 font-bold">{high24h > -Infinity ? high24h.toFixed(assetPrecision) : "-"}</div>
           </div>
           <div className="hidden xs:block">
             <div className="text-[10px] uppercase text-slate-500 font-medium">24h Low</div>
-            <div className="text-slate-200 font-bold">{low24h < Infinity ? low24h.toFixed(2) : "-"}</div>
+            <div className="text-slate-200 font-bold">{low24h < Infinity ? low24h.toFixed(assetPrecision) : "-"}</div>
           </div>
           <div className="hidden sm:block">
             <div className="text-[10px] uppercase text-slate-500 font-medium">Volume</div>
