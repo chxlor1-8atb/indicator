@@ -54,6 +54,62 @@ export const AVAILABLE_ASSETS: AssetInfo[] = [
   { symbol: "AMD", name: "Advanced Micro Devices", category: "stocks", baseAsset: "AMD", quoteAsset: "USD", precision: 2 },
 ];
 
+/**
+ * Institutional Spot Gold and Forex quote fetcher directly from TradingView's CFD/Forex scanner.
+ * Synchronizes with OANDA and Capital.com down to the cent, eliminating crypto token spreads.
+ */
+export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
+  price: number;
+  open: number;
+  high: number;
+  low: number;
+  change: number;
+  volume?: number;
+} | null> {
+  const sym = symbol.toUpperCase();
+  let scannerEndpoint = "cfd";
+  let ticker = "";
+
+  if (sym === "XAUUSD" || sym === "GOLD") {
+    scannerEndpoint = "cfd";
+    ticker = "OANDA:XAUUSD";
+  } else if (sym === "USOIL" || sym === "UKOIL") {
+    scannerEndpoint = "cfd";
+    ticker = `TVC:${sym}`;
+  } else if (["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "GBPJPY", "EURJPY", "AUDJPY", "CADJPY", "EURGBP"].includes(sym)) {
+    scannerEndpoint = "forex";
+    ticker = `FX:${sym}`;
+  } else {
+    return null;
+  }
+
+  try {
+    const res = await fetch(`https://scanner.tradingview.com/${scannerEndpoint}/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        symbols: { tickers: [ticker] },
+        columns: ["close", "open", "high", "low", "change", "volume"]
+      }),
+      signal: AbortSignal.timeout(3500),
+      cache: "no-store"
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.data && json.data.length > 0 && Array.isArray(json.data[0].d)) {
+        const [close, open, high, low, change, volume] = json.data[0].d;
+        if (typeof close === "number" && !isNaN(close) && close > 0) {
+          return { price: close, open, high, low, change, volume };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`TradingView scanner quote fetch failed for ${ticker}:`, err);
+  }
+  return null;
+}
+
 export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKey: string): Promise<Candle[]> {
   try {
     const timespan = interval === "1D" ? "day" : interval === "4h" ? "hour" : interval === "15m" ? "minute" : "hour";
@@ -355,16 +411,36 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
   const asset = AVAILABLE_ASSETS.find((a) => a.symbol === symbol);
 
-  // 1. If Gold (XAUUSD), use live Spot Gold feed (PAXGUSDT on Binance)
-  // This matches TradingView (OANDA/FXCM) and Investing.com Spot Gold 1:1, avoiding COMEX Futures contango premium (+45$)
+  // 1. If Gold (XAUUSD), use live Spot Gold feed calibrated to TradingView (OANDA:XAUUSD)
+  // This matches TradingView (OANDA/Capital.com) 1:1, completely removing crypto token spreads or contango
   if (symbol.toUpperCase() === "XAUUSD" || symbol.toUpperCase() === "GOLD") {
     try {
-      const candles = await fetchCryptoCandles("PAXGUSDT", interval, 200);
-      if (candles.length >= 20) {
-        return cacheAndPersist(symbol, interval, candles);
+      const [rawCandles, tvQuote] = await Promise.all([
+        fetchCryptoCandles("PAXGUSDT", interval, 200).catch(() => []),
+        fetchTradingViewSpotQuote("XAUUSD").catch(() => null)
+      ]);
+
+      if (rawCandles.length >= 20) {
+        let finalCandles = rawCandles;
+        if (tvQuote && tvQuote.price > 0) {
+          const lastRaw = rawCandles[rawCandles.length - 1];
+          const offset = tvQuote.price - lastRaw.close;
+          // Calibrate all candles so prices match TradingView OANDA/Capital.com down to the cent
+          finalCandles = rawCandles.map((c, idx) => {
+            const isLast = idx === rawCandles.length - 1;
+            return {
+              ...c,
+              open: Number((c.open + offset).toFixed(2)),
+              high: Number((Math.max(c.high + offset, isLast ? tvQuote.price : c.high + offset)).toFixed(2)),
+              low: Number((Math.min(c.low + offset, isLast ? tvQuote.price : c.low + offset)).toFixed(2)),
+              close: isLast ? tvQuote.price : Number((c.close + offset).toFixed(2)),
+            };
+          });
+        }
+        return cacheAndPersist(symbol, interval, finalCandles);
       }
     } catch (err) {
-      console.warn("Binance PAXG Spot Gold fetch failed, falling back...", err);
+      console.warn("Gold fetch with TV calibration failed, falling back...", err);
     }
   }
 

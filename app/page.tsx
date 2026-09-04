@@ -163,83 +163,126 @@ export default function DashboardPage() {
     }
   };
 
-  // ─── Instant Millisecond Live Ticker (WebSocket for Gold XAUUSD & All Cryptos) ───
+  // ─── Dual Stream: TradingView Institutional Sync for Forex/Gold + Binance WS for Cryptos ───
   useEffect(() => {
     loadMarketData(selectedAsset, selectedTimeframe);
     loadNews(selectedAsset);
 
-    // Map symbol to Binance Live Trade WebSocket
-    let wsSymbol: string | null = null;
-    if (selectedAsset === "XAUUSD") {
-      wsSymbol = "paxgusdt"; // PAX Gold tracks Gold 1:1 on Binance with sub-second ticks!
-    } else if (selectedAsset.endsWith("USDT")) {
-      wsSymbol = selectedAsset.toLowerCase();
-    } else if (["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE"].some((c) => selectedAsset.startsWith(c))) {
-      wsSymbol = `${selectedAsset.toLowerCase()}usdt`;
-    }
-
     let isMounted = true;
+    let tickerInterval: NodeJS.Timeout | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let reconnectDelay = 1000;
 
-    const connectWebSocket = () => {
-      if (!wsSymbol || !isMounted) return;
+    const isInstitutionalAsset =
+      selectedAsset === "XAUUSD" ||
+      selectedAsset === "GOLD" ||
+      selectedAsset === "USOIL" ||
+      selectedAsset === "UKOIL" ||
+      ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD", "GBPJPY", "EURJPY"].includes(selectedAsset);
 
-      try {
-        const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${wsSymbol}@trade`);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-          reconnectDelay = 1000; // Reset backoff on successful connect
-        };
-
-        ws.onmessage = (event) => {
-          if (!isMounted) return;
-          try {
-            const trade = JSON.parse(event.data);
-            const livePrice = parseFloat(trade.p);
-            if (livePrice && !isNaN(livePrice)) {
-              const formattedPrice = Number(livePrice.toFixed(2));
+    if (isInstitutionalAsset) {
+      // Direct TradingView Institutional OANDA/Interbank Feed Polling (every 1.5s)
+      const pollLiveTicker = async () => {
+        if (!isMounted) return;
+        try {
+          const res = await fetch(`/api/live-ticker?symbol=${selectedAsset}`, { cache: "no-store" });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && typeof data.price === "number" && data.price > 0 && isMounted) {
+              const livePrice = data.price;
               setCandles((prevCandles) => {
                 if (prevCandles.length === 0) return prevCandles;
                 const newCandles = [...prevCandles];
                 const last = { ...newCandles[newCandles.length - 1] };
-                last.close = formattedPrice;
-                last.high = Math.max(last.high, formattedPrice);
-                last.low = Math.min(last.low, formattedPrice);
+                last.close = livePrice;
+                last.high = Math.max(last.high, livePrice);
+                last.low = Math.min(last.low, livePrice);
                 newCandles[newCandles.length - 1] = last;
                 return newCandles;
               });
 
               setIndicators((prev) => ({
                 ...prev,
-                currentPrice: formattedPrice,
+                currentPrice: livePrice,
               }));
             }
-          } catch {
-            // Ignore malformed tick
           }
-        };
+        } catch {
+          // ignore transient poll error
+        }
+      };
 
-        ws.onclose = () => {
-          if (isMounted) {
-            reconnectTimeout = setTimeout(() => {
-              reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
-              connectWebSocket();
-            }, reconnectDelay);
-          }
-        };
-
-        ws.onerror = () => {
-          ws.close();
-        };
-      } catch (e) {
-        console.warn("WebSocket stream error:", e);
+      // Poll immediately and then every 1500ms
+      pollLiveTicker();
+      tickerInterval = setInterval(pollLiveTicker, 1500);
+    } else {
+      // Map symbol to Binance Live Trade WebSocket for Cryptocurrencies
+      let wsSymbol: string | null = null;
+      if (selectedAsset.endsWith("USDT")) {
+        wsSymbol = selectedAsset.toLowerCase();
+      } else if (["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE"].some((c) => selectedAsset.startsWith(c))) {
+        wsSymbol = `${selectedAsset.toLowerCase()}usdt`;
       }
-    };
 
-    if (wsSymbol) {
-      connectWebSocket();
+      const connectWebSocket = () => {
+        if (!wsSymbol || !isMounted) return;
+
+        try {
+          const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${wsSymbol}@trade`);
+          wsRef.current = ws;
+
+          ws.onopen = () => {
+            reconnectDelay = 1000;
+          };
+
+          ws.onmessage = (event) => {
+            if (!isMounted) return;
+            try {
+              const trade = JSON.parse(event.data);
+              const livePrice = parseFloat(trade.p);
+              if (livePrice && !isNaN(livePrice)) {
+                const formattedPrice = Number(livePrice.toFixed(2));
+                setCandles((prevCandles) => {
+                  if (prevCandles.length === 0) return prevCandles;
+                  const newCandles = [...prevCandles];
+                  const last = { ...newCandles[newCandles.length - 1] };
+                  last.close = formattedPrice;
+                  last.high = Math.max(last.high, formattedPrice);
+                  last.low = Math.min(last.low, formattedPrice);
+                  newCandles[newCandles.length - 1] = last;
+                  return newCandles;
+                });
+
+                setIndicators((prev) => ({
+                  ...prev,
+                  currentPrice: formattedPrice,
+                }));
+              }
+            } catch {
+              // Ignore malformed tick
+            }
+          };
+
+          ws.onclose = () => {
+            if (isMounted) {
+              reconnectTimeout = setTimeout(() => {
+                reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+                connectWebSocket();
+              }, reconnectDelay);
+            }
+          };
+
+          ws.onerror = () => {
+            ws.close();
+          };
+        } catch (e) {
+          console.warn("WebSocket stream error:", e);
+        }
+      };
+
+      if (wsSymbol) {
+        connectWebSocket();
+      }
     }
 
     // Stable background sync (every 10 seconds)
@@ -249,6 +292,7 @@ export default function DashboardPage() {
 
     return () => {
       isMounted = false;
+      if (tickerInterval) clearInterval(tickerInterval);
       clearInterval(pollInterval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (wsRef.current) {
