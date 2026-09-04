@@ -22,12 +22,20 @@ export async function GET(request: NextRequest) {
     const candles = await getMarketCandles(symbol, timeframe);
     const indicators = calculateAllIndicators(candles);
 
-    return NextResponse.json({
-      success: true,
-      assetInfo,
-      candles,
-      indicators,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        assetInfo,
+        candles,
+        indicators,
+      },
+      {
+        headers: {
+          // Vercel Global Edge Cache: instant <20ms response, background refresh
+          "Cache-Control": "public, s-maxage=8, stale-while-revalidate=25",
+        },
+      }
+    );
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : "Failed to fetch market data";
     return NextResponse.json({ success: false, error: errMsg }, { status: 500 });

@@ -178,38 +178,68 @@ export default function DashboardPage() {
       wsSymbol = `${selectedAsset.toLowerCase()}usdt`;
     }
 
-    if (wsSymbol) {
+    let isMounted = true;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let reconnectDelay = 1000;
+
+    const connectWebSocket = () => {
+      if (!wsSymbol || !isMounted) return;
+
       try {
         const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${wsSymbol}@trade`);
         wsRef.current = ws;
 
-        ws.onmessage = (event) => {
-          const trade = JSON.parse(event.data);
-          const livePrice = parseFloat(trade.p);
-          if (livePrice && !isNaN(livePrice)) {
-            const formattedPrice = Number(livePrice.toFixed(2));
-            setCandles((prevCandles) => {
-              if (prevCandles.length === 0) return prevCandles;
-              const newCandles = [...prevCandles];
-              const last = { ...newCandles[newCandles.length - 1] };
-              last.close = formattedPrice;
-              last.high = Math.max(last.high, formattedPrice);
-              last.low = Math.min(last.low, formattedPrice);
-              newCandles[newCandles.length - 1] = last;
-              return newCandles;
-            });
+        ws.onopen = () => {
+          reconnectDelay = 1000; // Reset backoff on successful connect
+        };
 
-            setIndicators((prev) => ({
-              ...prev,
-              currentPrice: formattedPrice,
-            }));
+        ws.onmessage = (event) => {
+          if (!isMounted) return;
+          try {
+            const trade = JSON.parse(event.data);
+            const livePrice = parseFloat(trade.p);
+            if (livePrice && !isNaN(livePrice)) {
+              const formattedPrice = Number(livePrice.toFixed(2));
+              setCandles((prevCandles) => {
+                if (prevCandles.length === 0) return prevCandles;
+                const newCandles = [...prevCandles];
+                const last = { ...newCandles[newCandles.length - 1] };
+                last.close = formattedPrice;
+                last.high = Math.max(last.high, formattedPrice);
+                last.low = Math.min(last.low, formattedPrice);
+                newCandles[newCandles.length - 1] = last;
+                return newCandles;
+              });
+
+              setIndicators((prev) => ({
+                ...prev,
+                currentPrice: formattedPrice,
+              }));
+            }
+          } catch {
+            // Ignore malformed tick
           }
         };
 
-        ws.onerror = () => ws.close();
+        ws.onclose = () => {
+          if (isMounted) {
+            reconnectTimeout = setTimeout(() => {
+              reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+              connectWebSocket();
+            }, reconnectDelay);
+          }
+        };
+
+        ws.onerror = () => {
+          ws.close();
+        };
       } catch (e) {
         console.warn("WebSocket stream error:", e);
       }
+    };
+
+    if (wsSymbol) {
+      connectWebSocket();
     }
 
     // Stable background sync (every 10 seconds)
@@ -218,7 +248,9 @@ export default function DashboardPage() {
     }, 10000);
 
     return () => {
+      isMounted = false;
       clearInterval(pollInterval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;

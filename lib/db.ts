@@ -240,6 +240,8 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
       [symbol]
     )) as unknown as DbAiSignal[];
 
+    const updates: Promise<unknown>[] = [];
+
     for (const sig of activeSignals) {
       const isBuy = sig.action === "BUY";
       const isGold = symbol.toUpperCase().includes("XAU") || symbol.toUpperCase() === "GOLD";
@@ -248,30 +250,40 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
       // Check Take Profit 2 (Maximum Win)
       if ((isBuy && currentPrice >= sig.take_profit2) || (!isBuy && currentPrice <= sig.take_profit2)) {
         const pips = Math.abs(sig.take_profit2 - sig.entry_price) * pipMultiplier;
-        await sql.query(
-          `UPDATE ai_signals SET status = 'HIT_TP2', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
-          [Number(pips.toFixed(1)), sig.id]
+        updates.push(
+          sql.query(
+            `UPDATE ai_signals SET status = 'HIT_TP2', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
+            [Number(pips.toFixed(1)), sig.id]
+          )
         );
       }
       // Check Take Profit 1 (Target 1 Win)
       else if ((isBuy && currentPrice >= sig.take_profit1) || (!isBuy && currentPrice <= sig.take_profit1)) {
         const pips = Math.abs(sig.take_profit1 - sig.entry_price) * pipMultiplier;
-        await sql.query(
-          `UPDATE ai_signals SET status = 'HIT_TP1', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
-          [Number(pips.toFixed(1)), sig.id]
+        updates.push(
+          sql.query(
+            `UPDATE ai_signals SET status = 'HIT_TP1', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
+            [Number(pips.toFixed(1)), sig.id]
+          )
         );
       }
       // Check Stop Loss
       else if ((isBuy && currentPrice <= sig.stop_loss) || (!isBuy && currentPrice >= sig.stop_loss)) {
         const pips = -Math.abs(sig.entry_price - sig.stop_loss) * pipMultiplier;
-        await sql.query(
-          `UPDATE ai_signals SET status = 'HIT_SL', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
-          [Number(pips.toFixed(1)), sig.id]
+        updates.push(
+          sql.query(
+            `UPDATE ai_signals SET status = 'HIT_SL', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
+            [Number(pips.toFixed(1)), sig.id]
+          )
         );
       }
     }
+
+    if (updates.length > 0) {
+      await Promise.all(updates);
+    }
   } catch (err) {
-    console.error("Error resolving open signals:", err);
+    console.error("Error resolving open signals in batch:", err);
   }
 }
 

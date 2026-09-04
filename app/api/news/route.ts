@@ -19,11 +19,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      count: filteredNews.length,
-      news: filteredNews,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        count: filteredNews.length,
+        news: filteredNews,
+      },
+      {
+        headers: {
+          // Vercel Global Edge Cache: instant news load, 60s freshness
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=180",
+        },
+      }
+    );
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : "Failed to fetch news";
     return NextResponse.json({ success: false, error: errMsg }, { status: 500 });

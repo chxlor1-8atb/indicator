@@ -35,34 +35,41 @@ export default function MarketChart({
   const emaFastLabel = optimizedConfig ? `EMA ${optimizedConfig.emaFast}` : "EMA 20";
   const emaSlowLabel = optimizedConfig ? `EMA ${optimizedConfig.emaSlow}` : "EMA 50";
 
-  // Redraw canvas on data or setting changes
+  // Redraw canvas on data or setting changes with requestAnimationFrame & buffer caching
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || candles.length === 0) return;
+    let animId: number;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const render = () => {
+      const canvas = canvasRef.current;
+      if (!canvas || candles.length === 0) return;
 
-    // High DPI
-    const dpr = window.devicePixelRatio || 1;
-    const width = canvas.parentElement?.clientWidth || 800;
-    const height = showRSI ? 490 : 390;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+      // High DPI - only resize buffer if dimensions actually changed
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.parentElement?.clientWidth || 800;
+      const height = showRSI ? 490 : 390;
 
-    ctx.scale(dpr, dpr);
+      const targetW = Math.round(width * dpr);
+      const targetH = Math.round(height * dpr);
 
-    // Layout configuration
-    const padding = { top: 25, right: 75, bottom: 25, left: 10 };
-    const rsiHeight = showRSI ? 100 : 0;
-    const mainHeight = height - padding.top - padding.bottom - (showRSI ? rsiHeight + 15 : 0);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        ctx.scale(dpr, dpr);
+      }
 
-    // Clear background
-    ctx.fillStyle = "#0f121a";
-    ctx.fillRect(0, 0, width, height);
+      // Layout configuration
+      const padding = { top: 25, right: 75, bottom: 25, left: 10 };
+      const rsiHeight = showRSI ? 100 : 0;
+      const mainHeight = height - padding.top - padding.bottom - (showRSI ? rsiHeight + 15 : 0);
+
+      // Clear background cleanly without buffer reset
+      ctx.fillStyle = "#0f121a";
+      ctx.fillRect(0, 0, width, height);
 
     // Determine min/max price
     let minPrice = Infinity;
@@ -403,7 +410,11 @@ export default function MarketChart({
       const stats = `[${dt}] O: ${c.open} H: ${c.high} L: ${c.low} C: ${c.close} Vol: ${c.volume}`;
       ctx.fillText(stats, padding.left + 5, padding.top - 8);
     }
-  }, [candles, indicators, showSuperTrend, showBollinger, showEMA, showSR, showRSI, hoverIndex, mousePos, optimizedConfig]);
+  };
+
+  animId = requestAnimationFrame(render);
+  return () => cancelAnimationFrame(animId);
+}, [candles, indicators, showSuperTrend, showBollinger, showEMA, showSR, showRSI, hoverIndex, mousePos, optimizedConfig]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;

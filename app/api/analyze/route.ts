@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     // Check open signals, record snapshot & store new actionable trade
     if (indicators.currentPrice > 0) {
       resolveOpenSignals(symbol, indicators.currentPrice).catch(console.error);
-      const lastRSI = indicators.rsi[indicators.rsi.length - 1] || 50;
+      const lastRSI = Number(indicators.rsi14[indicators.rsi14.length - 1] || 50);
       const lastST = indicators.superTrend?.[indicators.superTrend.length - 1]?.direction || "UP";
       saveMarketSnapshot(symbol, timeframe, indicators.currentPrice, lastRSI, lastST, analysis.regimeInfo?.title).catch(console.error);
     }
