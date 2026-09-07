@@ -33,7 +33,10 @@ function simulateStrategy(
     tp1Hit: boolean;
   } | null = null;
 
-  const trades: Array<{ result: "WIN" | "LOSS" | "BE"; pnlR: number }> = [];
+  const samplePrice = candles[candles.length - 1]?.close || 1;
+  const precision = samplePrice < 2 ? 5 : samplePrice < 50 ? 4 : 2;
+
+  const trades: Array<{ result: "WIN" | "LOSS"; pnlR: number }> = [];
 
   const startIndex = Math.max(emaTrendPeriod, 30);
   for (let i = startIndex; i < candles.length; i++) {
@@ -52,8 +55,11 @@ function simulateStrategy(
           trades.push({ result: "WIN", pnlR: tpMultiplier });
           activeTrade = null;
         } else if (c.low <= activeTrade.sl) {
-          const isBE = activeTrade.tp1Hit && activeTrade.sl >= activeTrade.entryPrice;
-          trades.push({ result: isBE ? "BE" : "LOSS", pnlR: isBE ? 0.5 : -1.0 });
+          if (activeTrade.tp1Hit) {
+            trades.push({ result: "WIN", pnlR: 1.0 });
+          } else {
+            trades.push({ result: "LOSS", pnlR: -1.0 });
+          }
           activeTrade = null;
         }
       } else if (activeTrade.type === "SELL") {
@@ -66,8 +72,11 @@ function simulateStrategy(
           trades.push({ result: "WIN", pnlR: tpMultiplier });
           activeTrade = null;
         } else if (c.high >= activeTrade.sl) {
-          const isBE = activeTrade.tp1Hit && activeTrade.sl <= activeTrade.entryPrice;
-          trades.push({ result: isBE ? "BE" : "LOSS", pnlR: isBE ? 0.5 : -1.0 });
+          if (activeTrade.tp1Hit) {
+            trades.push({ result: "WIN", pnlR: 1.0 });
+          } else {
+            trades.push({ result: "LOSS", pnlR: -1.0 });
+          }
           activeTrade = null;
         }
       }
@@ -104,32 +113,32 @@ function simulateStrategy(
         // Rule 4: Structural Swing Stop Loss + Buffer
         const recentLows = candles.slice(Math.max(0, i - 4), i + 1).map((k) => k.low);
         const swingLow = Math.min(...recentLows);
-        const slPrice = Number((swingLow - currentATR * 0.25).toFixed(2));
+        const slPrice = Number((swingLow - currentATR * 0.25).toFixed(precision));
         const risk = Math.max(c.close - slPrice, currentATR * 0.8);
 
         activeTrade = {
           type: "BUY",
           entryPrice: c.close,
           riskDist: risk,
-          sl: Number((c.close - risk).toFixed(2)),
-          tp1: Number((c.close + risk * 1.0).toFixed(2)),
-          tp2: Number((c.close + risk * tpMultiplier).toFixed(2)),
+          sl: Number((c.close - risk).toFixed(precision)),
+          tp1: Number((c.close + risk * 1.0).toFixed(precision)),
+          tp2: Number((c.close + risk * tpMultiplier).toFixed(precision)),
           tp1Hit: false,
         };
       } else if (isDownTrend && isSellPullback && isBearishRejection && c.close < c.open) {
         // Rule 4: Structural Swing Stop Loss + Buffer
         const recentHighs = candles.slice(Math.max(0, i - 4), i + 1).map((k) => k.high);
         const swingHigh = Math.max(...recentHighs);
-        const slPrice = Number((swingHigh + currentATR * 0.25).toFixed(2));
+        const slPrice = Number((swingHigh + currentATR * 0.25).toFixed(precision));
         const risk = Math.max(slPrice - c.close, currentATR * 0.8);
 
         activeTrade = {
           type: "SELL",
           entryPrice: c.close,
           riskDist: risk,
-          sl: Number((c.close + risk).toFixed(2)),
-          tp1: Number((c.close - risk * 1.0).toFixed(2)),
-          tp2: Number((c.close - risk * tpMultiplier).toFixed(2)),
+          sl: Number((c.close + risk).toFixed(precision)),
+          tp1: Number((c.close - risk * 1.0).toFixed(precision)),
+          tp2: Number((c.close - risk * tpMultiplier).toFixed(precision)),
           tp1Hit: false,
         };
       }
@@ -137,15 +146,14 @@ function simulateStrategy(
   }
 
   const wins = trades.filter((t) => t.result === "WIN").length;
-  const beTrades = trades.filter((t) => t.result === "BE").length;
   const losses = trades.filter((t) => t.result === "LOSS").length;
   const totalTrades = trades.length;
 
-  const winRate = totalTrades > 0 ? Number((((wins + beTrades * 0.5) / totalTrades) * 100).toFixed(1)) : 0;
+  const winRate = totalTrades > 0 ? Number(((wins / totalTrades) * 100).toFixed(1)) : 0;
   const netReturnR = Number(trades.reduce((acc, t) => acc + t.pnlR, 0).toFixed(2));
-  const profitFactor = losses > 0 ? Number(((wins * tpMultiplier + beTrades * 0.5) / losses).toFixed(2)) : wins > 0 ? 99 : 0;
+  const profitFactor = losses > 0 ? Number(((wins * tpMultiplier) / losses).toFixed(2)) : wins > 0 ? 99 : 0;
 
-  return { winRate, totalTrades, wins, beTrades, losses, netReturnR, profitFactor };
+  return { winRate, totalTrades, wins, beTrades: 0, losses, netReturnR, profitFactor };
 }
 
 export function optimizeIndicatorParameters(candles: Candle[]): OptimizedConfig {

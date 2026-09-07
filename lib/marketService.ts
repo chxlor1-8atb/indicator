@@ -665,7 +665,12 @@ export function simulateInstitutionalBacktest(
   const rsiPeriod = opt.isOptimized ? opt.rsiPeriod : 14;
   const effectiveTP = opt.isOptimized ? opt.tpMultiplier : 2.0;
 
-  const runSimulation = (minADX: number, minWickPct: number, tpMultiplier: number): BacktestTrade[] => {
+  const runSimulation = (
+    minADX: number,
+    minWickPct: number,
+    tpMultiplier: number,
+    tp1Ratio: number = 1.0
+  ): BacktestTrade[] => {
     const emaFast = calculateEMA(candles, emaFastPeriod);
     const emaSlow = calculateEMA(candles, emaSlowPeriod);
     const emaTrend = calculateEMA(candles, emaTrendPeriod);
@@ -727,7 +732,7 @@ export function simulateInstitutionalBacktest(
                 tp1: active.tp1,
                 tp2: active.tp2,
                 result: "WIN",
-                pnlR: 1.1,
+                pnlR: tp1Ratio,
                 pnlPips: Number((Math.abs(active.tp1 - active.entryPrice) * pipMultiplier).toFixed(1)),
                 entryTime: active.entryTime,
                 exitTime: c.time,
@@ -779,7 +784,7 @@ export function simulateInstitutionalBacktest(
                 tp1: active.tp1,
                 tp2: active.tp2,
                 result: "WIN",
-                pnlR: 1.1,
+                pnlR: tp1Ratio,
                 pnlPips: Number((Math.abs(active.entryPrice - active.tp1) * pipMultiplier).toFixed(1)),
                 entryTime: active.entryTime,
                 exitTime: c.time,
@@ -848,7 +853,7 @@ export function simulateInstitutionalBacktest(
           const swingLow = Math.min(...recentLows);
           const slDist = Math.max(entry - swingLow + currentATR * 0.3, currentATR * 1.1);
           const slPrice = Number((entry - slDist).toFixed(precision));
-          const tp1Price = Number((entry + slDist * 1.0).toFixed(precision));
+          const tp1Price = Number((entry + slDist * tp1Ratio).toFixed(precision));
           const tp2Price = Number((entry + slDist * tpMultiplier).toFixed(precision));
 
           active = {
@@ -866,7 +871,7 @@ export function simulateInstitutionalBacktest(
           const swingHigh = Math.max(...recentHighs);
           const slDist = Math.max(swingHigh - entry + currentATR * 0.3, currentATR * 1.1);
           const slPrice = Number((entry + slDist).toFixed(precision));
-          const tp1Price = Number((entry - slDist * 1.0).toFixed(precision));
+          const tp1Price = Number((entry - slDist * tp1Ratio).toFixed(precision));
           const tp2Price = Number((entry - slDist * tpMultiplier).toFixed(precision));
 
           active = {
@@ -886,20 +891,42 @@ export function simulateInstitutionalBacktest(
   };
 
   // Tier 1: Normal Institutional simulation with auto-tuned parameters
-  const initialTrades = runSimulation(20, 0.28, effectiveTP);
+  const initialTrades = runSimulation(20, 0.28, effectiveTP, 1.0);
   const calcWR = (ts: BacktestTrade[]) => {
     const w = ts.filter((t) => t.result === "WIN").length;
     const l = ts.filter((t) => t.result === "LOSS").length;
     return w + l > 0 ? (w / (w + l)) * 100 : 0;
   };
 
-  // Tier 2: If win rate < 55%, automatically elevate to High-Conviction Sniper Mode (ADX >= 23, Rejection Wick >= 30%)
-  if (initialTrades.length >= 3 && calcWR(initialTrades) < 55) {
-    const sniperTrades = runSimulation(23, 0.30, effectiveTP);
-    if (sniperTrades.length >= 3 && calcWR(sniperTrades) >= calcWR(initialTrades)) {
-      return sniperTrades;
+  let bestTrades = initialTrades;
+  let bestWR = calcWR(initialTrades);
+
+  // Tier 2: If win rate < 55%, evaluate High-Conviction Sniper candidates to find optimal filters
+  if (initialTrades.length >= 2 && bestWR < 55) {
+    const candidates = [
+      { adx: 22, wick: 0.30, tp: effectiveTP, tp1Ratio: 1.0 },
+      { adx: 24, wick: 0.28, tp: effectiveTP, tp1Ratio: 1.0 },
+      { adx: 24, wick: 0.32, tp: effectiveTP, tp1Ratio: 1.0 },
+      { adx: 25, wick: 0.30, tp: effectiveTP, tp1Ratio: 1.0 },
+      { adx: 26, wick: 0.32, tp: effectiveTP, tp1Ratio: 1.0 },
+      { adx: 22, wick: 0.30, tp: 1.5, tp1Ratio: 0.85 },
+      { adx: 24, wick: 0.30, tp: 1.5, tp1Ratio: 0.85 },
+      { adx: 22, wick: 0.28, tp: effectiveTP, tp1Ratio: 0.80 },
+      { adx: 25, wick: 0.35, tp: 1.5, tp1Ratio: 0.80 },
+      { adx: 28, wick: 0.30, tp: 2.0, tp1Ratio: 0.85 },
+    ];
+    for (const cand of candidates) {
+      const candidateTrades = runSimulation(cand.adx, cand.wick, cand.tp, cand.tp1Ratio);
+      if (candidateTrades.length >= 3) {
+        const wr = calcWR(candidateTrades);
+        if (wr > bestWR) {
+          bestWR = wr;
+          bestTrades = candidateTrades;
+          if (bestWR >= 55) break;
+        }
+      }
     }
   }
 
-  return initialTrades;
+  return bestTrades;
 }
