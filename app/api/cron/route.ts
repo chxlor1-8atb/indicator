@@ -19,7 +19,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const watchList = ["XAUUSD", "BTCUSDT", "EURUSD", "ETHUSDT", "SOLUSDT", "GBPUSD", "USDJPY", "USOIL"];
+    const watchList = [
+      "XAUUSD", "BTCUSDT", "EURUSD", "ETHUSDT", "SOLUSDT", "GBPUSD", "USDJPY", "USOIL",
+      "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURGBP", "AUDJPY"
+    ];
     const timeframes = ["15m", "1h", "4h", "1D"];
     const results = [];
     const news = await fetchLiveNews();
