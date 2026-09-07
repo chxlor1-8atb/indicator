@@ -139,6 +139,11 @@ export default function AnalysisCard({
     const cvol = analysis.tradeSetup.chaikinVol || analysis.chaikinVol;
     const ker = analysis.tradeSetup.ker || analysis.ker;
     const vpci = analysis.tradeSetup.vpci || analysis.vpci;
+    const mcginley = analysis.tradeSetup.mcginley || analysis.mcginley;
+    const elderForce = analysis.tradeSetup.elderForce || analysis.elderForce;
+    const rvi = analysis.tradeSetup.rvi || analysis.rvi;
+    const frama = analysis.tradeSetup.frama || analysis.frama;
+    const m75 = analysis.tradeSetup.milestone75 || analysis.milestone75;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -147,6 +152,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (mcginley ? `• 📈 McGinley Dynamic: MD ${mcginley.mcginley} (${mcginley.trendState} | Dev: ${mcginley.deviationPips} pips)\n` : "") +
+      (elderForce ? `• ⚡ Elder Force Index: EFI(2) ${elderForce.efiShort} | EFI(13) ${elderForce.efiLong} (${elderForce.forceState} - ${elderForce.efiTrend})\n` : "") +
+      (rvi ? `• 🌪️ Relative Volatility Index: RVI ${rvi.rvi} (${rvi.rviSignal} | ${rvi.volatilityDirection})\n` : "") +
+      (frama ? `• 🌀 FRAMA Fractal MA: ${frama.frama} (D=${frama.fractalDimension} | Alpha: ${frama.alpha} | ${frama.state})\n` : "") +
+      (m75 ? `• 🏆 Grand Milestone 75 Quant Fusion: [${m75.milestoneGrade}] Score ${m75.quantScore}/100 - ${m75.phase3DominanceStatus} (Lock 18: ${m75.safetyLock18Passed ? "PASSED" : "BLOCKED"})\n` : "") +
       (keltner ? `• 🗂️ Keltner Bands: %B ${keltner.percentB}% | BW ${keltner.bandwidth}% (${keltner.isExpanding ? "EXPANDING" : "CONTRACTING"})\n` : "") +
       (donchian ? `• 🐢 Donchian Turtle Breakout: ${donchian.breakoutState} (Width: ${donchian.channelWidth})\n` : "") +
       (cvol ? `• 📊 Chaikin Volatility: CVOL ${cvol.cvol}% (${cvol.volatilityTrend})\n` : "") +
@@ -399,7 +409,7 @@ export default function AnalysisCard({
             }`}
           >
             <Cpu className="w-4 h-4" />
-            <span>คลังอินดิเคเตอร์ 70 ตัวเชิงลึก (Deep Quant Lab)</span>
+            <span>คลังอินดิเคเตอร์ 75 ตัวเชิงลึก (Deep Quant Lab)</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
               รันในพื้นหลัง
             </span>
@@ -409,7 +419,7 @@ export default function AnalysisCard({
         <span className="text-[11px] text-slate-500 hidden md:inline font-medium">
           {activeCardTab === "STRATEGY"
             ? "🛡️ คัดกรองกลยุทธ์ & ป้องกันสัญญาณตีกัน"
-            : "⚡ คำนวณเบื้องหลัง 70 เครื่องมือแบบเรียลไทม์"}
+            : "⚡ คำนวณเบื้องหลัง 75 เครื่องมือแบบเรียลไทม์"}
         </span>
       </div>
 
@@ -890,18 +900,18 @@ export default function AnalysisCard({
         </div>
       )}
 
-      {/* ─── TAB 2: DEEP QUANT LAB (65 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
+      {/* ─── TAB 2: DEEP QUANT LAB (75 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
       {activeCardTab === "DEEP_QUANT" && (
         <div className="space-y-5 animate-fadeIn">
           <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-purple-200">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
               <span>
-                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 65 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
+                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 75 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
               </span>
             </div>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              65 Pillars Active (รันในพื้นหลัง)
+              75 Pillars Active (รันในพื้นหลัง)
             </span>
           </div>
 
@@ -3764,6 +3774,206 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.vpci.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5o. 🌀 Fractal Dynamics, Kinetic Energy & Phase 3 Milestone 75 (Plans 71-75) */}
+      {(analysis.mcginley || analysis.elderForce || analysis.rvi || analysis.frama || analysis.milestone75) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-cyan-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                <Activity className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Fractal Dynamics, Kinetic Energy & Grand Milestone 75 (แผน 71-75)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/30">
+                    🌀 Phase 3 Grand Finale
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  McGinley Dynamic ติดตามสปีดราคาไม่แล็ก, Elder Force Index วัดพลังงานจลน์แรงกระแทก, Relative Volatility Index วัดทิศทางเบี่ยงเบนมาตรฐาน, FRAMA ถอดรหัสมิติแฟร็กทัล Mandelbrot และเกราะ Safety Lock 18
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: John McGinley's McGinley Dynamic (Plan 71) */}
+            {analysis.mcginley && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📈 McGinley Dynamic</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.mcginley.trendState === "BULLISH"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                  }`}>
+                    {analysis.mcginley.trendState === "BULLISH" ? "🟢 BULLISH TRACK" : "🔴 BEARISH TRACK"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">MD Line Value:</span>
+                    <span className="font-mono font-bold text-white text-[10px]">
+                      {analysis.mcginley.mcginley}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Speed Ratio:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.mcginley.speedRatio}x (Dynamic Factor)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Price Deviation:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.mcginley.deviationPips >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}>
+                      {analysis.mcginley.deviationPips >= 0 ? `+${analysis.mcginley.deviationPips}` : analysis.mcginley.deviationPips} pips
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.mcginley.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Dr. Alexander Elder's Force Index (Plan 72) */}
+            {analysis.elderForce && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚡ Elder Force Index</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.elderForce.forceState.includes("BULL")
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                  }`}>
+                    {analysis.elderForce.forceState}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">EFI Short (2-EMA):</span>
+                    <span className={`font-mono font-bold text-[10px] ${analysis.elderForce.efiShort >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {analysis.elderForce.efiShort >= 0 ? `+${analysis.elderForce.efiShort}` : analysis.elderForce.efiShort}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">EFI Long (13-EMA):</span>
+                    <span className={`font-mono font-bold text-[10px] ${analysis.elderForce.efiLong >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {analysis.elderForce.efiLong >= 0 ? `+${analysis.elderForce.efiLong}` : analysis.elderForce.efiLong}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Kinetic Pulse Trend:</span>
+                    <span className="font-mono text-amber-300 text-[10px] font-bold">
+                      {analysis.elderForce.efiTrend}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.elderForce.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Donald Dorsey's RVI & Ehlers' FRAMA (Plans 73 & 74) */}
+            {(analysis.rvi || analysis.frama) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌪️ RVI & FRAMA Fractal</span>
+                  {analysis.frama && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.frama.state === "TRENDING_SMOOTH"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                    }`}>
+                      D={analysis.frama.fractalDimension}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.rvi && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Relative Volatility (RVI):</span>
+                      <span className={`font-mono font-bold text-[10px] ${
+                        analysis.rvi.rvi >= 50 ? "text-emerald-400" : "text-rose-400"
+                      }`}>
+                        {analysis.rvi.rvi} (Sig: {analysis.rvi.rviSignal})
+                      </span>
+                    </div>
+                  )}
+                  {analysis.frama && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">FRAMA Line:</span>
+                        <span className="font-mono font-bold text-cyan-300 text-[10px]">
+                          {analysis.frama.frama} (α={analysis.frama.alpha})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Mandelbrot Dimension:</span>
+                        <span className={`font-mono text-[10px] font-bold ${
+                          analysis.frama.fractalDimension < 1.4
+                            ? "text-emerald-400"
+                            : analysis.frama.fractalDimension > 1.7
+                            ? "text-rose-400"
+                            : "text-amber-300"
+                        }`}>
+                          {analysis.frama.state}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.frama?.description || analysis.rvi?.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Grand Milestone 75 Quant Fusion & Safety Lock 18 (Plan 75) */}
+            {analysis.milestone75 && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🏆 Grand Milestone 75</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.milestone75.safetyLock18Passed
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                  }`}>
+                    {analysis.milestone75.safetyLock18Passed ? "🛡️ LOCK 18 PASS" : "⛔ FRACTAL CHAOS"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Quant Fusion Score:</span>
+                    <span className="font-mono font-bold text-amber-300 text-[10px]">
+                      {analysis.milestone75.quantScore} / 100 [{analysis.milestone75.milestoneGrade}]
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Phase 3 Dominance:</span>
+                    <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                      {analysis.milestone75.phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED" ? "🌟 ACHIEVED" : "IN PROGRESS"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Active Pillars / Locks:</span>
+                    <span className="font-mono text-emerald-400 text-[10px] font-bold">
+                      {analysis.milestone75.activePillarsCount} เสาหลัก / {analysis.milestone75.safetyLocksPassedCount} Locks
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.milestone75.description}
                 </p>
               </div>
             )}

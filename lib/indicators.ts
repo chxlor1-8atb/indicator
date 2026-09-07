@@ -5487,7 +5487,10 @@ export function calculateMcGinleyDynamic(
     const c = candles.length > 0 ? candles[candles.length - 1].close : 0;
     return {
       md: c,
+      mcginley: c,
       speedAdjustmentFactor: 1.0,
+      speedRatio: 1.0,
+      deviationPips: 0,
       trendState: "BULLISH",
       description: "McGinley Dynamic: ข้อมูลไม่เพียงพอ",
     };
@@ -5512,6 +5515,8 @@ export function calculateMcGinleyDynamic(
   const finalMD = Number(md.toFixed(precision));
   const currentPrice = candles[candles.length - 1].close;
   const trendState: McGinleyDynamicPoint["trendState"] = currentPrice >= finalMD ? "BULLISH" : "BEARISH";
+  const pipsMultiplier = precision === 4 ? 10000 : precision === 3 ? 1000 : 10;
+  const deviationPips = Number(((currentPrice - finalMD) * pipsMultiplier).toFixed(1));
 
   const desc = trendState === "BULLISH"
     ? `📈 McGinley Dynamic (${finalMD}): ราคาอยู่เหนือเส้น MD ปรับสปีดอัตโนมัติตามความเร่งตลาด (Speed Factor: ${speedFactor.toFixed(2)}x)`
@@ -5519,7 +5524,10 @@ export function calculateMcGinleyDynamic(
 
   return {
     md: finalMD,
+    mcginley: finalMD,
     speedAdjustmentFactor: Number(speedFactor.toFixed(2)),
+    speedRatio: Number(speedFactor.toFixed(2)),
+    deviationPips,
     trendState,
     description: desc,
   };
@@ -5537,6 +5545,7 @@ export function calculateElderForceIndex(
   if (candles.length < trendPeriod + 2) {
     return {
       efiShort: 0,
+      efiLong: 0,
       efiTrend: 0,
       forceState: "NEUTRAL",
       description: "Elder Force Index: ข้อมูลไม่เพียงพอ",
@@ -5578,6 +5587,7 @@ export function calculateElderForceIndex(
 
   return {
     efiShort,
+    efiLong: efiTrend,
     efiTrend,
     forceState,
     description: desc,
@@ -5596,6 +5606,7 @@ export function calculateRelativeVolatilityIndex(
   if (candles.length < stdPeriod + smoothPeriod + 2) {
     return {
       rvi: 50,
+      rviSignal: 50,
       volatilityDirection: "BALANCED",
       isExtremeOverbought: false,
       isExtremeOversold: false,
@@ -5669,6 +5680,7 @@ export function calculateRelativeVolatilityIndex(
 
   return {
     rvi,
+    rviSignal: rvi,
     volatilityDirection,
     isExtremeOverbought,
     isExtremeOversold,
@@ -5796,6 +5808,14 @@ export function synthesizeGrandQuantMilestone75(
   const phase3DominanceStatus: Milestone75QuantFusionInfo["phase3DominanceStatus"] =
     milestoneScore >= 75 && safetyLock18Passed ? "PHASE_3_DOMINANCE_ACHIEVED" : "QUANT_ACCUMULATION";
 
+  const milestoneGrade: Milestone75QuantFusionInfo["milestoneGrade"] =
+    milestoneScore >= 85 ? "INSTITUTIONAL_DOMINANCE"
+    : milestoneScore >= 70 ? "HIGH_CONVICTION"
+    : milestoneScore >= 55 ? "STANDARD"
+    : "CAUTION_FRACTAL";
+
+  const safetyLocksPassedCount = safetyLock18Passed ? 18 : 17;
+
   const desc = !safetyLock18Passed
     ? `🛡️ Safety Lock 18 [ACTIVATED]: มิติแฟร็กทัลอลหม่านรุนแรง (D: ${framaD} >= 1.80) สวนทางกับพลังงานจลน์สถาบัน EFI ระงับการเข้าเทรดฉุกเฉิน`
     : phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED"
@@ -5804,9 +5824,12 @@ export function synthesizeGrandQuantMilestone75(
 
   return {
     milestoneScore,
+    quantScore: milestoneScore,
+    milestoneGrade,
     phase3DominanceStatus,
     safetyLock18Passed,
     activePillarsCount,
+    safetyLocksPassedCount,
     description: desc,
   };
 }

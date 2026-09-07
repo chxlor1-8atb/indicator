@@ -1217,13 +1217,17 @@ export interface VPCIInfo {
 
 export interface McGinleyDynamicPoint {
   md: number;
+  mcginley: number;
   speedAdjustmentFactor: number;
+  speedRatio: number;
+  deviationPips: number;
   trendState: "BULLISH" | "BEARISH";
   description: string;
 }
 
 export interface ElderForceIndexInfo {
   efiShort: number; // EMA(2) of PriceChange * Volume
+  efiLong: number; // Alias for efiTrend
   efiTrend: number; // EMA(13) of PriceChange * Volume
   forceState: "STRONG_BULL_FORCE" | "MILD_BULL_FORCE" | "STRONG_BEAR_FORCE" | "MILD_BEAR_FORCE" | "NEUTRAL";
   description: string;
@@ -1231,6 +1235,7 @@ export interface ElderForceIndexInfo {
 
 export interface RelativeVolatilityIndexInfo {
   rvi: number; // 0 to 100
+  rviSignal: number;
   volatilityDirection: "BULLISH_EXPANSION" | "BEARISH_EXPANSION" | "BALANCED";
   isExtremeOverbought: boolean;
   isExtremeOversold: boolean;
@@ -1247,9 +1252,12 @@ export interface FRAMAPoint {
 
 export interface Milestone75QuantFusionInfo {
   milestoneScore: number; // 0 to 100
+  quantScore: number;
+  milestoneGrade: "INSTITUTIONAL_DOMINANCE" | "HIGH_CONVICTION" | "STANDARD" | "CAUTION_FRACTAL";
   phase3DominanceStatus: "PHASE_3_DOMINANCE_ACHIEVED" | "QUANT_ACCUMULATION";
   safetyLock18Passed: boolean;
   activePillarsCount: number; // out of 18
+  safetyLocksPassedCount: number;
   description: string;
 }
 

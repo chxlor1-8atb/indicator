@@ -1097,6 +1097,11 @@ export function generateRuleBasedAnalysis(
         `Chaikin Volatility: CVOL ${chaikinVol.cvol}% (${chaikinVol.volatilityTrend})`,
         `Kaufman Efficiency Ratio: KER ${ker.efficiencyRatio} (Score: ${ker.noiseDecouplingScore} | ${ker.regime})`,
         `Volume-Price Confirmation Indicator: VPCI ${vpci.vpci} (Signal: ${vpci.vpciSignal} | ${vpci.volumeEnergyState} | Lock 17: ${vpci.safetyLock17Passed ? "PASSED" : "BLOCKED"})`,
+        `McGinley Dynamic: MD ${mcginley.mcginley} (${mcginley.trendState} - Deviation: ${mcginley.deviationPips} pips)`,
+        `Elder Force Index: EFI(2) ${elderForce.efiShort} | EFI(13) ${elderForce.efiLong} (${elderForce.forceState} - ${elderForce.efiTrend})`,
+        `Relative Volatility Index: RVI ${rvi.rvi} (Signal: ${rvi.rviSignal} | ${rvi.volatilityDirection})`,
+        `FRAMA Fractal MA: ${frama.frama} (D=${frama.fractalDimension} | Alpha: ${frama.alpha} | ${frama.state})`,
+        `Grand Milestone 75 Quant Fusion: [${milestone75.milestoneGrade}] Score: ${milestone75.quantScore}/100 - ${milestone75.phase3DominanceStatus} (Lock 18: ${milestone75.safetyLock18Passed ? "PASSED" : "BLOCKED"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -1185,6 +1190,11 @@ export function generateRuleBasedAnalysis(
       chaikinVol,
       ker,
       vpci,
+      mcginley,
+      elderForce,
+      rvi,
+      frama,
+      milestone75,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1555,6 +1565,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.chaikinVol = ruleAnalysis.chaikinVol;
     parsed.ker = ruleAnalysis.ker;
     parsed.vpci = ruleAnalysis.vpci;
+    parsed.mcginley = ruleAnalysis.mcginley;
+    parsed.elderForce = ruleAnalysis.elderForce;
+    parsed.rvi = ruleAnalysis.rvi;
+    parsed.frama = ruleAnalysis.frama;
+    parsed.milestone75 = ruleAnalysis.milestone75;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -1613,6 +1628,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.chaikinVol = ruleAnalysis.tradeSetup.chaikinVol;
       parsed.tradeSetup.ker = ruleAnalysis.tradeSetup.ker;
       parsed.tradeSetup.vpci = ruleAnalysis.tradeSetup.vpci;
+      parsed.tradeSetup.mcginley = ruleAnalysis.tradeSetup.mcginley;
+      parsed.tradeSetup.elderForce = ruleAnalysis.tradeSetup.elderForce;
+      parsed.tradeSetup.rvi = ruleAnalysis.tradeSetup.rvi;
+      parsed.tradeSetup.frama = ruleAnalysis.tradeSetup.frama;
+      parsed.tradeSetup.milestone75 = ruleAnalysis.tradeSetup.milestone75;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;
