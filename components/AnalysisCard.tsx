@@ -127,6 +127,11 @@ export default function AnalysisCard({
     const sar = analysis.tradeSetup.parabolicSAR || analysis.parabolicSAR;
     const aroon = analysis.tradeSetup.aroon || analysis.aroon;
     const vortex = analysis.tradeSetup.vortex || analysis.vortex;
+    const fisher = analysis.tradeSetup.fisher || analysis.fisher;
+    const crsi = analysis.tradeSetup.connorsRSI || analysis.connorsRSI;
+    const ao = analysis.tradeSetup.awesomeOsc || analysis.awesomeOsc;
+    const tsi = analysis.tradeSetup.tsi || analysis.tsi;
+    const advVol = analysis.tradeSetup.advancedVol || analysis.advancedVol;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -135,6 +140,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (fisher ? `• 🔮 Fisher Transform: ${fisher.fisher} (Trigger: ${fisher.trigger} | Cross: ${fisher.crossSignal})\n` : "") +
+      (crsi ? `• 🎯 ConnorsRSI: ${crsi.crsi} (RSI3: ${crsi.rsiClose} | StreakRSI: ${crsi.streakRSI} | Rank: ${crsi.percentRank}%)\n` : "") +
+      (ao ? `• ⚡ Awesome Oscillator: ${ao.ao} (${ao.isGreen ? "GREEN" : "RED"} | Saucer: ${ao.saucerSignal})\n` : "") +
+      (tsi ? `• 🌊 True Strength Index: ${tsi.tsi} (Signal: ${tsi.signal} | ${tsi.isBullish ? "BULLISH" : "BEARISH"})\n` : "") +
+      (advVol ? `• 🌪️ Advanced Vol Suite: YZ ${(advVol.yangZhangVol * 100).toFixed(1)}% | GK ${(advVol.garmanKlassVol * 100).toFixed(1)}% | Ulcer ${advVol.ulcerIndex} (Lock 16: ${advVol.safetyLock16Passed ? "PASSED" : "BLOCKED"})\n` : "") +
       (kama ? `• 🎛️ KAMA Adaptive: ${kama.kamaValue} (ER: ${(kama.efficiencyRatio * 100).toFixed(1)}% | ${kama.trendState})\n` : "") +
       (hma ? `• ⚡ HMA Zero-Lag: ${hma.hmaValue} (${hma.isTurningUp ? "TURNING_UP" : hma.isTurningDown ? "TURNING_DOWN" : "STEADY"})\n` : "") +
       (sar ? `• 🎯 Parabolic SAR: ${sar.sar} (${sar.isBullish ? "BULLISH" : "BEARISH"} | Reversal: ${sar.isReversal ? "FLIP" : "NO"})\n` : "") +
@@ -3202,6 +3212,251 @@ export default function AnalysisCard({
 
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.aroon?.description || analysis.vortex?.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5m. ⚡ Gaussian Reversals, Triple Momentum & Volatility Climax Shield (Plans 61-65) */}
+      {(analysis.fisher || analysis.connorsRSI || analysis.awesomeOsc || analysis.tsi || analysis.advancedVol) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-violet-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Gaussian Reversals, Triple Momentum & Volatility Climax (แผน 61-65)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 text-violet-300 border border-violet-500/30">
+                    ⚡ Gaussian & Multi-Vol
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  Fisher Transform แจกแจงแบบเกาส์, ConnorsRSI ดัก Buy Dip รอย่อสุดขีด, Awesome Oscillator ซอสเซอร์เร่งโมเมนตัม, TSI กรองคลื่น 2 ชั้น และโมเดลความผันผวนหลายมิติ (Lock 16)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Fisher Transform Gaussian Reversal (Plan 61) */}
+            {analysis.fisher && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🔮 Fisher Transform</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.fisher.crossSignal === "BULLISH_CROSS"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.fisher.crossSignal === "BEARISH_CROSS"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : analysis.fisher.isExtremeOversold
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-700"
+                  }`}>
+                    {analysis.fisher.crossSignal !== "NONE"
+                      ? analysis.fisher.crossSignal
+                      : analysis.fisher.isExtremeOversold
+                      ? "EXTREME OVERSOLD"
+                      : analysis.fisher.isExtremeOverbought
+                      ? "EXTREME OVERBOUGHT"
+                      : "GAUSSIAN BALANCED"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Fisher Value:</span>
+                    <span className="font-mono font-bold text-white">
+                      {analysis.fisher.fisher > 0 ? `+${analysis.fisher.fisher}` : analysis.fisher.fisher}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">เส้น Trigger Line:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.fisher.trigger > 0 ? `+${analysis.fisher.trigger}` : analysis.fisher.trigger}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">โซน Gaussian ขอบนอก:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.fisher.isExtremeOversold
+                        ? "text-emerald-400"
+                        : analysis.fisher.isExtremeOverbought
+                        ? "text-rose-400"
+                        : "text-slate-300"
+                    }`}>
+                      {analysis.fisher.isExtremeOversold
+                        ? "ต่ำกว่า -2.0 (ขายอิ่มตัว)"
+                        : analysis.fisher.isExtremeOverbought
+                        ? "สูงกว่า +2.0 (ซื้ออิ่มตัว)"
+                        : "อยู่ในขอบปกติ (±2.0)"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.fisher.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: ConnorsRSI Triple-Momentum Pullback (Plan 62) */}
+            {analysis.connorsRSI && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🎯 ConnorsRSI (CRSI)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.connorsRSI.isExtremePullback
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse"
+                      : analysis.connorsRSI.isExtremeOverbought
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                      : "bg-surface-50 text-slate-400 border border-slate-700"
+                  }`}>
+                    {analysis.connorsRSI.isExtremePullback
+                      ? "🟢 EXTREME DIP BUY"
+                      : analysis.connorsRSI.isExtremeOverbought
+                      ? "🔴 OVERBOUGHT TOP"
+                      : "NORMAL MOMENTUM"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Composite CRSI (0-100):</span>
+                    <span className={`font-mono font-bold text-xs ${
+                      analysis.connorsRSI.crsi < 15
+                        ? "text-emerald-400"
+                        : analysis.connorsRSI.crsi > 85
+                        ? "text-rose-400"
+                        : "text-white"
+                    }`}>
+                      {analysis.connorsRSI.crsi} / 100
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">RSI(3) / StreakRSI:</span>
+                    <span className="font-mono text-cyan-300 text-[10px]">
+                      {analysis.connorsRSI.rsiClose} / {analysis.connorsRSI.streakRSI}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Percent Rank (100d):</span>
+                    <span className="font-mono text-indigo-300 text-[10px]">
+                      {analysis.connorsRSI.percentRank}% ของผลตอบแทนรอบ 100 วัน
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.connorsRSI.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Awesome Oscillator Saucer & Zero Cross (Plan 63) */}
+            {analysis.awesomeOsc && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚡ Awesome Oscillator</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.awesomeOsc.saucerSignal === "BULLISH_SAUCER"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.awesomeOsc.saucerSignal === "BEARISH_SAUCER"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : analysis.awesomeOsc.isGreen
+                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                      : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                  }`}>
+                    {analysis.awesomeOsc.saucerSignal !== "NONE"
+                      ? analysis.awesomeOsc.saucerSignal
+                      : analysis.awesomeOsc.isGreen
+                      ? "🟢 AO GREEN"
+                      : "🔴 AO RED"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ค่าโมเมนตัม AO:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {analysis.awesomeOsc.ao > 0 ? `+${analysis.awesomeOsc.ao}` : analysis.awesomeOsc.ao}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">สถานะ Zero Cross:</span>
+                    <span className="font-mono text-cyan-300 text-[10px]">
+                      {analysis.awesomeOsc.isZeroCross ? "⚡ เพิ่งตัดผ่านเส้น 0" : (analysis.awesomeOsc.ao > 0 ? "อยู่แดนบวก (+)" : "อยู่แดนลบ (-)")}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Saucer Acceleration:</span>
+                    <span className="font-mono text-[10px] text-slate-300">
+                      {analysis.awesomeOsc.saucerSignal === "BULLISH_SAUCER"
+                        ? "เร่งสปีดขาขึ้น (Saucer)"
+                        : analysis.awesomeOsc.saucerSignal === "BEARISH_SAUCER"
+                        ? "เร่งสปีดขาลง (Saucer)"
+                        : "เคลื่อนไหวปกติ"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.awesomeOsc.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: TSI & Advanced Volatility Climax Shield (Plans 64 & 65 + Safety Lock 16) */}
+            {(analysis.tsi || analysis.advancedVol) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌪️ Volatility Climax Shield</span>
+                  {analysis.advancedVol && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.advancedVol.safetyLock16Passed
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                    }`}>
+                      {analysis.advancedVol.safetyLock16Passed ? "🛡️ LOCK 16 PASS" : "⛔ VOLATILITY CLIMAX"}
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  {analysis.tsi && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">True Strength Index (TSI):</span>
+                      <span className={`font-mono font-bold text-[10px] ${
+                        analysis.tsi.isBullish ? "text-emerald-400" : "text-rose-400"
+                      }`}>
+                        {analysis.tsi.tsi > 0 ? `+${analysis.tsi.tsi}` : analysis.tsi.tsi} (Sig: {analysis.tsi.signal})
+                      </span>
+                    </div>
+                  )}
+
+                  {analysis.advancedVol && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Yang-Zhang Volatility:</span>
+                        <span className={`font-mono font-bold text-[10px] ${
+                          analysis.advancedVol.yangZhangVol >= 0.45
+                            ? "text-rose-400"
+                            : analysis.advancedVol.yangZhangVol < 0.15
+                            ? "text-cyan-300"
+                            : "text-emerald-400"
+                        }`}>
+                          {(analysis.advancedVol.yangZhangVol * 100).toFixed(1)}% ({analysis.advancedVol.volatilityRegime})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">GK Vol / Ulcer Index:</span>
+                        <span className="font-mono text-indigo-300 text-[10px]">
+                          GK: {(analysis.advancedVol.garmanKlassVol * 100).toFixed(1)}% | Ulcer: {analysis.advancedVol.ulcerIndex}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.advancedVol?.description || analysis.tsi?.description}
                 </p>
               </div>
             )}

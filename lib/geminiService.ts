@@ -1431,6 +1431,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.parabolicSAR = ruleAnalysis.parabolicSAR;
     parsed.aroon = ruleAnalysis.aroon;
     parsed.vortex = ruleAnalysis.vortex;
+    parsed.fisher = ruleAnalysis.fisher;
+    parsed.connorsRSI = ruleAnalysis.connorsRSI;
+    parsed.awesomeOsc = ruleAnalysis.awesomeOsc;
+    parsed.tsi = ruleAnalysis.tsi;
+    parsed.advancedVol = ruleAnalysis.advancedVol;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -1479,6 +1484,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.parabolicSAR = ruleAnalysis.tradeSetup.parabolicSAR;
       parsed.tradeSetup.aroon = ruleAnalysis.tradeSetup.aroon;
       parsed.tradeSetup.vortex = ruleAnalysis.tradeSetup.vortex;
+      parsed.tradeSetup.fisher = ruleAnalysis.tradeSetup.fisher;
+      parsed.tradeSetup.connorsRSI = ruleAnalysis.tradeSetup.connorsRSI;
+      parsed.tradeSetup.awesomeOsc = ruleAnalysis.tradeSetup.awesomeOsc;
+      parsed.tradeSetup.tsi = ruleAnalysis.tradeSetup.tsi;
+      parsed.tradeSetup.advancedVol = ruleAnalysis.tradeSetup.advancedVol;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

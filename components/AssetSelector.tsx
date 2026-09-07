@@ -89,6 +89,7 @@ export default function AssetSelector({
                 onClick={() => {
                   setActiveTab(cat.id);
                   setSearchQuery("");
+                  setIsOpen(true);
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
                   activeTab === cat.id
