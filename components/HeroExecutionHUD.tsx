@@ -313,114 +313,44 @@ export default function HeroExecutionHUD({
         </div>
       </div>
 
-      {/* ─── 4. AUTOMATED RISK MANAGEMENT & TRAILING SHIELD ─── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
-        {/* Breakeven Rule */}
-        {(ts.breakevenAdvice || analysis.breakevenAdvice) && (
-          <div className="p-2.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 flex items-start gap-2 text-slate-300">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+      {/* ─── 4. SELF-TUNING ADAPTIVE ENGINE STATUS (Zero-Bloat Signal Cockpit) ─── */}
+      {analysis.optimizedConfig?.isOptimized && (
+        <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-slate-900 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs shadow-inner">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/40 shrink-0">
+              <Zap className="w-4 h-4 text-indigo-300" />
+            </div>
             <div>
-              <span className="font-bold text-emerald-300 text-[11px] block">
-                เกราะป้องกันทุน Breakeven (+1.0R Rule):
-              </span>
-              <p className="text-[10px] text-slate-300 leading-tight">
-                {(ts.breakevenAdvice || analysis.breakevenAdvice)?.actionText}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-black text-white text-xs tracking-wide">
+                  ⚡ Self-Adaptive Indicator Engine
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                  Win Rate Boost +{analysis.optimizedConfig.winRateGain}%
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+                ระบบปรับจูนพารามิเตอร์อัตโนมัติเฉพาะ <strong className="text-white">{analysis.symbol}</strong>:{" "}
+                <span className="text-indigo-300 font-mono font-semibold">
+                  EMA({analysis.optimizedConfig.emaFast}/{analysis.optimizedConfig.emaSlow}/{analysis.optimizedConfig.emaTrend})
+                </span>{" "}
+                •{" "}
+                <span className="text-purple-300 font-mono font-semibold">
+                  RSI({analysis.optimizedConfig.rsiPeriod})
+                </span>{" "}
+                (ทดสอบ {analysis.optimizedConfig.totalTradesTested} ไม้ | Win Rate เดิม {analysis.optimizedConfig.baselineWinRate}% ➔ <strong className="text-emerald-400 font-bold">{analysis.optimizedConfig.optimizedWinRate}%</strong>)
               </p>
             </div>
           </div>
-        )}
 
-        {/* Trailing Stop Rule */}
-        {(ts.trailingStop || analysis.trailingStop) && (
-          <div className="p-2.5 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-start gap-2 text-slate-300">
-            <Sliders className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-            <div className="w-full">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-purple-300 text-[11px]">
-                  Chandelier ATR Trailing Stop:
-                </span>
-                <span className="font-mono text-amber-300 font-bold text-[10px]">
-                  Trail SL: {(ts.trailingStop || analysis.trailingStop)?.trailingStopPrice}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-300 leading-tight">
-                {(ts.trailingStop || analysis.trailingStop)?.instruction}
-              </p>
-            </div>
+          <div className="flex items-center gap-2 self-end sm:self-center font-mono shrink-0">
+            <span className="text-[10px] text-slate-400">Profit Factor:</span>
+            <span className="text-xs font-black text-emerald-300 bg-surface-100 px-2 py-1 rounded-lg border border-slate-700">
+              {analysis.optimizedConfig.profitFactor}x
+            </span>
           </div>
-        )}
-
-        {/* Dynamic Spread & Slippage Impact Calculator [แผน 18] */}
-        {(ts.spreadImpact || analysis.spreadImpact) && (() => {
-          const sp = ts.spreadImpact || analysis.spreadImpact!;
-          return (
-            <div className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs col-span-1 md:col-span-2 ${
-              sp.isSpreadWarning
-                ? "bg-rose-950/30 border-rose-500/40 text-rose-200"
-                : "bg-surface-50/90 border-slate-800 text-slate-300"
-            }`}>
-              <div className="flex items-center gap-2">
-                <div className={`p-1 rounded-lg ${sp.isSpreadWarning ? "bg-rose-500/20 text-rose-400" : "bg-blue-500/10 text-blue-400"}`}>
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-white text-[10px]">ต้นทุนสเปรดโบรกเกอร์ (Broker Spread Impact)</span>
-                    <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded ${
-                      sp.isSpreadWarning
-                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold"
-                        : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
-                    }`}>
-                      {sp.isSpreadWarning ? "⚠️ SPREAD HIGH DANGER" : "✅ SPREAD ACCEPTABLE"}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-400">
-                    สเปรด ~{sp.estimatedSpreadPips} pips (${sp.spreadCostUSD} / 0.01 lot) • กินระยะ SL ไป {sp.spreadToSLPercent}%
-                    {sp.warningMessage ? ` • ${sp.warningMessage}` : ""}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 self-end sm:self-center font-mono">
-                <span className="text-[10px] text-slate-400">Net R:R:</span>
-                <span className={`text-xs font-black px-1.5 py-0.5 rounded ${
-                  sp.isSpreadWarning ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300"
-                }`}>
-                  {sp.effectiveRiskReward}
-                </span>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Kelly Criterion Math Sizing Advisor [แผน 21] */}
-        {(ts.kellySizing || analysis.kellySizing) && (() => {
-          const ks = ts.kellySizing || analysis.kellySizing!;
-          return (
-            <div className="p-2.5 rounded-xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/30 space-y-1.5 col-span-1 md:col-span-2">
-              <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Calculator className="w-3.5 h-3.5 text-indigo-400" />
-                  <span className="font-bold text-white text-[10px]">
-                    Kelly Criterion Math Sizing:
-                  </span>
-                  <span className="text-emerald-300 font-bold bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30 text-[9px]">
-                    แนะนำเสี่ยง: {ks.volatilityAdjustedPct}%
-                  </span>
-                </div>
-                <button
-                  onClick={() => setCustomRiskPct(ks.volatilityAdjustedPct)}
-                  className="px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-sans text-[10px] transition-all font-semibold cursor-pointer"
-                >
-                  ใช้ค่านี้ ({ks.volatilityAdjustedPct}%)
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-400 leading-tight">
-                {ks.rationale}
-              </p>
-            </div>
-          );
-        })()}
-      </div>
+        </div>
+      )}
 
       {/* ─── 5. INTERACTIVE LOT SIZE & RISK CALCULATOR (เริ่ม $10 USD) ─── */}
       <div className="p-3.5 rounded-xl bg-surface-50/80 border border-slate-800 space-y-3">

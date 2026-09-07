@@ -205,12 +205,12 @@ export function optimizeIndicatorParameters(candles: Candle[]): OptimizedConfig 
     2.0
   );
 
-  // 3. Multi-parameter Search Space (162 simulations evaluated in ~10ms via memoization)
-  const fastOptions = [9, 13, 20];
-  const slowOptions = [34, 50, 89];
-  const trendOptions = [100, 200];
-  const rsiOptions = [7, 10, 14];
-  const tpOptions = [1.5, 2.0, 2.5];
+  // 3. Multi-parameter Search Space (Walk-Forward Self-Adaptive Grid Search)
+  const fastOptions = [9, 13, 20, 21];
+  const slowOptions = [34, 50, 55, 89];
+  const trendOptions = [100, 144, 200];
+  const rsiOptions = [7, 10, 14, 21];
+  const tpOptions = [1.5, 2.0, 2.5, 3.0];
 
   let bestScore = -Infinity;
   let bestConfig = {
@@ -236,8 +236,8 @@ export function optimizeIndicatorParameters(candles: Candle[]): OptimizedConfig 
             const sim = simulateStrategy(candles, emaFast, emaSlow, emaTrend, rsi, adx, atrs, trend, tp);
             if (sim.totalTrades < 3) continue;
 
-            // Objective Fitness Function
-            const fitness = sim.winRate * 0.5 + sim.netReturnR * 0.3 + Math.min(sim.profitFactor, 5) * 4;
+            // Objective Fitness Function: Heavily prioritize Win Rate (%) while maintaining solid Profit Factor
+            const fitness = sim.winRate * 0.65 + sim.netReturnR * 0.20 + Math.min(sim.profitFactor, 5) * 4;
             if (fitness > bestScore) {
               bestScore = fitness;
               bestConfig = {

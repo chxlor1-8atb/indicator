@@ -77,6 +77,7 @@ import { optimizeIndicatorParameters } from "./optimizerEngine";
 import {
   calculateATR,
   calculateEMA,
+  calculateRSI,
   detectCandleRejection,
   detectRSIDivergence,
   calculateOTEZones,
@@ -184,18 +185,33 @@ export function generateRuleBasedAnalysis(
     ? 4
     : 2;
 
-  const lastRSI = indicators.rsi14.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? 50.0;
-  const lastEMA20 = indicators.ema20.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.998).toFixed(precision));
-  const lastEMA50 = indicators.ema50.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.995).toFixed(precision));
-  const lastEMA200 = indicators.ema200.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.985).toFixed(precision));
+  // ─── SELF-ADAPTIVE INDICATOR ENGINE (Real-Time Walk-Forward Parameter Application) ───
+  // Calculate and apply the exact EMA and RSI periods optimized for maximum Win Rate on this asset
+  const adaptiveFastList = optimizedConfig.isOptimized && optimizedConfig.emaFast !== 20
+    ? calculateEMA(candles, optimizedConfig.emaFast)
+    : indicators.ema20;
+  const adaptiveSlowList = optimizedConfig.isOptimized && optimizedConfig.emaSlow !== 50
+    ? calculateEMA(candles, optimizedConfig.emaSlow)
+    : indicators.ema50;
+  const adaptiveTrendList = optimizedConfig.isOptimized && optimizedConfig.emaTrend !== 200
+    ? calculateEMA(candles, optimizedConfig.emaTrend)
+    : indicators.ema200;
+  const adaptiveRsiList = optimizedConfig.isOptimized && optimizedConfig.rsiPeriod !== 14
+    ? calculateRSI(candles, optimizedConfig.rsiPeriod)
+    : indicators.rsi14;
+
+  const lastRSI = adaptiveRsiList.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? 50.0;
+  const lastEMA20 = adaptiveFastList.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.998).toFixed(precision));
+  const lastEMA50 = adaptiveSlowList.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.995).toFixed(precision));
+  const lastEMA200 = adaptiveTrendList.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.985).toFixed(precision));
 
   // ATR for volatility measurement
   const atrs = calculateATR(candles, 14);
   const currentATR = atrs.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Math.max(currentPrice * 0.006, 0.5);
 
-  // Price Action & Divergence Detection
+  // Price Action & Divergence Detection with Adaptive RSI
   const rejection = detectCandleRejection(lastCandle, prevCandle);
-  const divergence = detectRSIDivergence(candles, indicators.rsi14);
+  const divergence = detectRSIDivergence(candles, adaptiveRsiList);
 
   // ─── TIER 1: DIRECTIONAL BIAS (The Boss) ───
   let tier1Bias: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
@@ -257,7 +273,7 @@ export function generateRuleBasedAnalysis(
      upperWick >= candleRange * 0.28 ||
      (lastCandle.close < lastCandle.open && lastCandle.close < prevC.low));
 
-  const prevRSI = indicators.rsi14.length >= 2 ? (indicators.rsi14.slice(-2)[0] ?? lastRSI) : lastRSI;
+  const prevRSI = adaptiveRsiList.length >= 2 ? (adaptiveRsiList.slice(-2)[0] ?? lastRSI) : lastRSI;
   const isRsiBullHook = lastRSI >= prevRSI;
   const isRsiBearHook = lastRSI <= prevRSI;
 
@@ -286,7 +302,14 @@ export function generateRuleBasedAnalysis(
   };
 
   // ─── 5-PILLAR MASTER CONFLUENCE SCORING WITH ADAPTIVE SELF-TUNING ───
-  const masterConfluence = evaluateMasterConfluence(candles, indicators, tier1Bias, adaptiveConfig);
+  const adaptiveIndicators: IndicatorData = {
+    ...indicators,
+    ema20: adaptiveFastList,
+    ema50: adaptiveSlowList,
+    ema200: adaptiveTrendList,
+    rsi14: adaptiveRsiList,
+  };
+  const masterConfluence = evaluateMasterConfluence(candles, adaptiveIndicators, tier1Bias, adaptiveConfig);
 
   // News Sentiment calculation
   let sentimentScore = 0;
