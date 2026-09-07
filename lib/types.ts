@@ -681,6 +681,11 @@ export interface IndicatorData {
   chaikinVol?: ChaikinVolatilityInfo;
   ker?: KaufmanEfficiencyRatioInfo;
   vpci?: VPCIInfo;
+  mcginley?: McGinleyDynamicPoint;
+  elderForce?: ElderForceIndexInfo;
+  rvi?: RelativeVolatilityIndexInfo;
+  frama?: FRAMAPoint;
+  milestone75?: Milestone75QuantFusionInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -832,6 +837,11 @@ export interface AnalysisResult {
   chaikinVol?: ChaikinVolatilityInfo;
   ker?: KaufmanEfficiencyRatioInfo;
   vpci?: VPCIInfo;
+  mcginley?: McGinleyDynamicPoint;
+  elderForce?: ElderForceIndexInfo;
+  rvi?: RelativeVolatilityIndexInfo;
+  frama?: FRAMAPoint;
+  milestone75?: Milestone75QuantFusionInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -925,6 +935,11 @@ export interface AnalysisResult {
     chaikinVol?: ChaikinVolatilityInfo;
     ker?: KaufmanEfficiencyRatioInfo;
     vpci?: VPCIInfo;
+    mcginley?: McGinleyDynamicPoint;
+    elderForce?: ElderForceIndexInfo;
+    rvi?: RelativeVolatilityIndexInfo;
+    frama?: FRAMAPoint;
+    milestone75?: Milestone75QuantFusionInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1197,6 +1212,44 @@ export interface VPCIInfo {
   vpciSignal: number;
   volumeEnergyState: "CONFIRMED_TREND" | "HOLLOW_BREAKOUT" | "VOLUME_EXHAUSTION" | "NEUTRAL";
   safetyLock17Passed: boolean;
+  description: string;
+}
+
+export interface McGinleyDynamicPoint {
+  md: number;
+  speedAdjustmentFactor: number;
+  trendState: "BULLISH" | "BEARISH";
+  description: string;
+}
+
+export interface ElderForceIndexInfo {
+  efiShort: number; // EMA(2) of PriceChange * Volume
+  efiTrend: number; // EMA(13) of PriceChange * Volume
+  forceState: "STRONG_BULL_FORCE" | "MILD_BULL_FORCE" | "STRONG_BEAR_FORCE" | "MILD_BEAR_FORCE" | "NEUTRAL";
+  description: string;
+}
+
+export interface RelativeVolatilityIndexInfo {
+  rvi: number; // 0 to 100
+  volatilityDirection: "BULLISH_EXPANSION" | "BEARISH_EXPANSION" | "BALANCED";
+  isExtremeOverbought: boolean;
+  isExtremeOversold: boolean;
+  description: string;
+}
+
+export interface FRAMAPoint {
+  frama: number;
+  fractalDimension: number; // D (1.0 to 2.0)
+  alpha: number;
+  state: "TRENDING_SMOOTH" | "CHAOTIC_FRACTAL" | "CONSOLIDATION";
+  description: string;
+}
+
+export interface Milestone75QuantFusionInfo {
+  milestoneScore: number; // 0 to 100
+  phase3DominanceStatus: "PHASE_3_DOMINANCE_ACHIEVED" | "QUANT_ACCUMULATION";
+  safetyLock18Passed: boolean;
+  activePillarsCount: number; // out of 18
   description: string;
 }
 

@@ -78,6 +78,11 @@ import {
   ChaikinVolatilityInfo,
   KaufmanEfficiencyRatioInfo,
   VPCIInfo,
+  McGinleyDynamicPoint,
+  ElderForceIndexInfo,
+  RelativeVolatilityIndexInfo,
+  FRAMAPoint,
+  Milestone75QuantFusionInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
