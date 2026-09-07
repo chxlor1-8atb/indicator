@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMarketCandles } from "@/lib/marketService";
+import { getMarketCandles, simulateInstitutionalBacktest } from "@/lib/marketService";
 import { calculateAllIndicators } from "@/lib/indicators";
 import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
-import { saveAiSignal, resolveOpenSignals, saveMarketSnapshot } from "@/lib/db";
+import { saveAiSignal, resolveOpenSignals, saveMarketSnapshot, saveBacktestResults } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +41,17 @@ export async function POST(request: NextRequest) {
     }
     if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
       saveAiSignal(analysis).catch(console.error);
+    }
+
+    // 5. Continuous Real-time Win Rate & Backtest Sync into Neon DB (Non-blocking)
+    const candles500 = candles.slice(-500);
+    if (candles500.length >= 35) {
+      const btTrades = simulateInstitutionalBacktest(symbol, candles500);
+      if (btTrades.length > 0) {
+        saveBacktestResults(symbol, timeframe, btTrades).catch((e) =>
+          console.warn(`Real-time backtest sync warning for ${symbol}:`, e)
+        );
+      }
     }
 
     return NextResponse.json({

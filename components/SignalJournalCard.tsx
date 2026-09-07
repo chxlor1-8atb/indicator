@@ -83,8 +83,13 @@ export default function SignalJournalCard() {
   };
 
   useEffect(() => {
-    fetchSignals();
-  }, []);
+    fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined);
+    // Real-time continuous polling every 20s to ensure win rates in Neon are always up-to-date
+    const interval = setInterval(() => {
+      fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined);
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [selectedSymbol]);
 
   const formatJournalPrice = (price: number | string, sym: string) => {
     const num = Number(price);
@@ -145,14 +150,18 @@ export default function SignalJournalCard() {
             <Award className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2 flex-wrap">
               <span>AI Trade Journal & Real Win-Rate Tracker</span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
                 Neon Postgres
               </span>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span>Live Realtime Sync</span>
+              </span>
             </h3>
             <p className="text-[11px] text-slate-400">
-              บันทึกประวัติสัญญาณเทรดจริง & ตรวจสอบผลลัพธ์ย้อนหลังอย่างโปร่งใส
+              บันทึกประวัติสัญญาณเทรดจริง & ตรวจสอบผลลัพธ์ย้อนหลังอย่างโปร่งใส (อัปเดตอัตโนมัติตลอดเวลา)
             </p>
           </div>
         </div>

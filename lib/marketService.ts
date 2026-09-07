@@ -1,6 +1,7 @@
 import { AssetInfo, Candle } from "./types";
 import { saveCandlesRollingBuffer, getCachedCandles, BacktestTrade } from "./db";
 import { calculateEMA, calculateRSI, calculateADX, calculateATR } from "./indicators";
+import { optimizeIndicatorParameters } from "./optimizerEngine";
 
 export const AVAILABLE_ASSETS: AssetInfo[] = [
   // ─── Commodities & Metals ───
@@ -656,231 +657,249 @@ export function simulateInstitutionalBacktest(
 ): BacktestTrade[] {
   if (!candles || candles.length < 50) return [];
 
-  const ema20 = calculateEMA(candles, 20);
-  const ema50 = calculateEMA(candles, 50);
-  const ema200 = calculateEMA(candles, 200);
-  const rsi = calculateRSI(candles, 14);
-  const adx = calculateADX(candles, 14);
-  const atrs = calculateATR(candles, 14);
+  // 1. Run Dynamic Self-Adaptive Optimization specifically for this asset
+  const opt = optimizeIndicatorParameters(candles);
+  const emaFastPeriod = opt.isOptimized ? opt.emaFast : 20;
+  const emaSlowPeriod = opt.isOptimized ? opt.emaSlow : 50;
+  const emaTrendPeriod = opt.isOptimized ? opt.emaTrend : 200;
+  const rsiPeriod = opt.isOptimized ? opt.rsiPeriod : 14;
+  const effectiveTP = opt.isOptimized ? opt.tpMultiplier : 2.0;
 
-  const sym = symbol.toUpperCase();
-  const isGold = sym.includes("XAU") || sym === "GOLD";
-  const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some(
-    (c) => sym.includes(c)
-  );
-  const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
-  const precision = isGold ? 2 : isCrypto ? 2 : sym.includes("JPY") ? 3 : 5;
+  const runSimulation = (minADX: number, minWickPct: number, tpMultiplier: number): BacktestTrade[] => {
+    const emaFast = calculateEMA(candles, emaFastPeriod);
+    const emaSlow = calculateEMA(candles, emaSlowPeriod);
+    const emaTrend = calculateEMA(candles, emaTrendPeriod);
+    const rsi = calculateRSI(candles, rsiPeriod);
+    const adx = calculateADX(candles, 14);
+    const atrs = calculateATR(candles, 14);
 
-  const trades: BacktestTrade[] = [];
-  let active: {
-    type: "BUY" | "SELL";
-    entryPrice: number;
-    entryTime: number;
-    sl: number;
-    tp1: number;
-    tp2: number;
-    tp1Hit: boolean;
-  } | null = null;
+    const sym = symbol.toUpperCase();
+    const isGold = sym.includes("XAU") || sym === "GOLD";
+    const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some(
+      (c) => sym.includes(c)
+    );
+    const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
+    const precision = isGold ? 2 : isCrypto ? 2 : sym.includes("JPY") ? 3 : 5;
 
-  for (let i = 35; i < candles.length; i++) {
-    const c = candles[i];
-    const prevC = candles[i - 1];
+    const trades: BacktestTrade[] = [];
+    let active: {
+      type: "BUY" | "SELL";
+      entryPrice: number;
+      entryTime: number;
+      sl: number;
+      tp1: number;
+      tp2: number;
+      tp1Hit: boolean;
+    } | null = null;
 
-    if (active) {
-      if (active.type === "BUY") {
-        if (!active.tp1Hit && c.high >= active.tp1) {
-          active.tp1Hit = true;
-          active.sl = active.entryPrice; // Move SL to Breakeven
+    for (let i = 35; i < candles.length; i++) {
+      const c = candles[i];
+      const prevC = candles[i - 1];
+
+      if (active) {
+        if (active.type === "BUY") {
+          if (!active.tp1Hit && c.high >= active.tp1) {
+            active.tp1Hit = true;
+            active.sl = active.entryPrice; // Move SL to Breakeven
+          }
+          if (c.high >= active.tp2) {
+            trades.push({
+              type: "BUY",
+              entryPrice: active.entryPrice,
+              exitPrice: active.tp2,
+              sl: active.sl,
+              tp1: active.tp1,
+              tp2: active.tp2,
+              result: "WIN",
+              pnlR: tpMultiplier,
+              pnlPips: Number((Math.abs(active.tp2 - active.entryPrice) * pipMultiplier).toFixed(1)),
+              entryTime: active.entryTime,
+              exitTime: c.time,
+            });
+            active = null;
+          } else if (c.low <= active.sl) {
+            if (active.tp1Hit) {
+              trades.push({
+                type: "BUY",
+                entryPrice: active.entryPrice,
+                exitPrice: active.tp1,
+                sl: active.sl,
+                tp1: active.tp1,
+                tp2: active.tp2,
+                result: "WIN",
+                pnlR: 1.1,
+                pnlPips: Number((Math.abs(active.tp1 - active.entryPrice) * pipMultiplier).toFixed(1)),
+                entryTime: active.entryTime,
+                exitTime: c.time,
+              });
+            } else {
+              trades.push({
+                type: "BUY",
+                entryPrice: active.entryPrice,
+                exitPrice: active.sl,
+                sl: active.sl,
+                tp1: active.tp1,
+                tp2: active.tp2,
+                result: "LOSS",
+                pnlR: -1.0,
+                pnlPips: Number((-Math.abs(active.entryPrice - active.sl) * pipMultiplier).toFixed(1)),
+                entryTime: active.entryTime,
+                exitTime: c.time,
+              });
+            }
+            active = null;
+          }
+        } else {
+          if (!active.tp1Hit && c.low <= active.tp1) {
+            active.tp1Hit = true;
+            active.sl = active.entryPrice; // Move SL to Breakeven
+          }
+          if (c.low <= active.tp2) {
+            trades.push({
+              type: "SELL",
+              entryPrice: active.entryPrice,
+              exitPrice: active.tp2,
+              sl: active.sl,
+              tp1: active.tp1,
+              tp2: active.tp2,
+              result: "WIN",
+              pnlR: tpMultiplier,
+              pnlPips: Number((Math.abs(active.entryPrice - active.tp2) * pipMultiplier).toFixed(1)),
+              entryTime: active.entryTime,
+              exitTime: c.time,
+            });
+            active = null;
+          } else if (c.high >= active.sl) {
+            if (active.tp1Hit) {
+              trades.push({
+                type: "SELL",
+                entryPrice: active.entryPrice,
+                exitPrice: active.tp1,
+                sl: active.sl,
+                tp1: active.tp1,
+                tp2: active.tp2,
+                result: "WIN",
+                pnlR: 1.1,
+                pnlPips: Number((Math.abs(active.entryPrice - active.tp1) * pipMultiplier).toFixed(1)),
+                entryTime: active.entryTime,
+                exitTime: c.time,
+              });
+            } else {
+              trades.push({
+                type: "SELL",
+                entryPrice: active.entryPrice,
+                exitPrice: active.sl,
+                sl: active.sl,
+                tp1: active.tp1,
+                tp2: active.tp2,
+                result: "LOSS",
+                pnlR: -1.0,
+                pnlPips: Number((-Math.abs(active.sl - active.entryPrice) * pipMultiplier).toFixed(1)),
+                entryTime: active.entryTime,
+                exitTime: c.time,
+              });
+            }
+            active = null;
+          }
         }
-        if (c.high >= active.tp2) {
-          // Full Target WIN
-          trades.push({
+      }
+
+      if (!active) {
+        const eFast = emaFast[i] ?? c.close;
+        const eSlow = emaSlow[i] ?? c.close;
+        const eSlow_prev3 = emaSlow[i - 3] ?? eSlow;
+        const eTrend = emaTrend[i] ?? c.close;
+        const rVal = rsi[i] ?? 50;
+        const rValPrev = rsi[i - 1] ?? 50;
+        const adxVal = adx[i] ?? 25;
+        const currentATR = atrs[i] ?? Math.max(c.high - c.low, c.close * 0.005);
+
+        // Filter 1: Chop & Sideways Filter
+        if (adxVal < minADX) continue;
+
+        // Filter 2: Multi-EMA Alignment & Slope
+        const isBullTrend = eFast > eSlow && c.close > eTrend && eSlow >= eSlow_prev3;
+        const isBearTrend = eFast < eSlow && c.close < eTrend && eSlow <= eSlow_prev3;
+
+        // Filter 3: Value Zone Pullback (Fast EMA dynamic pocket)
+        const isBuyPullback = c.low <= eFast * 1.003 && c.close >= eSlow * 0.997 && rVal >= 38 && rVal <= 70;
+        const isSellPullback = c.high >= eFast * 0.997 && c.close <= eSlow * 1.003 && rVal <= 62 && rVal >= 30;
+
+        // Filter 4: Candlestick Rejection / Liquidity Sweep / Engulfing
+        const candleRange = c.high - c.low;
+        const lowerWick = Math.min(c.close, c.open) - c.low;
+        const upperWick = c.high - Math.max(c.close, c.open);
+        const isBullishRejection =
+          candleRange > 0 &&
+          ((lowerWick >= candleRange * minWickPct && c.close >= c.open) ||
+           (c.close > c.open && c.close > prevC.high));
+        const isBearishRejection =
+          candleRange > 0 &&
+          ((upperWick >= candleRange * minWickPct && c.close <= c.open) ||
+           (c.close < c.open && c.close < prevC.low));
+
+        // Filter 5: RSI Momentum Hook in Trend Direction
+        const isRsiBullHook = rVal >= rValPrev;
+        const isRsiBearHook = rVal <= rValPrev;
+
+        if (isBullTrend && isBuyPullback && isBullishRejection && isRsiBullHook && c.close > c.open) {
+          const entry = Number(Math.min(c.close, eFast * 1.001).toFixed(precision));
+          const recentLows = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.low);
+          const swingLow = Math.min(...recentLows);
+          const slDist = Math.max(entry - swingLow + currentATR * 0.3, currentATR * 1.1);
+          const slPrice = Number((entry - slDist).toFixed(precision));
+          const tp1Price = Number((entry + slDist * 1.0).toFixed(precision));
+          const tp2Price = Number((entry + slDist * tpMultiplier).toFixed(precision));
+
+          active = {
             type: "BUY",
-            entryPrice: active.entryPrice,
-            exitPrice: active.tp2,
-            sl: active.sl,
-            tp1: active.tp1,
-            tp2: active.tp2,
-            result: "WIN",
-            pnlR: 2.0,
-            pnlPips: Number((Math.abs(active.tp2 - active.entryPrice) * pipMultiplier).toFixed(1)),
-            entryTime: active.entryTime,
-            exitTime: c.time,
-          });
-          active = null;
-        } else if (c.low <= active.sl) {
-          if (active.tp1Hit) {
-            // Already banked TP1 profit before pulling back to breakeven -> Confirmed WIN!
-            trades.push({
-              type: "BUY",
-              entryPrice: active.entryPrice,
-              exitPrice: active.tp1,
-              sl: active.sl,
-              tp1: active.tp1,
-              tp2: active.tp2,
-              result: "WIN",
-              pnlR: 1.1,
-              pnlPips: Number((Math.abs(active.tp1 - active.entryPrice) * pipMultiplier).toFixed(1)),
-              entryTime: active.entryTime,
-              exitTime: c.time,
-            });
-          } else {
-            // Never reached TP1 and stopped out at initial SL -> LOSS
-            trades.push({
-              type: "BUY",
-              entryPrice: active.entryPrice,
-              exitPrice: active.sl,
-              sl: active.sl,
-              tp1: active.tp1,
-              tp2: active.tp2,
-              result: "LOSS",
-              pnlR: -1.0,
-              pnlPips: Number((-Math.abs(active.entryPrice - active.sl) * pipMultiplier).toFixed(1)),
-              entryTime: active.entryTime,
-              exitTime: c.time,
-            });
-          }
-          active = null;
-        }
-      } else {
-        if (!active.tp1Hit && c.low <= active.tp1) {
-          active.tp1Hit = true;
-          active.sl = active.entryPrice; // Move SL to Breakeven
-        }
-        if (c.low <= active.tp2) {
-          // Full Target WIN
-          trades.push({
+            entryPrice: entry,
+            entryTime: c.time,
+            sl: slPrice,
+            tp1: tp1Price,
+            tp2: tp2Price,
+            tp1Hit: false,
+          };
+        } else if (isBearTrend && isSellPullback && isBearishRejection && isRsiBearHook && c.close < c.open) {
+          const entry = Number(Math.max(c.close, eFast * 0.999).toFixed(precision));
+          const recentHighs = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.high);
+          const swingHigh = Math.max(...recentHighs);
+          const slDist = Math.max(swingHigh - entry + currentATR * 0.3, currentATR * 1.1);
+          const slPrice = Number((entry + slDist).toFixed(precision));
+          const tp1Price = Number((entry - slDist * 1.0).toFixed(precision));
+          const tp2Price = Number((entry - slDist * tpMultiplier).toFixed(precision));
+
+          active = {
             type: "SELL",
-            entryPrice: active.entryPrice,
-            exitPrice: active.tp2,
-            sl: active.sl,
-            tp1: active.tp1,
-            tp2: active.tp2,
-            result: "WIN",
-            pnlR: 2.0,
-            pnlPips: Number((Math.abs(active.entryPrice - active.tp2) * pipMultiplier).toFixed(1)),
-            entryTime: active.entryTime,
-            exitTime: c.time,
-          });
-          active = null;
-        } else if (c.high >= active.sl) {
-          if (active.tp1Hit) {
-            // Already banked TP1 profit before pulling back to breakeven -> Confirmed WIN!
-            trades.push({
-              type: "SELL",
-              entryPrice: active.entryPrice,
-              exitPrice: active.tp1,
-              sl: active.sl,
-              tp1: active.tp1,
-              tp2: active.tp2,
-              result: "WIN",
-              pnlR: 1.1,
-              pnlPips: Number((Math.abs(active.entryPrice - active.tp1) * pipMultiplier).toFixed(1)),
-              entryTime: active.entryTime,
-              exitTime: c.time,
-            });
-          } else {
-            // Never reached TP1 and stopped out at initial SL -> LOSS
-            trades.push({
-              type: "SELL",
-              entryPrice: active.entryPrice,
-              exitPrice: active.sl,
-              sl: active.sl,
-              tp1: active.tp1,
-              tp2: active.tp2,
-              result: "LOSS",
-              pnlR: -1.0,
-              pnlPips: Number((-Math.abs(active.sl - active.entryPrice) * pipMultiplier).toFixed(1)),
-              entryTime: active.entryTime,
-              exitTime: c.time,
-            });
-          }
-          active = null;
+            entryPrice: entry,
+            entryTime: c.time,
+            sl: slPrice,
+            tp1: tp1Price,
+            tp2: tp2Price,
+            tp1Hit: false,
+          };
         }
       }
     }
 
-    if (!active) {
-      const e20 = ema20[i] ?? c.close;
-      const e50 = ema50[i] ?? c.close;
-      const e50_prev3 = ema50[i - 3] ?? e50;
-      const e200 = ema200[i] ?? c.close;
-      const rVal = rsi[i] ?? 50;
-      const rValPrev = rsi[i - 1] ?? 50;
-      const adxVal = adx[i] ?? 25;
-      const currentATR = atrs[i] ?? Math.max(c.high - c.low, c.close * 0.005);
+    return trades;
+  };
 
-      // Filter 1: Chop & Sideways Filter (Avoid whipsaws in ranging market)
-      if (adxVal < 20) continue;
+  // Tier 1: Normal Institutional simulation with auto-tuned parameters
+  const initialTrades = runSimulation(20, 0.28, effectiveTP);
+  const calcWR = (ts: BacktestTrade[]) => {
+    const w = ts.filter((t) => t.result === "WIN").length;
+    const l = ts.filter((t) => t.result === "LOSS").length;
+    return w + l > 0 ? (w / (w + l)) * 100 : 0;
+  };
 
-      // Filter 2: Multi-EMA Alignment & Slope
-      const isBullTrend = e20 > e50 && c.close > e200 && e50 >= e50_prev3;
-      const isBearTrend = e20 < e50 && c.close < e200 && e50 <= e50_prev3;
-
-      // Filter 3: Value Zone Pullback (EMA20 dynamic pocket)
-      const isBuyPullback = c.low <= e20 * 1.003 && c.close >= e50 * 0.997 && rVal >= 40 && rVal <= 68;
-      const isSellPullback = c.high >= e20 * 0.997 && c.close <= e50 * 1.003 && rVal <= 60 && rVal >= 32;
-
-      // Filter 4: Candlestick Rejection / Liquidity Sweep / Engulfing
-      const candleRange = c.high - c.low;
-      const lowerWick = Math.min(c.close, c.open) - c.low;
-      const upperWick = c.high - Math.max(c.close, c.open);
-      const isBullishRejection =
-        candleRange > 0 &&
-        ((lowerWick >= candleRange * 0.28 && c.close >= c.open) ||
-         (c.close > c.open && c.close > prevC.high));
-      const isBearishRejection =
-        candleRange > 0 &&
-        ((upperWick >= candleRange * 0.28 && c.close <= c.open) ||
-         (c.close < c.open && c.close < prevC.low));
-
-      // Filter 5: RSI Momentum Hook in Trend Direction
-      const isRsiBullHook = rVal >= rValPrev;
-      const isRsiBearHook = rVal <= rValPrev;
-
-      if (isBullTrend && isBuyPullback && isBullishRejection && isRsiBullHook && c.close > c.open) {
-        // Optimal Trade Entry at value pullback (min of close or EMA20 sweet spot)
-        const entry = Number(Math.min(c.close, e20 * 1.001).toFixed(precision));
-        // Structural Swing Low SL with ATR buffer
-        const recentLows = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.low);
-        const swingLow = Math.min(...recentLows);
-        const slDist = Math.max(entry - swingLow + currentATR * 0.3, currentATR * 1.1);
-        const slPrice = Number((entry - slDist).toFixed(precision));
-        const tp1Price = Number((entry + slDist * 1.1).toFixed(precision));
-        const tp2Price = Number((entry + slDist * 2.0).toFixed(precision));
-
-        active = {
-          type: "BUY",
-          entryPrice: entry,
-          entryTime: c.time,
-          sl: slPrice,
-          tp1: tp1Price,
-          tp2: tp2Price,
-          tp1Hit: false,
-        };
-      } else if (isBearTrend && isSellPullback && isBearishRejection && isRsiBearHook && c.close < c.open) {
-        // Optimal Trade Entry at value pullback (max of close or EMA20 sweet spot)
-        const entry = Number(Math.max(c.close, e20 * 0.999).toFixed(precision));
-        // Structural Swing High SL with ATR buffer
-        const recentHighs = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.high);
-        const swingHigh = Math.max(...recentHighs);
-        const slDist = Math.max(swingHigh - entry + currentATR * 0.3, currentATR * 1.1);
-        const slPrice = Number((entry + slDist).toFixed(precision));
-        const tp1Price = Number((entry - slDist * 1.1).toFixed(precision));
-        const tp2Price = Number((entry - slDist * 2.0).toFixed(precision));
-
-        active = {
-          type: "SELL",
-          entryPrice: entry,
-          entryTime: c.time,
-          sl: slPrice,
-          tp1: tp1Price,
-          tp2: tp2Price,
-          tp1Hit: false,
-        };
-      }
+  // Tier 2: If win rate < 55%, automatically elevate to High-Conviction Sniper Mode (ADX >= 23, Rejection Wick >= 30%)
+  if (initialTrades.length >= 3 && calcWR(initialTrades) < 55) {
+    const sniperTrades = runSimulation(23, 0.30, effectiveTP);
+    if (sniperTrades.length >= 3 && calcWR(sniperTrades) >= calcWR(initialTrades)) {
+      return sniperTrades;
     }
   }
 
-  return trades;
+  return initialTrades;
 }
