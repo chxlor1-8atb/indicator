@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMarketCandles } from "@/lib/marketService";
+import { getMarketCandles, AVAILABLE_ASSETS, simulateInstitutionalBacktest } from "@/lib/marketService";
 import { calculateEMA, calculateRSI } from "@/lib/indicators";
 import { saveBacktestResults, BacktestTrade } from "@/lib/db";
 
@@ -8,6 +8,60 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
+
+    // ─── Batch Seeder Mode: 500 Historical Candles across ALL Currency Pairs / Categories ───
+    if (body.action === "seed-all" || body.seedAll) {
+      const targetCategory = body.category || "all";
+      const assets = AVAILABLE_ASSETS.filter(
+        (a) => targetCategory === "all" || a.category === targetCategory
+      );
+
+      let totalSaved = 0;
+      let totalTradesGenerated = 0;
+      const results: Array<{ symbol: string; saved: number; trades: number; error?: string }> = [];
+
+      // Process in concurrent chunks of 4 to maximize throughput safely
+      const chunkSize = 4;
+      for (let i = 0; i < assets.length; i += chunkSize) {
+        const chunk = assets.slice(i, i + chunkSize);
+        const chunkResults = await Promise.all(
+          chunk.map(async (asset) => {
+            try {
+              const candles = await getMarketCandles(asset.symbol, "1h");
+              const candles500 = candles.slice(-500);
+              if (candles500.length < 35) {
+                return { symbol: asset.symbol, saved: 0, trades: 0, error: "Insufficient candles" };
+              }
+
+              const trades = simulateInstitutionalBacktest(asset.symbol, candles500);
+              if (trades.length > 0) {
+                const saveRes = await saveBacktestResults(asset.symbol, "1h", trades);
+                return { symbol: asset.symbol, saved: saveRes.saved, trades: trades.length };
+              }
+              return { symbol: asset.symbol, saved: 0, trades: 0 };
+            } catch (err) {
+              return { symbol: asset.symbol, saved: 0, trades: 0, error: String(err) };
+            }
+          })
+        );
+
+        for (const r of chunkResults) {
+          totalSaved += r.saved;
+          totalTradesGenerated += r.trades;
+          results.push(r);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `ประมวลผลย้อนหลัง 500 แท่งสำเร็จ ${assets.length} คู่เงิน: สร้าง ${totalTradesGenerated} trades, บันทึกลง Neon DB ใหม่ ${totalSaved} trades`,
+        totalSaved,
+        totalTradesGenerated,
+        processedCount: assets.length,
+        results,
+      });
+    }
+
     const symbol = body.symbol || "XAUUSD";
     const timeframe = body.timeframe || "1h";
 
