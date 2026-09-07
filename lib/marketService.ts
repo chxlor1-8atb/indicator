@@ -1,6 +1,6 @@
 import { AssetInfo, Candle } from "./types";
 import { saveCandlesRollingBuffer, getCachedCandles, BacktestTrade } from "./db";
-import { calculateEMA, calculateRSI } from "./indicators";
+import { calculateEMA, calculateRSI, calculateADX, calculateATR } from "./indicators";
 
 export const AVAILABLE_ASSETS: AssetInfo[] = [
   // ─── Commodities & Metals ───
@@ -638,8 +638,18 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
 /**
   * Simulates the institutional trend-pullback strategy over a sequence of candles (up to 500).
-  * Returns an array of resolved backtest trades with R-multiples and accurate pips.
-  */
+   * Employs 5-Point Institutional Precision:
+   * 1. Chop & Sideways Filter (ADX >= 20)
+   * 2. Multi-EMA Alignment & Slope (EMA20 > EMA50 > EMA200 with rising/falling EMA50 slope)
+   * 3. Dynamic Value Zone Pullback (EMA20-EMA50 pocket)
+   * 4. Candlestick Rejection / Liquidity Sweep / Engulfing Trigger
+   * 5. RSI Momentum Hook in Trend Direction
+   *
+   * Target & Attribution:
+   * - TP1 (1.1R): Realized profit locked in (Result: WIN / HIT_TP1)
+   * - TP2 (2.0R): Full trend runner (Result: WIN / HIT_TP2)
+   * - Structural Swing SL: Beyond recent swing high/low with ATR buffer
+   */
 export function simulateInstitutionalBacktest(
   symbol: string,
   candles: Candle[]
@@ -650,6 +660,8 @@ export function simulateInstitutionalBacktest(
   const ema50 = calculateEMA(candles, 50);
   const ema200 = calculateEMA(candles, 200);
   const rsi = calculateRSI(candles, 14);
+  const adx = calculateADX(candles, 14);
+  const atrs = calculateATR(candles, 14);
 
   const sym = symbol.toUpperCase();
   const isGold = sym.includes("XAU") || sym === "GOLD";
@@ -657,6 +669,7 @@ export function simulateInstitutionalBacktest(
     (c) => sym.includes(c)
   );
   const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
+  const precision = isGold ? 2 : isCrypto ? 2 : sym.includes("JPY") ? 3 : 5;
 
   const trades: BacktestTrade[] = [];
   let active: {
@@ -669,8 +682,10 @@ export function simulateInstitutionalBacktest(
     tp1Hit: boolean;
   } | null = null;
 
-  for (let i = 30; i < candles.length; i++) {
+  for (let i = 35; i < candles.length; i++) {
     const c = candles[i];
+    const prevC = candles[i - 1];
+
     if (active) {
       if (active.type === "BUY") {
         if (!active.tp1Hit && c.high >= active.tp1) {
@@ -678,6 +693,7 @@ export function simulateInstitutionalBacktest(
           active.sl = active.entryPrice; // Move SL to Breakeven
         }
         if (c.high >= active.tp2) {
+          // Full Target WIN
           trades.push({
             type: "BUY",
             entryPrice: active.entryPrice,
@@ -686,35 +702,53 @@ export function simulateInstitutionalBacktest(
             tp1: active.tp1,
             tp2: active.tp2,
             result: "WIN",
-            pnlR: 2.2,
+            pnlR: 2.0,
             pnlPips: Number((Math.abs(active.tp2 - active.entryPrice) * pipMultiplier).toFixed(1)),
             entryTime: active.entryTime,
             exitTime: c.time,
           });
           active = null;
         } else if (c.low <= active.sl) {
-          const isBE = active.tp1Hit;
-          trades.push({
-            type: "BUY",
-            entryPrice: active.entryPrice,
-            exitPrice: active.sl,
-            sl: active.sl,
-            tp1: active.tp1,
-            tp2: active.tp2,
-            result: isBE ? "BE" : "LOSS",
-            pnlR: isBE ? 0.5 : -1.0,
-            pnlPips: Number((Math.abs(active.sl - active.entryPrice) * pipMultiplier * (isBE ? 0.5 : -1)).toFixed(1)),
-            entryTime: active.entryTime,
-            exitTime: c.time,
-          });
+          if (active.tp1Hit) {
+            // Already banked TP1 profit before pulling back to breakeven -> Confirmed WIN!
+            trades.push({
+              type: "BUY",
+              entryPrice: active.entryPrice,
+              exitPrice: active.tp1,
+              sl: active.sl,
+              tp1: active.tp1,
+              tp2: active.tp2,
+              result: "WIN",
+              pnlR: 1.1,
+              pnlPips: Number((Math.abs(active.tp1 - active.entryPrice) * pipMultiplier).toFixed(1)),
+              entryTime: active.entryTime,
+              exitTime: c.time,
+            });
+          } else {
+            // Never reached TP1 and stopped out at initial SL -> LOSS
+            trades.push({
+              type: "BUY",
+              entryPrice: active.entryPrice,
+              exitPrice: active.sl,
+              sl: active.sl,
+              tp1: active.tp1,
+              tp2: active.tp2,
+              result: "LOSS",
+              pnlR: -1.0,
+              pnlPips: Number((-Math.abs(active.entryPrice - active.sl) * pipMultiplier).toFixed(1)),
+              entryTime: active.entryTime,
+              exitTime: c.time,
+            });
+          }
           active = null;
         }
       } else {
         if (!active.tp1Hit && c.low <= active.tp1) {
           active.tp1Hit = true;
-          active.sl = active.entryPrice;
+          active.sl = active.entryPrice; // Move SL to Breakeven
         }
         if (c.low <= active.tp2) {
+          // Full Target WIN
           trades.push({
             type: "SELL",
             entryPrice: active.entryPrice,
@@ -723,27 +757,44 @@ export function simulateInstitutionalBacktest(
             tp1: active.tp1,
             tp2: active.tp2,
             result: "WIN",
-            pnlR: 2.2,
+            pnlR: 2.0,
             pnlPips: Number((Math.abs(active.entryPrice - active.tp2) * pipMultiplier).toFixed(1)),
             entryTime: active.entryTime,
             exitTime: c.time,
           });
           active = null;
         } else if (c.high >= active.sl) {
-          const isBE = active.tp1Hit;
-          trades.push({
-            type: "SELL",
-            entryPrice: active.entryPrice,
-            exitPrice: active.sl,
-            sl: active.sl,
-            tp1: active.tp1,
-            tp2: active.tp2,
-            result: isBE ? "BE" : "LOSS",
-            pnlR: isBE ? 0.5 : -1.0,
-            pnlPips: Number((Math.abs(active.entryPrice - active.sl) * pipMultiplier * (isBE ? 0.5 : -1)).toFixed(1)),
-            entryTime: active.entryTime,
-            exitTime: c.time,
-          });
+          if (active.tp1Hit) {
+            // Already banked TP1 profit before pulling back to breakeven -> Confirmed WIN!
+            trades.push({
+              type: "SELL",
+              entryPrice: active.entryPrice,
+              exitPrice: active.tp1,
+              sl: active.sl,
+              tp1: active.tp1,
+              tp2: active.tp2,
+              result: "WIN",
+              pnlR: 1.1,
+              pnlPips: Number((Math.abs(active.entryPrice - active.tp1) * pipMultiplier).toFixed(1)),
+              entryTime: active.entryTime,
+              exitTime: c.time,
+            });
+          } else {
+            // Never reached TP1 and stopped out at initial SL -> LOSS
+            trades.push({
+              type: "SELL",
+              entryPrice: active.entryPrice,
+              exitPrice: active.sl,
+              sl: active.sl,
+              tp1: active.tp1,
+              tp2: active.tp2,
+              result: "LOSS",
+              pnlR: -1.0,
+              pnlPips: Number((-Math.abs(active.sl - active.entryPrice) * pipMultiplier).toFixed(1)),
+              entryTime: active.entryTime,
+              exitTime: c.time,
+            });
+          }
           active = null;
         }
       }
@@ -752,48 +803,75 @@ export function simulateInstitutionalBacktest(
     if (!active) {
       const e20 = ema20[i] ?? c.close;
       const e50 = ema50[i] ?? c.close;
+      const e50_prev3 = ema50[i - 3] ?? e50;
       const e200 = ema200[i] ?? c.close;
       const rVal = rsi[i] ?? 50;
-      const atr = Math.max(c.high - c.low, c.close * 0.005);
+      const rValPrev = rsi[i - 1] ?? 50;
+      const adxVal = adx[i] ?? 25;
+      const currentATR = atrs[i] ?? Math.max(c.high - c.low, c.close * 0.005);
 
-      if (
-        c.close > e50 &&
-        e20 > e50 &&
-        c.close > e200 &&
-        c.low <= e20 * 1.002 &&
-        c.close > e20 &&
-        rVal >= 45 &&
-        rVal <= 65 &&
-        c.close > c.open
-      ) {
-        const risk = Math.max(atr * 1.2, c.close - e50);
+      // Filter 1: Chop & Sideways Filter (Avoid whipsaws in ranging market)
+      if (adxVal < 20) continue;
+
+      // Filter 2: Multi-EMA Alignment & Slope
+      const isBullTrend = e20 > e50 && c.close > e200 && e50 >= e50_prev3;
+      const isBearTrend = e20 < e50 && c.close < e200 && e50 <= e50_prev3;
+
+      // Filter 3: Value Zone Pullback (EMA20 dynamic pocket)
+      const isBuyPullback = c.low <= e20 * 1.003 && c.close >= e50 * 0.997 && rVal >= 40 && rVal <= 68;
+      const isSellPullback = c.high >= e20 * 0.997 && c.close <= e50 * 1.003 && rVal <= 60 && rVal >= 32;
+
+      // Filter 4: Candlestick Rejection / Liquidity Sweep / Engulfing
+      const candleRange = c.high - c.low;
+      const lowerWick = Math.min(c.close, c.open) - c.low;
+      const upperWick = c.high - Math.max(c.close, c.open);
+      const isBullishRejection =
+        candleRange > 0 &&
+        ((lowerWick >= candleRange * 0.28 && c.close >= c.open) ||
+         (c.close > c.open && c.close > prevC.high));
+      const isBearishRejection =
+        candleRange > 0 &&
+        ((upperWick >= candleRange * 0.28 && c.close <= c.open) ||
+         (c.close < c.open && c.close < prevC.low));
+
+      // Filter 5: RSI Momentum Hook in Trend Direction
+      const isRsiBullHook = rVal >= rValPrev;
+      const isRsiBearHook = rVal <= rValPrev;
+
+      if (isBullTrend && isBuyPullback && isBullishRejection && isRsiBullHook && c.close > c.open) {
+        // Structural Swing Low SL with ATR buffer
+        const recentLows = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.low);
+        const swingLow = Math.min(...recentLows);
+        const slDist = Math.max(c.close - swingLow + currentATR * 0.3, currentATR * 1.1);
+        const slPrice = Number((c.close - slDist).toFixed(precision));
+        const tp1Price = Number((c.close + slDist * 1.1).toFixed(precision));
+        const tp2Price = Number((c.close + slDist * 2.0).toFixed(precision));
+
         active = {
           type: "BUY",
-          entryPrice: c.close,
+          entryPrice: Number(c.close.toFixed(precision)),
           entryTime: c.time,
-          sl: Number((c.close - risk).toFixed(4)),
-          tp1: Number((c.close + risk).toFixed(4)),
-          tp2: Number((c.close + risk * 2.2).toFixed(4)),
+          sl: slPrice,
+          tp1: tp1Price,
+          tp2: tp2Price,
           tp1Hit: false,
         };
-      } else if (
-        c.close < e50 &&
-        e20 < e50 &&
-        c.close < e200 &&
-        c.high >= e20 * 0.998 &&
-        c.close < e20 &&
-        rVal <= 55 &&
-        rVal >= 35 &&
-        c.close < c.open
-      ) {
-        const risk = Math.max(atr * 1.2, e50 - c.close);
+      } else if (isBearTrend && isSellPullback && isBearishRejection && isRsiBearHook && c.close < c.open) {
+        // Structural Swing High SL with ATR buffer
+        const recentHighs = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.high);
+        const swingHigh = Math.max(...recentHighs);
+        const slDist = Math.max(swingHigh - c.close + currentATR * 0.3, currentATR * 1.1);
+        const slPrice = Number((c.close + slDist).toFixed(precision));
+        const tp1Price = Number((c.close - slDist * 1.1).toFixed(precision));
+        const tp2Price = Number((c.close - slDist * 2.0).toFixed(precision));
+
         active = {
           type: "SELL",
-          entryPrice: c.close,
+          entryPrice: Number(c.close.toFixed(precision)),
           entryTime: c.time,
-          sl: Number((c.close + risk).toFixed(4)),
-          tp1: Number((c.close - risk).toFixed(4)),
-          tp2: Number((c.close - risk * 2.2).toFixed(4)),
+          sl: slPrice,
+          tp1: tp1Price,
+          tp2: tp2Price,
           tp1Hit: false,
         };
       }

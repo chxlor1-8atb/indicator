@@ -38,14 +38,14 @@ export default function SignalJournalCard() {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const handleSeed500Candles = async (category = "all") => {
+  const handleSeed500Candles = async (category = "all", resetPrevious = true) => {
     setIsSeeding(true);
-    setSeedMessage(`⏳ กำลังดึงข้อมูลย้อนหลัง 500 แท่ง & จำลองเทรด ${category === "forex" ? "Forex 39 คู่" : "ทุกคู่เงิน"} บันทึกลง Neon DB...`);
+    setSeedMessage(`⏳ กำลังดึงข้อมูลย้อนหลัง 500 แท่ง & รันระบบ 5-Filter สถาบันแม่นยำสูง ${category === "forex" ? "Forex 39 คู่" : "ทุกคู่เงิน"} บันทึกลง Neon DB...`);
     try {
       const res = await fetch("/api/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "seed-all", category }),
+        body: JSON.stringify({ action: "seed-all", category, resetPrevious }),
       });
       const data = await res.json();
       if (data.success) {

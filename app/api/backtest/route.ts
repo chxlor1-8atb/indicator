@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMarketCandles, AVAILABLE_ASSETS, simulateInstitutionalBacktest } from "@/lib/marketService";
 import { calculateEMA, calculateRSI } from "@/lib/indicators";
-import { saveBacktestResults, BacktestTrade } from "@/lib/db";
+import { saveBacktestResults, clearBacktestResults, BacktestTrade } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -9,12 +9,32 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
 
+    // ─── Clear / Reset Action ───
+    if (body.action === "clear" || body.clearOnly) {
+      const sym = body.symbol || (body.category === "all" ? undefined : undefined);
+      await clearBacktestResults(sym);
+      return NextResponse.json({
+        success: true,
+        message: `ล้างข้อมูลผลลัพธ์ Backtest เรียบร้อยแล้ว (${sym || "ทั้งหมด"})`,
+      });
+    }
+
     // ─── Batch Seeder Mode: 500 Historical Candles across ALL Currency Pairs / Categories ───
     if (body.action === "seed-all" || body.seedAll) {
       const targetCategory = body.category || "all";
       const assets = AVAILABLE_ASSETS.filter(
         (a) => targetCategory === "all" || a.category === targetCategory
       );
+
+      if (body.resetPrevious || body.clearFirst) {
+        if (targetCategory === "all") {
+          await clearBacktestResults();
+        } else {
+          for (const a of assets) {
+            await clearBacktestResults(a.symbol);
+          }
+        }
+      }
 
       let totalSaved = 0;
       let totalTradesGenerated = 0;
@@ -70,205 +90,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Insufficient historical data" }, { status: 400 });
     }
 
-    const closes = candles.map((c) => c.close);
-    const ema20 = calculateEMA(candles, 20);
-    const ema50 = calculateEMA(candles, 50);
-    const ema200 = calculateEMA(candles, 200);
-    const rsi = calculateRSI(candles, 14);
-
-    const trades: Array<{
-      type: "BUY" | "SELL";
-      entryPrice: number;
-      entryTime: number;
-      exitPrice: number;
-      exitTime: number;
-      sl: number;
-      tp1: number;
-      tp2: number;
-      result: "WIN" | "LOSS" | "BE";
-      pnlR: number;
-    }> = [];
-
-    let activeTrade: {
-      type: "BUY" | "SELL";
-      entryPrice: number;
-      entryTime: number;
-      riskDist: number;
-      sl: number;
-      tp1: number;
-      tp2: number;
-      tp1Hit: boolean;
-    } | null = null;
-
-    for (let i = 30; i < candles.length; i++) {
-      const c = candles[i];
-      const prev = candles[i - 1];
-
-      // Check active trade
-      if (activeTrade) {
-        if (activeTrade.type === "BUY") {
-          // Check TP1
-          if (!activeTrade.tp1Hit && c.high >= activeTrade.tp1) {
-            activeTrade.tp1Hit = true;
-            activeTrade.sl = activeTrade.entryPrice; // Move to BE
-          }
-
-          // Check TP2
-          if (c.high >= activeTrade.tp2) {
-            trades.push({
-              type: "BUY",
-              entryPrice: activeTrade.entryPrice,
-              entryTime: activeTrade.entryTime,
-              exitPrice: activeTrade.tp2,
-              exitTime: c.time,
-              sl: activeTrade.sl,
-              tp1: activeTrade.tp1,
-              tp2: activeTrade.tp2,
-              result: "WIN",
-              pnlR: 2.0,
-            });
-            activeTrade = null;
-          }
-          // Check SL
-          else if (c.low <= activeTrade.sl) {
-            const isBE = activeTrade.tp1Hit && activeTrade.sl === activeTrade.entryPrice;
-            trades.push({
-              type: "BUY",
-              entryPrice: activeTrade.entryPrice,
-              entryTime: activeTrade.entryTime,
-              exitPrice: activeTrade.sl,
-              exitTime: c.time,
-              sl: activeTrade.sl,
-              tp1: activeTrade.tp1,
-              tp2: activeTrade.tp2,
-              result: isBE ? "BE" : "LOSS",
-              pnlR: isBE ? 0.5 : -1.0,
-            });
-            activeTrade = null;
-          }
-        } else if (activeTrade.type === "SELL") {
-          // Check TP1
-          if (!activeTrade.tp1Hit && c.low <= activeTrade.tp1) {
-            activeTrade.tp1Hit = true;
-            activeTrade.sl = activeTrade.entryPrice; // Move to BE
-          }
-
-          // Check TP2
-          if (c.low <= activeTrade.tp2) {
-            trades.push({
-              type: "SELL",
-              entryPrice: activeTrade.entryPrice,
-              entryTime: activeTrade.entryTime,
-              exitPrice: activeTrade.tp2,
-              exitTime: c.time,
-              sl: activeTrade.sl,
-              tp1: activeTrade.tp1,
-              tp2: activeTrade.tp2,
-              result: "WIN",
-              pnlR: 2.0,
-            });
-            activeTrade = null;
-          }
-          // Check SL
-          else if (c.high >= activeTrade.sl) {
-            const isBE = activeTrade.tp1Hit && activeTrade.sl === activeTrade.entryPrice;
-            trades.push({
-              type: "SELL",
-              entryPrice: activeTrade.entryPrice,
-              entryTime: activeTrade.entryTime,
-              exitPrice: activeTrade.sl,
-              exitTime: c.time,
-              sl: activeTrade.sl,
-              tp1: activeTrade.tp1,
-              tp2: activeTrade.tp2,
-              result: isBE ? "BE" : "LOSS",
-              pnlR: isBE ? 0.5 : -1.0,
-            });
-            activeTrade = null;
-          }
-        }
-      }
-
-      // Entry condition with Market Structure & Ribbon Pullback
-      if (!activeTrade) {
-        const e20 = ema20[i] ?? c.close;
-        const e50 = ema50[i] ?? c.close;
-        const e200 = ema200[i] ?? c.close;
-        const rVal = rsi[i] ?? 50;
-
-        const atr = Math.max(c.high - c.low, c.close * 0.005);
-        const isUpTrend = c.close > e50 && e20 > e50 && c.close > e200;
-        const isDownTrend = c.close < e50 && e20 < e50 && c.close < e200;
-
-        // Pullback into Value Zone
-        const isBuyPullback = c.low <= e20 * 1.002 && c.close > e20 && rVal >= 45 && rVal <= 65;
-        const isSellPullback = c.high >= e20 * 0.998 && c.close < e20 && rVal <= 55 && rVal >= 35;
-
-        if (isUpTrend && isBuyPullback && c.close > c.open) {
-          const risk = Math.max(atr * 1.2, c.close - e50);
-          activeTrade = {
-            type: "BUY",
-            entryPrice: c.close,
-            entryTime: c.time,
-            riskDist: risk,
-            sl: Number((c.close - risk).toFixed(2)),
-            tp1: Number((c.close + risk * 1.0).toFixed(2)),
-            tp2: Number((c.close + risk * 2.2).toFixed(2)),
-            tp1Hit: false,
-          };
-        } else if (isDownTrend && isSellPullback && c.close < c.open) {
-          const risk = Math.max(atr * 1.2, e50 - c.close);
-          activeTrade = {
-            type: "SELL",
-            entryPrice: c.close,
-            entryTime: c.time,
-            riskDist: risk,
-            sl: Number((c.close + risk).toFixed(2)),
-            tp1: Number((c.close - risk * 1.0).toFixed(2)),
-            tp2: Number((c.close - risk * 2.2).toFixed(2)),
-            tp1Hit: false,
-          };
-        }
-      }
-    }
+    const candles500 = candles.slice(-500);
+    const trades = simulateInstitutionalBacktest(symbol, candles500);
 
     const wins = trades.filter((t) => t.result === "WIN").length;
     const beTrades = trades.filter((t) => t.result === "BE").length;
     const losses = trades.filter((t) => t.result === "LOSS").length;
     const totalTrades = trades.length;
 
-    const winRate = totalTrades > 0 ? Number((((wins + beTrades * 0.5) / totalTrades) * 100).toFixed(1)) : 0;
+    const resolved = wins + losses;
+    const winRate = resolved > 0 ? Number(((wins / resolved) * 100).toFixed(1)) : 0;
     const netReturnR = Number(trades.reduce((acc, t) => acc + t.pnlR, 0).toFixed(2));
-    const profitFactor = losses > 0 ? Number(((wins * 2.0 + beTrades * 0.5) / losses).toFixed(2)) : wins > 0 ? 99 : 0;
+    const profitFactor = losses > 0 ? Number(((wins * 1.5) / losses).toFixed(2)) : wins > 0 ? 99 : 0;
 
-    // ─── Save backtest results to Neon DB for historical win rate tracking ───
-    const isGold = symbol.toUpperCase().includes("XAU") || symbol.toUpperCase() === "GOLD";
-    const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some(
-      (c) => symbol.toUpperCase().includes(c)
-    );
-    const pipMultiplier = isGold ? 10 : isCrypto ? 1 : symbol.toUpperCase().includes("JPY") ? 100 : 10000;
-
-    const dbTrades: BacktestTrade[] = trades.map((t) => ({
-      type: t.type,
-      entryPrice: t.entryPrice,
-      exitPrice: t.exitPrice,
-      sl: t.sl,
-      tp1: t.tp1,
-      tp2: t.tp2,
-      result: t.result,
-      pnlR: t.pnlR,
-      pnlPips: Number((Math.abs(t.exitPrice - t.entryPrice) * pipMultiplier * (t.result === "LOSS" ? -1 : 1)).toFixed(1)),
-      entryTime: t.entryTime,
-      exitTime: t.exitTime,
-    }));
-
-    const dbResult = await saveBacktestResults(symbol, timeframe, dbTrades);
+    const dbResult = await saveBacktestResults(symbol, timeframe, trades);
 
     return NextResponse.json({
       success: true,
       symbol,
       timeframe,
-      candleCount: candles.length,
+      candleCount: candles500.length,
       metrics: {
         totalTrades,
         wins,

@@ -893,6 +893,25 @@ export async function saveBacktestResults(
   }
 }
 
+/**
+ * Clears backtest results for a specific symbol or all symbols.
+ */
+export async function clearBacktestResults(symbol?: string): Promise<boolean> {
+  if (!sql) return false;
+  try {
+    await initBacktestTable();
+    if (symbol && symbol.toUpperCase() !== "ALL") {
+      await sql.query(`DELETE FROM backtest_results WHERE symbol = $1`, [symbol.toUpperCase()]);
+    } else {
+      await sql.query(`DELETE FROM backtest_results`);
+    }
+    return true;
+  } catch (err) {
+    console.error("Error clearing backtest results:", err);
+    return false;
+  }
+}
+
 export interface PerSymbolStat {
   symbol: string;
   name?: string;
