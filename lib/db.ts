@@ -895,6 +895,8 @@ export async function saveBacktestResults(
 
 export interface PerSymbolStat {
   symbol: string;
+  name?: string;
+  category?: string;
   totalTrades: number;
   wins: number;
   losses: number;
