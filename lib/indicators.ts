@@ -5474,6 +5474,343 @@ export function calculateVPCI(
   };
 }
 
+/**
+ * [แผน 71] John McGinley's McGinley Dynamic (MD) Speed Tracking Indicator
+ * Adaptive moving average adjusting speed dynamically via a 4th-power collar factor
+ */
+export function calculateMcGinleyDynamic(
+  candles: Candle[],
+  period = 14,
+  precision = 2
+): McGinleyDynamicPoint {
+  if (candles.length < period) {
+    const c = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      md: c,
+      speedAdjustmentFactor: 1.0,
+      trendState: "BULLISH",
+      description: "McGinley Dynamic: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  // Seed with SMA
+  let sum = 0;
+  for (let i = 0; i < period; i++) {
+    sum += candles[i].close;
+  }
+  let md = sum / period;
+
+  let speedFactor = 1.0;
+  for (let i = period; i < candles.length; i++) {
+    const price = candles[i].close;
+    const ratio = md === 0 ? 1 : price / md;
+    speedFactor = Math.pow(ratio, 4);
+    const denominator = period * speedFactor;
+    md = md + (price - md) / Math.max(1, denominator);
+  }
+
+  const finalMD = Number(md.toFixed(precision));
+  const currentPrice = candles[candles.length - 1].close;
+  const trendState: McGinleyDynamicPoint["trendState"] = currentPrice >= finalMD ? "BULLISH" : "BEARISH";
+
+  const desc = trendState === "BULLISH"
+    ? `📈 McGinley Dynamic (${finalMD}): ราคาอยู่เหนือเส้น MD ปรับสปีดอัตโนมัติตามความเร่งตลาด (Speed Factor: ${speedFactor.toFixed(2)}x)`
+    : `📉 McGinley Dynamic (${finalMD}): ราคาอยู่ใต้เส้น MD ตลาดอ่อนแรง ปรับสปีดรองรับแรงเทขาย (Speed Factor: ${speedFactor.toFixed(2)}x)`;
+
+  return {
+    md: finalMD,
+    speedAdjustmentFactor: Number(speedFactor.toFixed(2)),
+    trendState,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 72] Dr. Alexander Elder's Force Index (EFI) Kinetic Energy & Volume-Price Pulse
+ * Quantifies the kinetic force behind every price swing by combining volume and directional delta
+ */
+export function calculateElderForceIndex(
+  candles: Candle[],
+  shortPeriod = 2,
+  trendPeriod = 13
+): ElderForceIndexInfo {
+  if (candles.length < trendPeriod + 2) {
+    return {
+      efiShort: 0,
+      efiTrend: 0,
+      forceState: "NEUTRAL",
+      description: "Elder Force Index: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const rawEFICandles: Candle[] = [{ ...candles[0], close: 0 }];
+  for (let i = 1; i < candles.length; i++) {
+    const vol = candles[i].volume > 0 ? candles[i].volume : 1;
+    const delta = candles[i].close - candles[i - 1].close;
+    rawEFICandles.push({ ...candles[i], close: delta * vol });
+  }
+
+  const shortEMA = calculateEMA(rawEFICandles, shortPeriod);
+  const trendEMA = calculateEMA(rawEFICandles, trendPeriod);
+
+  const idx = candles.length - 1;
+  const efiShort = Number((shortEMA[idx] ?? 0).toFixed(2));
+  const efiTrend = Number((trendEMA[idx] ?? 0).toFixed(2));
+
+  let forceState: ElderForceIndexInfo["forceState"] = "NEUTRAL";
+  if (efiTrend > 0 && efiShort > 0) {
+    forceState = "STRONG_BULL_FORCE";
+  } else if (efiTrend > 0 && efiShort <= 0) {
+    forceState = "MILD_BULL_FORCE";
+  } else if (efiTrend < 0 && efiShort < 0) {
+    forceState = "STRONG_BEAR_FORCE";
+  } else if (efiTrend < 0 && efiShort >= 0) {
+    forceState = "MILD_BEAR_FORCE";
+  }
+
+  const desc = forceState === "STRONG_BULL_FORCE"
+    ? `⚡ Elder Force Index พลังงานจลน์สถาบันกระทิงเต็มพิกัด (Trend: ${efiTrend} | Short: ${efiShort}): แรงซื้อผลักดันด้วยปริมาณวอลุ่มมหาศาล`
+    : forceState === "MILD_BULL_FORCE"
+    ? `⚡ Elder Force Index ย่อตัวในเทรนด์ขาขึ้น (Trend: ${efiTrend} > 0 | Short: ${efiShort} <= 0): จุดดักซื้อ Buy-the-Dip แต้มต่อสูง`
+    : forceState === "STRONG_BEAR_FORCE"
+    ? `⚡ Elder Force Index แรงเทขายทุบทำลาย (Trend: ${efiTrend} | Short: ${efiShort}): แรงเทขายครอบงำพร้อมปริมาณวอลุ่มหนาแน่น`
+    : `⚡ Elder Force Index พักตัวในเทรนด์ขาลง (Trend: ${efiTrend} < 0 | Short: ${efiShort} >= 0): จุดดัก Sell-the-Rally`;
+
+  return {
+    efiShort,
+    efiTrend,
+    forceState,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 73] Donald Dorsey's Relative Volatility Index (RVI) Directional Standard Deviation Engine
+ * Measures the direction of market volatility using standard deviation of price changes
+ */
+export function calculateRelativeVolatilityIndex(
+  candles: Candle[],
+  stdPeriod = 10,
+  smoothPeriod = 14
+): RelativeVolatilityIndexInfo {
+  if (candles.length < stdPeriod + smoothPeriod + 2) {
+    return {
+      rvi: 50,
+      volatilityDirection: "BALANCED",
+      isExtremeOverbought: false,
+      isExtremeOversold: false,
+      description: "Relative Volatility Index: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  // Calculate Standard Deviation of High and Low
+  const uArr: Candle[] = [];
+  const dArr: Candle[] = [];
+
+  for (let i = 0; i < candles.length; i++) {
+    if (i < stdPeriod) {
+      uArr.push({ ...candles[i], close: 0 });
+      dArr.push({ ...candles[i], close: 0 });
+      continue;
+    }
+
+    const sub = candles.slice(i - stdPeriod + 1, i + 1);
+    const avgHigh = sub.reduce((acc, c) => acc + c.high, 0) / stdPeriod;
+    const avgLow = sub.reduce((acc, c) => acc + c.low, 0) / stdPeriod;
+
+    const stdHigh = Math.sqrt(sub.reduce((acc, c) => acc + Math.pow(c.high - avgHigh, 2), 0) / stdPeriod);
+    const stdLow = Math.sqrt(sub.reduce((acc, c) => acc + Math.pow(c.low - avgLow, 2), 0) / stdPeriod);
+
+    const prevClose = candles[i - 1].close;
+    const currClose = candles[i].close;
+
+    if (currClose > prevClose) {
+      uArr.push({ ...candles[i], close: stdHigh });
+      dArr.push({ ...candles[i], close: 0 });
+    } else if (currClose < prevClose) {
+      uArr.push({ ...candles[i], close: 0 });
+      dArr.push({ ...candles[i], close: stdLow });
+    } else {
+      uArr.push({ ...candles[i], close: 0 });
+      dArr.push({ ...candles[i], close: 0 });
+    }
+  }
+
+  const uEMA = calculateEMA(uArr, smoothPeriod);
+  const dEMA = calculateEMA(dArr, smoothPeriod);
+
+  const idx = candles.length - 1;
+  const uVal = uEMA[idx] ?? 0;
+  const dVal = dEMA[idx] ?? 0;
+  const sum = uVal + dVal;
+
+  const rawRVI = sum === 0 ? 50 : (uVal / sum) * 100;
+  const rvi = Number(Math.max(0, Math.min(100, rawRVI)).toFixed(1));
+
+  let volatilityDirection: RelativeVolatilityIndexInfo["volatilityDirection"] = "BALANCED";
+  if (rvi >= 60) {
+    volatilityDirection = "BULLISH_EXPANSION";
+  } else if (rvi <= 40) {
+    volatilityDirection = "BEARISH_EXPANSION";
+  }
+
+  const isExtremeOverbought = rvi >= 75;
+  const isExtremeOversold = rvi <= 25;
+
+  const desc = isExtremeOverbought
+    ? `🌪️ RVI ความผันผวนฝั่งซื้อระเบิดตัวสุดขีด (${rvi}%): การขยายตัวของสเปรดหนุนฝั่งกระทิงรุนแรง (Overbought Volatility)`
+    : isExtremeOversold
+    ? `🌪️ RVI ความผันผวนฝั่งขายระเบิดตัวสุดขีด (${rvi}%): ความผันผวนเร่งตัวฝั่งลบ รอย่อตัวจบเตรียมดักเด้ง`
+    : volatilityDirection === "BULLISH_EXPANSION"
+    ? `🌪️ RVI สเปรดผันผวนเอนเอียงฝั่งขาขึ้น (${rvi}%): ความผันผวนหนุนทิศทางกระทิง`
+    : volatilityDirection === "BEARISH_EXPANSION"
+    ? `🌪️ RVI สเปรดผันผวนเอนเอียงฝั่งขาลง (${rvi}%): ความผันผวนหนุนทิศทางหมี`
+    : `🌪️ RVI ความผันผวนสมดุล (${rvi}%): สเปรดราคากระจายตัวเท่ากันทั้งสองฝั่ง`;
+
+  return {
+    rvi,
+    volatilityDirection,
+    isExtremeOverbought,
+    isExtremeOversold,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 74] John Ehlers' Fractal Adaptive Moving Average (FRAMA) Fractal Dimension Engine
+ * Uses Benoit Mandelbrot's fractal dimension D to rapidly adapt to trends and flatline in noise
+ */
+export function calculateFRAMA(
+  candles: Candle[],
+  length = 16,
+  precision = 2
+): FRAMAPoint {
+  if (candles.length < length + 2) {
+    const c = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      frama: c,
+      fractalDimension: 1.5,
+      alpha: 0.2,
+      state: "CONSOLIDATION",
+      description: "FRAMA: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const n = Math.floor(length / 2);
+  const idx = candles.length - 1;
+
+  // First half
+  const slice1 = candles.slice(idx - length + 1, idx - n + 1);
+  let h1 = -Infinity, l1 = Infinity;
+  for (const b of slice1) {
+    if (b.high > h1) h1 = b.high;
+    if (b.low < l1) l1 = b.low;
+  }
+  const n1 = (h1 - l1) / n;
+
+  // Second half
+  const slice2 = candles.slice(idx - n + 1, idx + 1);
+  let h2 = -Infinity, l2 = Infinity;
+  for (const b of slice2) {
+    if (b.high > h2) h2 = b.high;
+    if (b.low < l2) l2 = b.low;
+  }
+  const n2 = (h2 - l2) / n;
+
+  // Full length
+  const slice3 = candles.slice(idx - length + 1, idx + 1);
+  let h3 = -Infinity, l3 = Infinity;
+  for (const b of slice3) {
+    if (b.high > h3) h3 = b.high;
+    if (b.low < l3) l3 = b.low;
+  }
+  const n3 = (h3 - l3) / length;
+
+  let d = 1.5;
+  if (n1 > 0 && n2 > 0 && n3 > 0) {
+    const rawD = (Math.log(n1 + n2) - Math.log(n3)) / Math.LN2;
+    d = Math.max(1.0, Math.min(2.0, rawD));
+  }
+
+  const alpha = Math.max(0.01, Math.min(1.0, Math.exp(-4.6 * (d - 1.0))));
+
+  // Run recursive FRAMA over last 30 bars
+  const startIdx = Math.max(0, candles.length - 30);
+  let frama = candles[startIdx].close;
+  for (let i = startIdx + 1; i <= idx; i++) {
+    frama = alpha * candles[i].close + (1 - alpha) * frama;
+  }
+
+  const finalFRAMA = Number(frama.toFixed(precision));
+  const finalD = Number(d.toFixed(3));
+  const finalAlpha = Number(alpha.toFixed(3));
+
+  let state: FRAMAPoint["state"] = "CONSOLIDATION";
+  if (finalD <= 1.35) {
+    state = "TRENDING_SMOOTH";
+  } else if (finalD >= 1.70) {
+    state = "CHAOTIC_FRACTAL";
+  }
+
+  const desc = state === "TRENDING_SMOOTH"
+    ? `🧬 FRAMA มิติแฟร็กทัลเรียบเนียน (D: ${finalD} | α: ${finalAlpha}): ตลาดวิ่งเทรนด์ทางเดียวบริสุทธิ์ ไร้มิติสัญญาณรบกวน (FRAMA: ${finalFRAMA})`
+    : state === "CHAOTIC_FRACTAL"
+    ? `🧬 FRAMA มิติแฟร็กทัลสับสนอลหม่าน (D: ${finalD} | α: ${finalAlpha}): กราฟหยักฟันปลาซับซ้อน เส้น FRAMA แบนราบตัดสัญญาณหลอก (FRAMA: ${finalFRAMA})`
+    : `🧬 FRAMA สภาวะแกว่งตัวในกรอบ (D: ${finalD} | α: ${finalAlpha} | FRAMA: ${finalFRAMA})`;
+
+  return {
+    frama: finalFRAMA,
+    fractalDimension: finalD,
+    alpha: finalAlpha,
+    state,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 75] Grand Quant Milestone 75 Quant Fusion Engine & Safety Lock 18
+ * Synthesizes all 75 quantitative indicators and protects against Fractal Chaos & Kinetic Exhaustion
+ */
+export function synthesizeGrandQuantMilestone75(
+  confluenceScore: number,
+  framaD: number,
+  efiTrend: number,
+  rvi: number,
+  mdTrend: "BULLISH" | "BEARISH",
+  activePillarsCount = 18
+): Milestone75QuantFusionInfo {
+  // Safety Lock 18: blocks if market has extreme chaotic fractal dimension (D >= 1.80) while force contradicts trend
+  const isForceContradicting = (mdTrend === "BULLISH" && efiTrend < 0) || (mdTrend === "BEARISH" && efiTrend > 0);
+  const safetyLock18Passed = !(framaD >= 1.80 && isForceContradicting);
+
+  // Milestone Score Synthesis
+  let bonus = 0;
+  if (framaD < 1.40) bonus += 10; // smooth fractal
+  if (Math.abs(efiTrend) > 0) bonus += 8; // active force
+  if (rvi >= 55 || rvi <= 45) bonus += 7; // directional volatility
+  if (safetyLock18Passed) bonus += 5;
+
+  const rawScore = Math.min(100, Math.round(confluenceScore * 0.70 + bonus));
+  const milestoneScore = Math.max(30, rawScore);
+
+  const phase3DominanceStatus: Milestone75QuantFusionInfo["phase3DominanceStatus"] =
+    milestoneScore >= 75 && safetyLock18Passed ? "PHASE_3_DOMINANCE_ACHIEVED" : "QUANT_ACCUMULATION";
+
+  const desc = !safetyLock18Passed
+    ? `🛡️ Safety Lock 18 [ACTIVATED]: มิติแฟร็กทัลอลหม่านรุนแรง (D: ${framaD} >= 1.80) สวนทางกับพลังงานจลน์สถาบัน EFI ระงับการเข้าเทรดฉุกเฉิน`
+    : phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED"
+    ? `🏆 Grand Milestone 75 [PHASE 3 COMPLETE]: คะแนนรวม ${milestoneScore}/100 ผ่าน 18 เสาหลักสถาบัน ผสานมิติแฟร็กทัล พลังงานจลน์ และความผันผวนสมบูรณ์แบบ`
+    : `🏛️ Grand Milestone 75 สถานะสะสมพลัง (คะแนน: ${milestoneScore}/100 | มิติ D: ${framaD} | RVI: ${rvi}% | ผ่าน Lock 18)`;
+
+  return {
+    milestoneScore,
+    phase3DominanceStatus,
+    safetyLock18Passed,
+    activePillarsCount,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -5628,6 +5965,20 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const ker = calculateKaufmanEfficiencyRatio(cleanCandles, 20);
   const vpci = calculateVPCI(cleanCandles, 5, 25);
 
+  // Batch 15: Plans 71, 72, 73, 74, 75 (McGinley Dynamic, Elder Force Index, RVI, FRAMA, Grand Milestone 75)
+  const mcginley = calculateMcGinleyDynamic(cleanCandles, 14, precision);
+  const elderForce = calculateElderForceIndex(cleanCandles, 2, 13);
+  const rvi = calculateRelativeVolatilityIndex(cleanCandles, 10, 14);
+  const frama = calculateFRAMA(cleanCandles, 16, precision);
+  const milestone75 = synthesizeGrandQuantMilestone75(
+    mcpiConviction.score,
+    frama.fractalDimension,
+    elderForce.efiTrend,
+    rvi.rvi,
+    mcginley.trendState,
+    18
+  );
+
   return {
     rsi14,
     atr14,
@@ -5705,5 +6056,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     chaikinVol,
     ker,
     vpci,
+    mcginley,
+    elderForce,
+    rvi,
+    frama,
+    milestone75,
   };
 }

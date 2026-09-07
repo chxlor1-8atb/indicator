@@ -65,6 +65,11 @@ import {
   ChaikinVolatilityInfo,
   KaufmanEfficiencyRatioInfo,
   VPCIInfo,
+  McGinleyDynamicPoint,
+  ElderForceIndexInfo,
+  RelativeVolatilityIndexInfo,
+  FRAMAPoint,
+  Milestone75QuantFusionInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -133,6 +138,11 @@ import {
   calculateChaikinVolatility,
   calculateKaufmanEfficiencyRatio,
   calculateVPCI,
+  calculateMcGinleyDynamic,
+  calculateElderForceIndex,
+  calculateRelativeVolatilityIndex,
+  calculateFRAMA,
+  synthesizeGrandQuantMilestone75,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -385,6 +395,20 @@ export function generateRuleBasedAnalysis(
   const ker = indicators.ker || calculateKaufmanEfficiencyRatio(candles, 20);
   const vpci = indicators.vpci || calculateVPCI(candles, 5, 25);
 
+  // ─── BATCH 15 PRE-COMPUTATIONS (PLANS 71-75: GRAND MILESTONE 75) ───
+  const mcginley = indicators.mcginley || calculateMcGinleyDynamic(candles, 14, precision);
+  const elderForce = indicators.elderForce || calculateElderForceIndex(candles, 2, 13);
+  const rvi = indicators.rvi || calculateRelativeVolatilityIndex(candles, 10, 14);
+  const frama = indicators.frama || calculateFRAMA(candles, 16, precision);
+  const milestone75 = indicators.milestone75 || synthesizeGrandQuantMilestone75(
+    masterConfluence.totalScore,
+    frama.fractalDimension,
+    elderForce.efiTrend,
+    rvi.rvi,
+    mcginley.trendState,
+    18
+  );
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -537,6 +561,13 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 35);
     vpci.safetyLock17Passed = false;
   }
+  // SAFETY LOCK 18: Fractal Chaos & Force Exhaustion Shield [แผน 75]
+  else if (!milestone75.safetyLock18Passed || frama.fractalDimension >= 1.80) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 30);
+    milestone75.safetyLock18Passed = false;
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -572,6 +603,11 @@ export function generateRuleBasedAnalysis(
     if (ker.regime === "HYPER_EFFICIENT_DIRECTED" || ker.regime === "SMOOTH_SWING") confidence = Math.min(98, confidence + 4);
     if (vpci.volumeEnergyState === "CONFIRMED_TREND") confidence = Math.min(98, confidence + 4);
     if (chaikinVol.volatilityTrend === "EXPANDING") confidence = Math.min(98, confidence + 3);
+    if (mcginley.trendState === "BULLISH") confidence = Math.min(98, confidence + 4);
+    if (elderForce.forceState === "STRONG_BULL_FORCE" || elderForce.forceState === "MILD_BULL_FORCE") confidence = Math.min(98, confidence + 4);
+    if (rvi.volatilityDirection === "BULLISH_EXPANSION") confidence = Math.min(98, confidence + 4);
+    if (frama.state === "TRENDING_SMOOTH") confidence = Math.min(98, confidence + 5);
+    if (milestone75.phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED") confidence = Math.min(98, confidence + 5);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -607,6 +643,11 @@ export function generateRuleBasedAnalysis(
     if (ker.regime === "HYPER_EFFICIENT_DIRECTED" || ker.regime === "SMOOTH_SWING") confidence = Math.min(98, confidence + 4);
     if (vpci.volumeEnergyState === "CONFIRMED_TREND" && vpci.vpci < 0) confidence = Math.min(98, confidence + 4);
     if (chaikinVol.volatilityTrend === "EXPANDING") confidence = Math.min(98, confidence + 3);
+    if (mcginley.trendState === "BEARISH") confidence = Math.min(98, confidence + 4);
+    if (elderForce.forceState === "STRONG_BEAR_FORCE" || elderForce.forceState === "MILD_BEAR_FORCE") confidence = Math.min(98, confidence + 4);
+    if (rvi.volatilityDirection === "BEARISH_EXPANSION") confidence = Math.min(98, confidence + 4);
+    if (frama.state === "TRENDING_SMOOTH") confidence = Math.min(98, confidence + 5);
+    if (milestone75.phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED") confidence = Math.min(98, confidence + 5);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
