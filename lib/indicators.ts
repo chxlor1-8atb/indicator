@@ -63,6 +63,11 @@ import {
   HalfLifeInfo,
   TTMSqueezeInfo,
   CMFInfo,
+  KAMAInfo,
+  HMAInfo,
+  ParabolicSARPoint,
+  AroonInfo,
+  VortexInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -4424,6 +4429,348 @@ export function calculateCMF(candles: Candle[], period = 20): CMFInfo {
   };
 }
 
+/**
+ * [แผน 56] Kaufman's Adaptive Moving Average (KAMA)
+ * Adapts to market noise: fast in trends, slow in chop.
+ */
+export function calculateKAMA(
+  candles: Candle[],
+  period = 10,
+  fastPeriod = 2,
+  slowPeriod = 30,
+  precision = 2
+): KAMAInfo {
+  if (candles.length < period + 2) {
+    const fallback = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      period,
+      efficiencyRatio: 0,
+      kamaValue: fallback,
+      trendState: "FLAT",
+      description: "KAMA: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const closes = candles.map((c) => c.close);
+  const fastSC = 2 / (fastPeriod + 1);
+  const slowSC = 2 / (slowPeriod + 1);
+
+  let prevKAMA = closes[period - 1];
+  let latestER = 0;
+
+  for (let i = period; i < closes.length; i++) {
+    const change = Math.abs(closes[i] - closes[i - period]);
+    let volatility = 0;
+    for (let j = 0; j < period; j++) {
+      volatility += Math.abs(closes[i - j] - closes[i - j - 1]);
+    }
+
+    const er = volatility === 0 ? 0 : change / volatility;
+    latestER = er;
+    const sc = Math.pow(er * (fastSC - slowSC) + slowSC, 2);
+    const kama = prevKAMA + sc * (closes[i] - prevKAMA);
+    prevKAMA = kama;
+  }
+
+  const lastClose = closes[closes.length - 1];
+  const kamaVal = Number(prevKAMA.toFixed(precision));
+  const erVal = Number(latestER.toFixed(4));
+  const diffThreshold = prevKAMA * 0.0005;
+
+  let trendState: KAMAInfo["trendState"] = "FLAT";
+  if (lastClose > prevKAMA + diffThreshold) trendState = "BULLISH";
+  else if (lastClose < prevKAMA - diffThreshold) trendState = "BEARISH";
+
+  const desc = trendState === "BULLISH"
+    ? `🎛️ KAMA ขาขึ้นปรับตัวไว (ER: ${(erVal * 100).toFixed(1)}%): ราคา (${lastClose}) ยืนเหนือ KAMA (${kamaVal}) ตลาดมีทิศทางชัดเจน ไร้ Noise`
+    : trendState === "BEARISH"
+    ? `🎛️ KAMA ขาลงปรับตัวไว (ER: ${(erVal * 100).toFixed(1)}%): ราคา (${lastClose}) หลุดใต้ KAMA (${kamaVal}) แรงขายคลุมทิศทาง`
+    : `⚖️ KAMA ชะลอตัวกรองสัญญาณรบกวน (ER: ${(erVal * 100).toFixed(1)}%): ตลาดผันผวนไร้ทิศทาง KAMA ปรับความเร็วลดลงเพื่อป้องกัน Whipsaw`;
+
+  return {
+    period,
+    efficiencyRatio: erVal,
+    kamaValue: kamaVal,
+    trendState,
+    description: desc,
+  };
+}
+
+/**
+ * Weighted Moving Average helper for Hull MA
+ */
+export function calculateWMA(values: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = new Array(values.length).fill(null);
+  if (values.length < period) return result;
+
+  const denominator = (period * (period + 1)) / 2;
+  for (let i = period - 1; i < values.length; i++) {
+    let numerator = 0;
+    for (let j = 0; j < period; j++) {
+      numerator += values[i - period + 1 + j] * (j + 1);
+    }
+    result[i] = Number((numerator / denominator).toFixed(4));
+  }
+  return result;
+}
+
+/**
+ * [แผน 57] Hull Moving Average (HMA) Zero-Lag Curvature & Turning Point Engine
+ * HMA = WMA(2 * WMA(n/2) - WMA(n), sqrt(n))
+ */
+export function calculateHMA(candles: Candle[], period = 14, precision = 2): HMAInfo {
+  if (candles.length < period + 5) {
+    const close = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      period,
+      hmaValue: close,
+      isTurningUp: false,
+      isTurningDown: false,
+      description: "HMA: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const closes = candles.map((c) => c.close);
+  const halfPeriod = Math.max(2, Math.floor(period / 2));
+  const sqrtPeriod = Math.max(2, Math.floor(Math.sqrt(period)));
+
+  const wmaHalf = calculateWMA(closes, halfPeriod);
+  const wmaFull = calculateWMA(closes, period);
+
+  const rawDiff: number[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (wmaHalf[i] !== null && wmaFull[i] !== null) {
+      rawDiff.push(2 * (wmaHalf[i] as number) - (wmaFull[i] as number));
+    } else {
+      rawDiff.push(closes[i]);
+    }
+  }
+
+  const hmaSeries = calculateWMA(rawDiff, sqrtPeriod);
+  const len = hmaSeries.length;
+  const current = hmaSeries[len - 1] ?? closes[len - 1];
+  const prev1 = hmaSeries[len - 2] ?? current;
+  const prev2 = hmaSeries[len - 3] ?? prev1;
+
+  const isTurningUp = prev2 >= prev1 && current > prev1;
+  const isTurningDown = prev2 <= prev1 && current < prev1;
+  const hmaValue = Number(current.toFixed(precision));
+
+  const desc = isTurningUp
+    ? `⚡ HMA เกิดจุดเลี้ยวหักหัวขึ้น (Zero-Lag Inflection): ความโค้งกลับตัวเป็นบวก (${hmaValue}) สัญญาณช้อนซื้อแต้มต่อสูง`
+    : isTurningDown
+    ? `🔻 HMA เกิดจุดเลี้ยวหักหัวลง (Zero-Lag Inflection): ความโค้งกลับตัวเป็นลบ (${hmaValue}) สัญญาณดักขายหรือทำกำไร`
+    : current > prev1
+    ? `📈 HMA ไต่ระดับขาขึ้นต่อเนื่อง (${hmaValue}): โมเมนตัมเรียบเนียนไร้ความล่าช้า`
+    : `📉 HMA กดตัวลงต่อเนื่อง (${hmaValue}): แนวโน้มชะลอตัวลงตามความโค้งเส้นเฉลี่ย`;
+
+  return {
+    period,
+    hmaValue,
+    isTurningUp,
+    isTurningDown,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 58] Wilder's Parabolic SAR (Stop and Reverse) Engine
+ * Dynamic acceleration factor trailing and reversal detection
+ */
+export function calculateParabolicSAR(
+  candles: Candle[],
+  step = 0.02,
+  maxStep = 0.2,
+  precision = 2
+): ParabolicSARPoint {
+  if (candles.length < 2) {
+    const p = candles[0]?.close ?? 0;
+    return {
+      sar: p,
+      isBullish: true,
+      isReversal: false,
+      description: "Parabolic SAR: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  let isBull = candles[1].close >= candles[0].close;
+  let sar = isBull ? candles[0].low : candles[0].high;
+  let ep = isBull ? candles[1].high : candles[1].low;
+  let af = step;
+  let isReversal = false;
+
+  for (let i = 2; i < candles.length; i++) {
+    const prevSar = sar;
+    isReversal = false;
+
+    if (isBull) {
+      sar = prevSar + af * (ep - prevSar);
+      sar = Math.min(sar, candles[i - 1].low, candles[i - 2].low);
+
+      if (candles[i].low < sar) {
+        isBull = false;
+        sar = ep;
+        ep = candles[i].low;
+        af = step;
+        isReversal = true;
+      } else {
+        if (candles[i].high > ep) {
+          ep = candles[i].high;
+          af = Math.min(af + step, maxStep);
+        }
+      }
+    } else {
+      sar = prevSar + af * (ep - prevSar);
+      sar = Math.max(sar, candles[i - 1].high, candles[i - 2].high);
+
+      if (candles[i].high > sar) {
+        isBull = true;
+        sar = ep;
+        ep = candles[i].high;
+        af = step;
+        isReversal = true;
+      } else {
+        if (candles[i].low < ep) {
+          ep = candles[i].low;
+          af = Math.min(af + step, maxStep);
+        }
+      }
+    }
+  }
+
+  const sarVal = Number(sar.toFixed(precision));
+  const desc = isReversal
+    ? `🔄 Parabolic SAR พลิกทิศสลับข้าง (${sarVal}): เกิด Reversal Flip สัญญาณเปลี่ยนโครงสร้างเทรนด์ (${isBull ? "Bullish Reversal" : "Bearish Reversal"})`
+    : isBull
+    ? `🟢 Parabolic SAR ยกฐานหนุนราคา (${sarVal}): เส้น Stop-and-Reverse อยู่ใต้แท่งเทียน รันเทรนด์ฝั่งซื้ออย่างปลอดภัย`
+    : `🔴 Parabolic SAR กดต่ำคุมราคา (${sarVal}): เส้น Stop-and-Reverse อยู่เหนือแท่งเทียน รันเทรนด์ฝั่งขายอย่างปลอดภัย`;
+
+  return {
+    sar: sarVal,
+    isBullish: isBull,
+    isReversal,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 59] Tushar Chande's Aroon Indicator & Aroon Oscillator Engine
+ * Time-based metric measuring time elapsed since 25-bar Highs and Lows
+ */
+export function calculateAroon(candles: Candle[], period = 25): AroonInfo {
+  if (candles.length < period) {
+    return {
+      aroonUp: 50,
+      aroonDown: 50,
+      oscillator: 0,
+      trendState: "CONSOLIDATION",
+      description: "Aroon: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const slice = candles.slice(-period);
+  let highestIndex = 0;
+  let lowestIndex = 0;
+  let highestPrice = -Infinity;
+  let lowestPrice = Infinity;
+
+  for (let i = 0; i < slice.length; i++) {
+    if (slice[i].high > highestPrice) {
+      highestPrice = slice[i].high;
+      highestIndex = i;
+    }
+    if (slice[i].low < lowestPrice) {
+      lowestPrice = slice[i].low;
+      lowestIndex = i;
+    }
+  }
+
+  const periodsSinceHigh = period - 1 - highestIndex;
+  const periodsSinceLow = period - 1 - lowestIndex;
+
+  const aroonUp = Number((((period - periodsSinceHigh) / period) * 100).toFixed(1));
+  const aroonDown = Number((((period - periodsSinceLow) / period) * 100).toFixed(1));
+  const oscillator = Number((aroonUp - aroonDown).toFixed(1));
+
+  let trendState: AroonInfo["trendState"] = "CONSOLIDATION";
+  if (aroonUp > 70 && aroonDown < 30) trendState = "STRONG_UPTREND";
+  else if (aroonDown > 70 && aroonUp < 30) trendState = "STRONG_DOWNTREND";
+
+  const desc = trendState === "STRONG_UPTREND"
+    ? `🚀 Aroon ส่งสัญญาณซูเปอร์เทรนด์ขาขึ้น (Aroon Up: ${aroonUp}% | Osc: +${oscillator}): จุดสูงสุดใหม่ถูกสร้างอย่างต่อเนื่อง สถาบันครองตลาด`
+    : trendState === "STRONG_DOWNTREND"
+    ? `🔻 Aroon ส่งสัญญาณซูเปอร์เทรนด์ขาลง (Aroon Down: ${aroonDown}% | Osc: ${oscillator}): จุดต่ำสุดใหม่ถูกเจาะลงอย่างต่อเนื่อง`
+    : `⏳ Aroon อยู่ในสภาวะสะสมกรอบ (Aroon Up: ${aroonUp}% | Down: ${aroonDown}% | Osc: ${oscillator}): พลัง High/Low สอดคล้องในกรอบไซด์เวย์`;
+
+  return {
+    aroonUp,
+    aroonDown,
+    oscillator,
+    trendState,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 60] Botes & Siepman's Vortex Indicator (VI+ / VI-) Directional Flow & Safety Lock 15
+ * Measures positive and negative vortex flows and protects against counter-trend entries
+ */
+export function calculateVortex(candles: Candle[], period = 14): VortexInfo {
+  if (candles.length <= period) {
+    return {
+      viPlus: 1,
+      viMinus: 1,
+      trend: "BULLISH",
+      strength: 0,
+      safetyLock15Passed: true,
+      description: "Vortex: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const slice = candles.slice(-(period + 1));
+  let vmPlusSum = 0;
+  let vmMinusSum = 0;
+  let trSum = 0;
+
+  for (let i = 1; i < slice.length; i++) {
+    const cur = slice[i];
+    const prev = slice[i - 1];
+
+    const vmPlus = Math.abs(cur.high - prev.low);
+    const vmMinus = Math.abs(cur.low - prev.high);
+    const tr = Math.max(
+      cur.high - cur.low,
+      Math.abs(cur.high - prev.close),
+      Math.abs(cur.low - prev.close)
+    );
+
+    vmPlusSum += vmPlus;
+    vmMinusSum += vmMinus;
+    trSum += tr;
+  }
+
+  const viPlus = trSum === 0 ? 1 : Number((vmPlusSum / trSum).toFixed(4));
+  const viMinus = trSum === 0 ? 1 : Number((vmMinusSum / trSum).toFixed(4));
+  const trend: VortexInfo["trend"] = viPlus >= viMinus ? "BULLISH" : "BEARISH";
+  const strength = Number(Math.abs(viPlus - viMinus).toFixed(4));
+
+  // Safety Lock 15 is evaluated in context of signal in geminiService; default true here
+  const safetyLock15Passed = true;
+
+  const desc = trend === "BULLISH"
+    ? `🌀 Vortex กระแสวนฝั่งซื้อรุนแรง (VI+: ${viPlus} vs VI-: ${viMinus} | Gap: ${strength}): กระแสน้ำวนสถาบันผลักดันราคาฝั่งขึ้นต่อเนื่อง`
+    : `🌀 Vortex กระแสวนฝั่งขายรุนแรง (VI-: ${viMinus} vs VI+: ${viPlus} | Gap: ${strength}): กระแสน้ำวนสถาบันกดดันราคาฝั่งลงต่อเนื่อง`;
+
+  return {
+    viPlus,
+    viMinus,
+    trend,
+    strength,
+    safetyLock15Passed,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -4557,6 +4904,13 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const ttmSqueeze = calculateTTMSqueeze(cleanCandles);
   const chaikinMoneyFlow = calculateCMF(cleanCandles);
 
+  // Batch 12: Plans 56, 57, 58, 59, 60 (Adaptive Trend, Curvature Inflection & Vortex Matrix)
+  const kama = calculateKAMA(cleanCandles, 10, 2, 30, precision);
+  const hma = calculateHMA(cleanCandles, 14, precision);
+  const parabolicSAR = calculateParabolicSAR(cleanCandles, 0.02, 0.2, precision);
+  const aroon = calculateAroon(cleanCandles, 25);
+  const vortex = calculateVortex(cleanCandles, 14);
+
   return {
     rsi14,
     atr14,
@@ -4619,5 +4973,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     halfLife,
     ttmSqueeze,
     chaikinMoneyFlow,
+    kama,
+    hma,
+    parabolicSAR,
+    aroon,
+    vortex,
   };
 }

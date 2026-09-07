@@ -122,6 +122,11 @@ export default function AnalysisCard({
     const hl = analysis.tradeSetup.halfLife || analysis.halfLife;
     const ttm = analysis.tradeSetup.ttmSqueeze || analysis.ttmSqueeze;
     const cmf = analysis.tradeSetup.chaikinMoneyFlow || analysis.chaikinMoneyFlow;
+    const kama = analysis.tradeSetup.kama || analysis.kama;
+    const hma = analysis.tradeSetup.hma || analysis.hma;
+    const sar = analysis.tradeSetup.parabolicSAR || analysis.parabolicSAR;
+    const aroon = analysis.tradeSetup.aroon || analysis.aroon;
+    const vortex = analysis.tradeSetup.vortex || analysis.vortex;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -130,6 +135,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (kama ? `• 🎛️ KAMA Adaptive: ${kama.kamaValue} (ER: ${(kama.efficiencyRatio * 100).toFixed(1)}% | ${kama.trendState})\n` : "") +
+      (hma ? `• ⚡ HMA Zero-Lag: ${hma.hmaValue} (${hma.isTurningUp ? "TURNING_UP" : hma.isTurningDown ? "TURNING_DOWN" : "STEADY"})\n` : "") +
+      (sar ? `• 🎯 Parabolic SAR: ${sar.sar} (${sar.isBullish ? "BULLISH" : "BEARISH"} | Reversal: ${sar.isReversal ? "FLIP" : "NO"})\n` : "") +
+      (aroon ? `• ⏳ Aroon Cycle: Up ${aroon.aroonUp}% / Down ${aroon.aroonDown}% (Osc: ${aroon.oscillator} | ${aroon.trendState})\n` : "") +
+      (vortex ? `• 🌀 Vortex Flow: VI+ ${vortex.viPlus} vs VI- ${vortex.viMinus} (${vortex.trend} | Lock 15: ${vortex.safetyLock15Passed ? "PASSED" : "BLOCKED"})\n` : "") +
       (hurst ? `• 🧬 Hurst Exponent: ${hurst.hurst} (${hurst.marketCharacter} | ความเชื่อมั่น ${hurst.confidence}%)\n` : "") +
       (kalman ? `• 🎯 Kalman Filter Latent State: ${kalman.filteredPrice} (Error: ±${kalman.estimationError} | Bias: ${kalman.trendBias || "EQUILIBRIUM"})\n` : "") +
       (hl ? `• ⏱️ OU Half-Life Reversion: ${hl.halfLifeCandles} bars (${hl.reversionVelocity})\n` : "") +
@@ -2959,6 +2969,239 @@ export default function AnalysisCard({
 
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.ttmSqueeze?.description || analysis.chaikinMoneyFlow?.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5l. 🧭 Adaptive Trend, Curvature Inflection & Vortex Matrix (Plans 56-60) */}
+      {(analysis.kama || analysis.hma || analysis.parabolicSAR || analysis.aroon || analysis.vortex) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-sky-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                <Compass className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Adaptive Trend, Zero-Lag Curvature & Vortex Flow Matrix (แผน 56-60)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-sky-500/20 to-blue-500/20 text-sky-300 border border-sky-500/30">
+                    🧭 Dynamic Curvature & Flow
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  เครื่องยนต์ปรับสมูท KAMA ไร้ Noise, จุดเลี้ยวความโค้ง Hull MA Zero-Lag, Parabolic SAR Stop-and-Reverse, Aroon วงจรเวลา High/Low และ Vortex Flow ป้องกันการสวนเทรนด์
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: KAMA Adaptive Noise Filter (Plan 56) */}
+            {analysis.kama && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🎛️ KAMA Adaptive Trend</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.kama.trendState === "BULLISH"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.kama.trendState === "BEARISH"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-700"
+                  }`}>
+                    {analysis.kama.trendState === "BULLISH"
+                      ? "BULLISH KAMA"
+                      : analysis.kama.trendState === "BEARISH"
+                      ? "BEARISH KAMA"
+                      : "FLAT / CHOP"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">เส้นราคา KAMA:</span>
+                    <span className="font-mono font-bold text-white">
+                      {analysis.kama.kamaValue}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Efficiency Ratio (ER):</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {(analysis.kama.efficiencyRatio * 100).toFixed(1)}% (ทิศทางบริสุทธิ์)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">สถานะ Noise กรองตลาด:</span>
+                    <span className="font-mono text-emerald-300 text-[10px]">
+                      {analysis.kama.trendState === "BULLISH"
+                        ? "เทรนด์ขาขึ้น ไร้ Whipsaw"
+                        : analysis.kama.trendState === "BEARISH"
+                        ? "เทรนด์ขาลง ไร้ Whipsaw"
+                        : "ชะลอความเร็วกรอง Noise"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.kama.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Hull Moving Average Zero-Lag Curvature (Plan 57) */}
+            {analysis.hma && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚡ HMA Zero-Lag</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.hma.isTurningUp
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse"
+                      : analysis.hma.isTurningDown
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                      : "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                  }`}>
+                    {analysis.hma.isTurningUp
+                      ? "⚡ TURN UP"
+                      : analysis.hma.isTurningDown
+                      ? "🔻 TURN DOWN"
+                      : "STEADY TRAIL"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">เส้นเฉลี่ย HMA({analysis.hma.period}):</span>
+                    <span className="font-mono font-bold text-white">
+                      {analysis.hma.hmaValue}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ความโค้งจุดเลี้ยว (Inflection):</span>
+                    <span className={`font-mono font-bold text-[10px] ${
+                      analysis.hma.isTurningUp ? "text-emerald-400" : analysis.hma.isTurningDown ? "text-rose-400" : "text-sky-300"
+                    }`}>
+                      {analysis.hma.isTurningUp ? "หักหัวขึ้น (กลับตัวซื้อ)" : analysis.hma.isTurningDown ? "หักหัวลง (กลับตัวขาย)" : "คงตัวตามโมเมนตัม"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">คุณลักษณะ Lag:</span>
+                    <span className="font-mono text-teal-300 text-[10px]">
+                      Zero-Lag Weighted Curve
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.hma.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Parabolic SAR Trailing & Reversal (Plan 58) */}
+            {analysis.parabolicSAR && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🎯 Parabolic SAR Trail</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.parabolicSAR.isReversal
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse"
+                      : analysis.parabolicSAR.isBullish
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                  }`}>
+                    {analysis.parabolicSAR.isReversal
+                      ? "🔄 REVERSAL FLIP"
+                      : analysis.parabolicSAR.isBullish
+                      ? "🟢 BULL TRAIL"
+                      : "🔴 BEAR TRAIL"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">จุด Stop-and-Reverse:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {analysis.parabolicSAR.sar}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ตำแหน่ง SAR Trailing:</span>
+                    <span className="font-mono text-cyan-300 text-[10px]">
+                      {analysis.parabolicSAR.isBullish ? "อยู่ใต้ราคา (รองรับขาขึ้น)" : "อยู่เหนือราคา (กดดันขาลง)"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">สถานะการสลับข้าง:</span>
+                    <span className="font-mono text-[10px] text-slate-300">
+                      {analysis.parabolicSAR.isReversal ? "⚡ เพิ่งพลิกทิศแท่งล่าสุด" : "รันตามแนวโน้มต่อเนื่อง"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.parabolicSAR.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Aroon Cycle & Vortex Flow Shield (Plans 59 & 60 + Safety Lock 15) */}
+            {(analysis.aroon || analysis.vortex) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌀 Aroon & Vortex Shield</span>
+                  {analysis.vortex && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.vortex.safetyLock15Passed
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                    }`}>
+                      {analysis.vortex.safetyLock15Passed ? "🛡️ LOCK 15 PASS" : "⛔ VORTEX BLOCKED"}
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  {analysis.aroon && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Aroon Up / Down:</span>
+                        <span className="font-mono font-bold text-[10px] text-white">
+                          <span className="text-emerald-400">{analysis.aroon.aroonUp}%</span> / <span className="text-rose-400">{analysis.aroon.aroonDown}%</span>
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Aroon Oscillator:</span>
+                        <span className={`font-mono font-bold text-[10px] ${
+                          analysis.aroon.oscillator > 20
+                            ? "text-emerald-400"
+                            : analysis.aroon.oscillator < -20
+                            ? "text-rose-400"
+                            : "text-slate-300"
+                        }`}>
+                          {analysis.aroon.oscillator > 0 ? `+${analysis.aroon.oscillator}` : analysis.aroon.oscillator} ({analysis.aroon.trendState === "STRONG_UPTREND" ? "เทรนด์ขึ้นแกร่ง" : analysis.aroon.trendState === "STRONG_DOWNTREND" ? "เทรนด์ลงแกร่ง" : "พักตัว"})
+                        </span>
+                      </div>
+                    </>
+                  )}
+
+                  {analysis.vortex && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Vortex VI+ vs VI-:</span>
+                        <span className={`font-mono font-bold text-[10px] ${
+                          analysis.vortex.trend === "BULLISH" ? "text-emerald-400" : "text-rose-400"
+                        }`}>
+                          VI+ {analysis.vortex.viPlus} / VI- {analysis.vortex.viMinus}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">พลังกระแสวนสถาบัน:</span>
+                        <span className="font-mono text-indigo-300 text-[10px]">
+                          ส่วนต่าง {analysis.vortex.strength} ({analysis.vortex.trend === "BULLISH" ? "ไหลขึ้น" : "ไหลลง"})
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.aroon?.description || analysis.vortex?.description}
                 </p>
               </div>
             )}

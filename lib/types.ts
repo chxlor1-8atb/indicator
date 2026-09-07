@@ -666,6 +666,11 @@ export interface IndicatorData {
   halfLife?: HalfLifeInfo;
   ttmSqueeze?: TTMSqueezeInfo;
   chaikinMoneyFlow?: CMFInfo;
+  kama?: KAMAInfo;
+  hma?: HMAInfo;
+  parabolicSAR?: ParabolicSARPoint;
+  aroon?: AroonInfo;
+  vortex?: VortexInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -802,6 +807,11 @@ export interface AnalysisResult {
   halfLife?: HalfLifeInfo;
   ttmSqueeze?: TTMSqueezeInfo;
   chaikinMoneyFlow?: CMFInfo;
+  kama?: KAMAInfo;
+  hma?: HMAInfo;
+  parabolicSAR?: ParabolicSARPoint;
+  aroon?: AroonInfo;
+  vortex?: VortexInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -880,6 +890,11 @@ export interface AnalysisResult {
     halfLife?: HalfLifeInfo;
     ttmSqueeze?: TTMSqueezeInfo;
     chaikinMoneyFlow?: CMFInfo;
+    kama?: KAMAInfo;
+    hma?: HMAInfo;
+    parabolicSAR?: ParabolicSARPoint;
+    aroon?: AroonInfo;
+    vortex?: VortexInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1037,6 +1052,7 @@ export interface KAMAInfo {
   efficiencyRatio: number;
   kamaValue: number;
   trendState: "BULLISH" | "BEARISH" | "FLAT";
+  description?: string;
 }
 
 export interface HMAInfo {
@@ -1044,12 +1060,14 @@ export interface HMAInfo {
   hmaValue: number;
   isTurningUp: boolean;
   isTurningDown: boolean;
+  description?: string;
 }
 
 export interface ParabolicSARPoint {
   sar: number;
   isBullish: boolean;
   isReversal: boolean;
+  description?: string;
 }
 
 export interface AroonInfo {
@@ -1057,6 +1075,7 @@ export interface AroonInfo {
   aroonDown: number;
   oscillator: number;
   trendState: "STRONG_UPTREND" | "STRONG_DOWNTREND" | "CONSOLIDATION";
+  description?: string;
 }
 
 export interface VortexInfo {
@@ -1064,6 +1083,8 @@ export interface VortexInfo {
   viMinus: number;
   trend: "BULLISH" | "BEARISH";
   strength: number;
+  safetyLock15Passed?: boolean;
+  description?: string;
 }
 
 export interface FisherTransformPoint {

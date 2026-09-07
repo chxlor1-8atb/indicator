@@ -50,6 +50,11 @@ import {
   HalfLifeInfo,
   TTMSqueezeInfo,
   CMFInfo,
+  KAMAInfo,
+  HMAInfo,
+  ParabolicSARPoint,
+  AroonInfo,
+  VortexInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -103,6 +108,11 @@ import {
   calculateHalfLife,
   calculateTTMSqueeze,
   calculateCMF,
+  calculateKAMA,
+  calculateHMA,
+  calculateParabolicSAR,
+  calculateAroon,
+  calculateVortex,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -334,6 +344,13 @@ export function generateRuleBasedAnalysis(
   const ttmSqueeze = indicators.ttmSqueeze || calculateTTMSqueeze(candles);
   const chaikinMoneyFlow = indicators.chaikinMoneyFlow || calculateCMF(candles);
 
+  // ─── BATCH 12 PRE-COMPUTATIONS (PLANS 56-60) ───
+  const kama = indicators.kama || calculateKAMA(candles, 10, 2, 30, precision);
+  const hma = indicators.hma || calculateHMA(candles, 14, precision);
+  const parabolicSAR = indicators.parabolicSAR || calculateParabolicSAR(candles, 0.02, 0.2, precision);
+  const aroon = indicators.aroon || calculateAroon(candles, 25);
+  const vortex = indicators.vortex || calculateVortex(candles, 14);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -455,6 +472,18 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
   }
+  // SAFETY LOCK 15: Vortex Trend Inversion Shield (Counter-trend knife-catching lock) [แผน 60]
+  else if (tier1Bias === "BULLISH" && (vortex.viMinus - vortex.viPlus > 0.15 || vortex.viMinus > 1.15)) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+    vortex.safetyLock15Passed = false;
+  } else if (tier1Bias === "BEARISH" && (vortex.viPlus - vortex.viMinus > 0.15 || vortex.viPlus > 1.15)) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+    vortex.safetyLock15Passed = false;
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -475,6 +504,11 @@ export function generateRuleBasedAnalysis(
     if (hurstExponent.marketCharacter === "PERSISTENT_TRENDING") confidence = Math.min(98, confidence + 4);
     if (chaikinMoneyFlow.capitalFlow === "STRONG_ACCUMULATION") confidence = Math.min(98, confidence + 4);
     if (kalmanFilter.trendBias === "BULLISH_ABOVE_KALMAN") confidence = Math.min(98, confidence + 3);
+    if (hma.isTurningUp) confidence = Math.min(98, confidence + 4);
+    if (parabolicSAR.isBullish) confidence = Math.min(98, confidence + 3);
+    if (aroon.trendState === "STRONG_UPTREND") confidence = Math.min(98, confidence + 4);
+    if (vortex.trend === "BULLISH") confidence = Math.min(98, confidence + 4);
+    if (kama.trendState === "BULLISH") confidence = Math.min(98, confidence + 3);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -495,6 +529,11 @@ export function generateRuleBasedAnalysis(
     if (hurstExponent.marketCharacter === "PERSISTENT_TRENDING") confidence = Math.min(98, confidence + 4);
     if (chaikinMoneyFlow.capitalFlow === "HEAVY_DISTRIBUTION") confidence = Math.min(98, confidence + 4);
     if (kalmanFilter.trendBias === "BEARISH_BELOW_KALMAN") confidence = Math.min(98, confidence + 3);
+    if (hma.isTurningDown) confidence = Math.min(98, confidence + 4);
+    if (!parabolicSAR.isBullish) confidence = Math.min(98, confidence + 3);
+    if (aroon.trendState === "STRONG_DOWNTREND") confidence = Math.min(98, confidence + 4);
+    if (vortex.trend === "BEARISH") confidence = Math.min(98, confidence + 4);
+    if (kama.trendState === "BEARISH") confidence = Math.min(98, confidence + 3);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -762,6 +801,13 @@ export function generateRuleBasedAnalysis(
               hurstExponent.marketCharacter === "PERSISTENT_TRENDING",
       note: `${hurstExponent.description} • ${ttmSqueeze.description} • ${chaikinMoneyFlow.description} • Kalman: ${kalmanFilter.trendBias}`,
     },
+    {
+      name: `Pillar 15: Adaptive Trend & Vortex Directional Matrix (${kama.trendState} | HMA: ${hma.isTurningUp ? "TURN_UP" : hma.isTurningDown ? "TURN_DOWN" : "STEADY"} | Vortex: ${vortex.trend})`,
+      passed: (tradeAction === "BUY" && (vortex.trend === "BULLISH" || hma.isTurningUp || parabolicSAR.isBullish || kama.trendState === "BULLISH")) ||
+              (tradeAction === "SELL" && (vortex.trend === "BEARISH" || hma.isTurningDown || !parabolicSAR.isBullish || kama.trendState === "BEARISH")) ||
+              aroon.trendState !== "CONSOLIDATION",
+      note: `${kama.description} • ${hma.description} • ${parabolicSAR.description} • ${aroon.description} • ${vortex.description}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -828,6 +874,11 @@ export function generateRuleBasedAnalysis(
     halfLife,
     ttmSqueeze,
     chaikinMoneyFlow,
+    kama,
+    hma,
+    parabolicSAR,
+    aroon,
+    vortex,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -881,6 +932,11 @@ export function generateRuleBasedAnalysis(
         `O-U Half-Life: ${halfLife.halfLifeCandles} Bars (${halfLife.reversionVelocity})`,
         `TTM Squeeze: ${ttmSqueeze.isSqueezeOn ? "SQUEEZE_ON (Coiling)" : ttmSqueeze.squeezeFired ? "SQUEEZE_FIRED (Explosive)" : "OFF"} (${ttmSqueeze.momentumDirection} - ${ttmSqueeze.histogramColor})`,
         `Chaikin Money Flow: CMF ${chaikinMoneyFlow.cmf} (${chaikinMoneyFlow.capitalFlow} - Lock 14: ${chaikinMoneyFlow.safetyLock14Passed ? "PASSED" : "ALERT"})`,
+        `KAMA Adaptive Trend: ${kama.kamaValue} (ER: ${(kama.efficiencyRatio * 100).toFixed(1)}% - ${kama.trendState})`,
+        `Hull MA Zero-Lag: ${hma.hmaValue} (${hma.isTurningUp ? "TURNING_UP" : hma.isTurningDown ? "TURNING_DOWN" : "STEADY"})`,
+        `Parabolic SAR: ${parabolicSAR.sar} (${parabolicSAR.isBullish ? "BULLISH" : "BEARISH"} | Reversal: ${parabolicSAR.isReversal ? "YES" : "NO"})`,
+        `Aroon Indicator: Up ${aroon.aroonUp}% / Down ${aroon.aroonDown}% (Osc: ${aroon.oscillator} - ${aroon.trendState})`,
+        `Vortex Flow: VI+ ${vortex.viPlus} vs VI- ${vortex.viMinus} (${vortex.trend} | Lock 15: ${vortex.safetyLock15Passed ? "PASSED" : "BLOCKED"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -954,6 +1010,11 @@ export function generateRuleBasedAnalysis(
       halfLife,
       ttmSqueeze,
       chaikinMoneyFlow,
+      kama,
+      hma,
+      parabolicSAR,
+      aroon,
+      vortex,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1309,6 +1370,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.halfLife = ruleAnalysis.halfLife;
     parsed.ttmSqueeze = ruleAnalysis.ttmSqueeze;
     parsed.chaikinMoneyFlow = ruleAnalysis.chaikinMoneyFlow;
+    parsed.kama = ruleAnalysis.kama;
+    parsed.hma = ruleAnalysis.hma;
+    parsed.parabolicSAR = ruleAnalysis.parabolicSAR;
+    parsed.aroon = ruleAnalysis.aroon;
+    parsed.vortex = ruleAnalysis.vortex;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -1352,6 +1418,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.halfLife = ruleAnalysis.tradeSetup.halfLife;
       parsed.tradeSetup.ttmSqueeze = ruleAnalysis.tradeSetup.ttmSqueeze;
       parsed.tradeSetup.chaikinMoneyFlow = ruleAnalysis.tradeSetup.chaikinMoneyFlow;
+      parsed.tradeSetup.kama = ruleAnalysis.tradeSetup.kama;
+      parsed.tradeSetup.hma = ruleAnalysis.tradeSetup.hma;
+      parsed.tradeSetup.parabolicSAR = ruleAnalysis.tradeSetup.parabolicSAR;
+      parsed.tradeSetup.aroon = ruleAnalysis.tradeSetup.aroon;
+      parsed.tradeSetup.vortex = ruleAnalysis.tradeSetup.vortex;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;
