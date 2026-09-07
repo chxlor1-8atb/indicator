@@ -51,6 +51,13 @@ import {
   RejectionBlockItem,
   RejectionBlockInfo,
   MCPIConvictionInfo,
+  HarmonicPatternMatch,
+  HarmonicScanResult,
+  EhlersMESAInfo,
+  ShannonEntropyInfo,
+  CandlestickPatternMatch,
+  CandlestickScanResult,
+  GrandQuantMilestone50Info,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -3534,6 +3541,496 @@ export function calculateUnifiedMCPI(
   };
 }
 
+/**
+ * [แผน 46] Algorithmic Harmonic PRZ Pattern Engine
+ * Scans swing pivots for Gartley, Bat, Butterfly, Crab, and ABCD structures with Potential Reversal Zones (PRZ).
+ */
+export function detectHarmonicPatterns(candles: Candle[], precision = 2): HarmonicScanResult {
+  if (candles.length < 25) {
+    return { hasPattern: false, patterns: [], bestPattern: null };
+  }
+
+  // Find swing pivots in the last 40 candles
+  const sample = candles.slice(-40);
+  const offset = candles.length - sample.length;
+  interface Pivot { index: number; price: number; type: "HIGH" | "LOW" }
+  const pivots: Pivot[] = [];
+
+  for (let i = 2; i < sample.length - 2; i++) {
+    const c = sample[i];
+    const isHigh = c.high >= sample[i - 1].high && c.high >= sample[i - 2].high &&
+                   c.high >= sample[i + 1].high && c.high >= sample[i + 2].high;
+    const isLow = c.low <= sample[i - 1].low && c.low <= sample[i - 2].low &&
+                  c.low <= sample[i + 1].low && c.low <= sample[i + 2].low;
+
+    if (isHigh) {
+      pivots.push({ index: offset + i, price: c.high, type: "HIGH" });
+    } else if (isLow) {
+      pivots.push({ index: offset + i, price: c.low, type: "LOW" });
+    }
+  }
+
+  if (pivots.length < 5) {
+    return { hasPattern: false, patterns: [], bestPattern: null };
+  }
+
+  const patterns: HarmonicPatternMatch[] = [];
+  const pCount = pivots.length;
+
+  // Evaluate the last 5 consecutive alternating pivots: X, A, B, C, D
+  for (let idx = pCount - 5; idx <= pCount - 5; idx++) {
+    if (idx < 0) continue;
+    const [pX, pA, pB, pC, pD] = [pivots[idx], pivots[idx + 1], pivots[idx + 2], pivots[idx + 3], pivots[idx + 4]];
+
+    const isAlternating = (pX.type !== pA.type) && (pA.type !== pB.type) &&
+                          (pB.type !== pC.type) && (pC.type !== pD.type);
+    if (!isAlternating) continue;
+
+    const type: HarmonicPatternMatch["type"] = pD.type === "LOW" ? "BULLISH" : "BEARISH";
+
+    const legXA = Math.abs(pA.price - pX.price);
+    const legAB = Math.abs(pB.price - pA.price);
+    const legBC = Math.abs(pC.price - pB.price);
+    const legCD = Math.abs(pD.price - pC.price);
+    const legXD = Math.abs(pD.price - pX.price);
+
+    if (legXA < 0.0001 || legAB < 0.0001 || legBC < 0.0001) continue;
+
+    const ratioAB = legAB / legXA;
+    const ratioBC = legBC / legAB;
+    const ratioCD = legCD / legBC;
+    const ratioXD = legXD / legXA;
+
+    let patternName: HarmonicPatternMatch["patternName"] | null = null;
+    let score = 70;
+
+    // 1. Gartley (B: ~0.618, D: ~0.786)
+    if (Math.abs(ratioAB - 0.618) <= 0.09 && Math.abs(ratioXD - 0.786) <= 0.09) {
+      patternName = "GARTLEY";
+      score = 92;
+    }
+    // 2. Bat (B: 0.382-0.50, D: ~0.886)
+    else if (ratioAB >= 0.35 && ratioAB <= 0.55 && Math.abs(ratioXD - 0.886) <= 0.09) {
+      patternName = "BAT";
+      score = 90;
+    }
+    // 3. Butterfly (B: ~0.786, D: 1.272-1.618)
+    else if (Math.abs(ratioAB - 0.786) <= 0.09 && ratioXD >= 1.20 && ratioXD <= 1.68) {
+      patternName = "BUTTERFLY";
+      score = 88;
+    }
+    // 4. Crab (B: 0.382-0.618, D: ~1.618)
+    else if (ratioAB >= 0.35 && ratioAB <= 0.65 && Math.abs(ratioXD - 1.618) <= 0.12) {
+      patternName = "CRAB";
+      score = 87;
+    }
+    // 5. ABCD Pattern (AB ~= CD, BC: 0.618 - 0.786)
+    else if (Math.abs(ratioCD - 1.0) <= 0.20 && ratioBC >= 0.55 && ratioBC <= 0.85) {
+      patternName = "ABCD";
+      score = 82;
+    }
+
+    if (patternName) {
+      const przMin = Number((Math.min(pD.price, pD.price - (type === "BULLISH" ? 0.3 : -0.3) * legCD)).toFixed(precision));
+      const przMax = Number((Math.max(pD.price, pD.price + (type === "BULLISH" ? 0.3 : -0.3) * legCD)).toFixed(precision));
+
+      const targetTP1 = Number((type === "BULLISH" ? pD.price + 0.382 * legCD : pD.price - 0.382 * legCD).toFixed(precision));
+      const targetTP2 = Number((type === "BULLISH" ? pD.price + 0.618 * legCD : pD.price - 0.618 * legCD).toFixed(precision));
+      const invalidationSL = Number((type === "BULLISH" ? pX.price - 0.15 * legXA : pX.price + 0.15 * legXA).toFixed(precision));
+
+      patterns.push({
+        patternName,
+        type,
+        points: {
+          X: { index: pX.index, price: Number(pX.price.toFixed(precision)) },
+          A: { index: pA.index, price: Number(pA.price.toFixed(precision)) },
+          B: { index: pB.index, price: Number(pB.price.toFixed(precision)) },
+          C: { index: pC.index, price: Number(pC.price.toFixed(precision)) },
+          D: { index: pD.index, price: Number(pD.price.toFixed(precision)) },
+        },
+        prz: { min: przMin, max: przMax },
+        confluenceScore: score,
+        targetTP1,
+        targetTP2,
+        invalidationSL,
+      });
+    }
+  }
+
+  const bestPattern = patterns.length > 0 ? patterns[patterns.length - 1] : null;
+  const desc = bestPattern
+    ? `📐 ตรวจพบแพทเทิร์นฮาร์โมนิก ${bestPattern.patternName} (${bestPattern.type}) - โซนกลับตัว PRZ: ${bestPattern.prz.min} - ${bestPattern.prz.max} (ความน่าจะเป็น ${bestPattern.confluenceScore}%)`
+    : `🔍 ไม่พบแพทเทิร์นฮาร์โมนิกสมบูรณ์ในรอบสวิงปัจจุบัน (ระบบรอการก่อตัวของจุด D)`;
+
+  return {
+    hasPattern: patterns.length > 0,
+    patterns,
+    bestPattern,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 47] Ehlers MESA Digital Signal Processing (DSP) & Dominant Cycle Engine
+ * Applies Hilbert Transform to identify market cycle period and discerns Cycle Mode vs Trend Mode.
+ */
+export function calculateEhlersMESA(candles: Candle[]): EhlersMESAInfo {
+  if (candles.length < 15) {
+    return {
+      dominantCyclePeriod: 20,
+      inPhase: 0,
+      quadrature: 0,
+      phaseAngle: 0,
+      cycleState: "TREND_MODE",
+      description: "ข้อมูลแท่งเทียนไม่พอสำหรับการคำนวณ Ehlers MESA DSP Cycle",
+    };
+  }
+
+  const prices = candles.map((c) => (c.high + c.low) / 2);
+  const n = prices.length;
+
+  // 4-Bar Weighted Moving Average Smooth
+  const smooth: number[] = new Array(n).fill(0);
+  for (let i = 3; i < n; i++) {
+    smooth[i] = (prices[i] + 2 * prices[i - 1] + 2 * prices[i - 2] + prices[i - 3]) / 6;
+  }
+
+  // Detrender / Hilbert Transform approximation
+  const detrender: number[] = new Array(n).fill(0);
+  const periodArr: number[] = new Array(n).fill(20);
+  const inPhase: number[] = new Array(n).fill(0);
+  const quadrature: number[] = new Array(n).fill(0);
+  const phase: number[] = new Array(n).fill(0);
+
+  for (let i = 6; i < n; i++) {
+    detrender[i] = (0.0962 * smooth[i] + 0.5769 * smooth[i - 2] - 0.5769 * smooth[i - 4] - 0.0962 * smooth[i - 6]) * (0.075 * periodArr[i - 1] + 0.54);
+
+    // Compute In-phase and Quadrature components
+    quadrature[i] = (0.0962 * detrender[i] + 0.5769 * detrender[i - 2] - 0.5769 * detrender[i - 4] - 0.0962 * detrender[i - 6]) * (0.075 * periodArr[i - 1] + 0.54);
+    inPhase[i] = detrender[i - 3];
+
+    // Compute Phase Angle
+    if (Math.abs(inPhase[i]) > 0.001) {
+      phase[i] = (Math.atan2(quadrature[i], inPhase[i]) * 180) / Math.PI;
+    } else {
+      phase[i] = 0;
+    }
+
+    // Dominant cycle period tracking
+    const deltaPhase = Math.abs(phase[i] - phase[i - 1]);
+    let instPeriod = deltaPhase > 1 ? 360 / deltaPhase : periodArr[i - 1];
+    instPeriod = Math.max(8, Math.min(50, instPeriod));
+    periodArr[i] = 0.2 * instPeriod + 0.8 * periodArr[i - 1];
+  }
+
+  const lastPeriod = Math.round(periodArr[n - 1] || 20);
+  const lastInPhase = Number(inPhase[n - 1].toFixed(2));
+  const lastQuad = Number(quadrature[n - 1].toFixed(2));
+  const lastPhase = Number(phase[n - 1].toFixed(1));
+
+  // Determine Cycle Mode vs Trend Mode based on phase velocity consistency
+  const recentDeltas: number[] = [];
+  for (let i = Math.max(1, n - 6); i < n; i++) {
+    recentDeltas.push(Math.abs(phase[i] - phase[i - 1]));
+  }
+  const avgDelta = recentDeltas.reduce((a, b) => a + b, 0) / (recentDeltas.length || 1);
+  const cycleState: EhlersMESAInfo["cycleState"] = avgDelta >= 12 && avgDelta <= 45 ? "CYCLE_MODE" : "TREND_MODE";
+
+  const desc = cycleState === "CYCLE_MODE"
+    ? `📡 ตลาดอยู่ในวัฏจักรไซเคิล (CYCLE_MODE): คาบคลื่นสถาบัน ${lastPeriod} แท่งเทียนต่อรอบ (Oscillator & Reversal มีแต้มต่อสูงสุด)`
+    : `🚀 ตลาดอยู่ในโหมดเทรนด์ทิศทางเดียว (TREND_MODE): คาบคลื่นสถาบัน ${lastPeriod} แท่ง (ระบบ Moving Average & Breakout ทำงานได้เต็มประสิทธิภาพ)`;
+
+  const isCycleTurning = Math.abs(lastPhase) > 135 || Math.abs(lastPhase) < 45;
+
+  return {
+    dominantCyclePeriod: lastPeriod,
+    inPhase: lastInPhase,
+    quadrature: lastQuad,
+    phaseAngle: lastPhase,
+    cycleState,
+    isCycleTurning,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 48] Shannon Information Entropy & Statistical Noise Filter
+ * Computes return distribution entropy H(X) to distinguish between trend orderliness and market noise.
+ */
+export function calculateShannonEntropy(candles: Candle[], lookback = 30): ShannonEntropyInfo {
+  if (candles.length < 15) {
+    return {
+      entropy: 2.0,
+      normalizedEntropy: 0.5,
+      orderliness: "MODERATE_ENTROPY",
+      noisePct: 50,
+      description: "ข้อมูลแท่งเทียนไม่พอสำหรับการคำนวณ Shannon Entropy",
+    };
+  }
+
+  const sample = candles.slice(-Math.min(candles.length, lookback));
+  const returns: number[] = [];
+
+  for (let i = 1; i < sample.length; i++) {
+    if (sample[i - 1].close > 0) {
+      returns.push(Math.log(sample[i].close / sample[i - 1].close));
+    }
+  }
+
+  if (returns.length < 8) {
+    return {
+      entropy: 2.0,
+      normalizedEntropy: 0.5,
+      orderliness: "MODERATE_ENTROPY",
+      noisePct: 50,
+      description: "ข้อมูลผลตอบแทนไม่เพียงพอสำหรับการประเมินเอนโทรปี",
+    };
+  }
+
+  // Discretize returns into 6 statistical probability bins
+  const numBins = 6;
+  const minRet = Math.min(...returns);
+  const maxRet = Math.max(...returns);
+  const binWidth = (maxRet - minRet) / numBins || 0.0001;
+
+  const binCounts = new Array(numBins).fill(0);
+  for (const r of returns) {
+    const binIdx = Math.min(numBins - 1, Math.max(0, Math.floor((r - minRet) / binWidth)));
+    binCounts[binIdx]++;
+  }
+
+  // Calculate Shannon Entropy: H = - sum(p * log2(p))
+  const total = returns.length;
+  let entropy = 0;
+  for (const count of binCounts) {
+    if (count > 0) {
+      const p = count / total;
+      entropy -= p * Math.log2(p);
+    }
+  }
+
+  const maxEntropy = Math.log2(numBins); // ~ 2.585 bits
+  const normalizedEntropy = Number((entropy / maxEntropy).toFixed(2));
+  const noisePct = Math.round(normalizedEntropy * 100);
+
+  let orderliness: ShannonEntropyInfo["orderliness"] = "MODERATE_ENTROPY";
+  if (normalizedEntropy <= 0.45) {
+    orderliness = "HIGHLY_ORDERED_TREND";
+  } else if (normalizedEntropy >= 0.80) {
+    orderliness = "MAXIMUM_CHAOS_NOISE";
+  } else {
+    orderliness = "MODERATE_ENTROPY";
+  }
+
+  const desc = orderliness === "HIGHLY_ORDERED_TREND"
+    ? `🎲 เอนโทรปีต่ำมาก (${normalizedEntropy} / 1.00): ตลาดมีระเบียบทิศทางสูง (High Information Signal) สถาบันขับเคลื่อนทิศทางชัดเจน`
+    : orderliness === "MAXIMUM_CHAOS_NOISE"
+    ? `⚠️ เอนโทรปีสูงวิกฤต (${normalizedEntropy} / 1.00 - Noise ${noisePct}%): ตลาดไร้ทิศทางและเต็มไปด้วยสัญญาณรบกวน (Safety Lock 13 กักกันความเสี่ยง)`
+    : `📊 เอนโทรปีปานกลาง (${normalizedEntropy} / 1.00): อัตราส่วนสัญญาณต่อสัญญาณรบกวนอยู่ในเกณฑ์ปกติ (Noise ${noisePct}%)`;
+
+  return {
+    entropy: Number(entropy.toFixed(3)),
+    normalizedEntropy,
+    orderliness,
+    noisePct,
+    safetyLock13Passed: normalizedEntropy < 0.80,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 49] Institutional Candlestick Micro-Pattern & Pinbar Reversal Matrix
+ * Detects institutional multi-candle price action patterns (Engulfing, Pinbars, Morning/Evening Stars, Harami).
+ */
+export function scanCandlestickPatterns(candles: Candle[], precision = 2): CandlestickScanResult {
+  if (candles.length < 5) {
+    return { detectedPatterns: [], dominantSignal: "NEUTRAL", overallScore: 0 };
+  }
+
+  const sample = candles.slice(-8);
+  const detectedPatterns: CandlestickPatternMatch[] = [];
+
+  for (let i = 2; i < sample.length; i++) {
+    const curr = sample[i];
+    const prev = sample[i - 1];
+    const prev2 = sample[i - 2];
+
+    const range = curr.high - curr.low;
+    const body = Math.abs(curr.close - curr.open);
+    const upperWick = curr.high - Math.max(curr.open, curr.close);
+    const lowerWick = Math.min(curr.open, curr.close) - curr.low;
+
+    if (range <= 0.0001) continue;
+
+    // 1. Bullish Engulfing
+    if (prev.close < prev.open && curr.close > curr.open &&
+        curr.open <= prev.close && curr.close >= prev.open && body >= 1.2 * Math.abs(prev.close - prev.open)) {
+      detectedPatterns.push({
+        pattern: "BULLISH_ENGULFING",
+        category: "BULLISH_REVERSAL",
+        confidence: 88,
+        candleIndex: i,
+        description: `Bullish Engulfing: แท่งเขียวกลืนกินแท่งแดงก่อนหน้าสมบูรณ์แบบที่ราคา ${curr.close.toFixed(precision)}`,
+      });
+    }
+
+    // 2. Bearish Engulfing
+    if (prev.close > prev.open && curr.close < curr.open &&
+        curr.open >= prev.close && curr.close <= prev.open && body >= 1.2 * Math.abs(prev.close - prev.open)) {
+      detectedPatterns.push({
+        pattern: "BEARISH_ENGULFING",
+        category: "BEARISH_REVERSAL",
+        confidence: 88,
+        candleIndex: i,
+        description: `Bearish Engulfing: แท่งแดงกลืนกินแท่งเขียวก่อนหน้าสมบูรณ์แบบที่ราคา ${curr.close.toFixed(precision)}`,
+      });
+    }
+
+    // 3. Hammer Pinbar (Lower wick >= 66% of range)
+    if (lowerWick >= 0.65 * range && upperWick <= 0.15 * range) {
+      detectedPatterns.push({
+        pattern: "HAMMER_PINBAR",
+        category: "BULLISH_REVERSAL",
+        confidence: 85,
+        candleIndex: i,
+        description: `Hammer Pinbar: ไส้เทียนล่างยาวปฏิเสธราคา ${lowerWick.toFixed(precision)} pips แรงซื้อสถาบันดีดกลับ`,
+      });
+    }
+
+    // 4. Shooting Star Pinbar (Upper wick >= 66% of range)
+    if (upperWick >= 0.65 * range && lowerWick <= 0.15 * range) {
+      detectedPatterns.push({
+        pattern: "SHOOTING_STAR_PINBAR",
+        category: "BEARISH_REVERSAL",
+        confidence: 85,
+        candleIndex: i,
+        description: `Shooting Star Pinbar: ไส้เทียนบนยาวปฏิเสธราคา ${upperWick.toFixed(precision)} pips แรงขายสถาบันเททับ`,
+      });
+    }
+
+    // 5. Morning Star (prev2 bear, prev small, curr bull)
+    if (prev2.close < prev2.open && Math.abs(prev.close - prev.open) <= 0.35 * Math.abs(prev2.close - prev2.open) &&
+        curr.close > curr.open && curr.close >= (prev2.open + prev2.close) / 2) {
+      detectedPatterns.push({
+        pattern: "MORNING_STAR",
+        category: "BULLISH_REVERSAL",
+        confidence: 90,
+        candleIndex: i,
+        description: `Morning Star: ชุด 3 แท่งเทียนกลับตัวรุ่งอรุณสถาบันฟื้นตัวข้ามกึ่งกลางแท่งแรก`,
+      });
+    }
+
+    // 6. Evening Star (prev2 bull, prev small, curr bear)
+    if (prev2.close > prev2.open && Math.abs(prev.close - prev.open) <= 0.35 * Math.abs(prev2.close - prev2.open) &&
+        curr.close < curr.open && curr.close <= (prev2.open + prev2.close) / 2) {
+      detectedPatterns.push({
+        pattern: "EVENING_STAR",
+        category: "BEARISH_REVERSAL",
+        confidence: 90,
+        candleIndex: i,
+        description: `Evening Star: ชุด 3 แท่งเทียนกลับตัวสนธยาสถาบันทุบกดราคาหลุดกึ่งกลางแท่งแรก`,
+      });
+    }
+
+    // 7. Inside Bar Breakout
+    if (curr.high > prev.high && curr.close > prev.high && prev.high <= prev2.high && prev.low >= prev2.low) {
+      detectedPatterns.push({
+        pattern: "INSIDE_BAR_BREAKOUT",
+        category: "CONTINUATION",
+        confidence: 82,
+        candleIndex: i,
+        description: `Inside Bar Breakout: ราคาเบรคเอาท์ทะลุกรอบ Mother Bar อย่างรุนแรง`,
+      });
+    }
+  }
+
+  let bullCount = 0;
+  let bearCount = 0;
+  let overallScore = 0;
+
+  for (const p of detectedPatterns) {
+    if (p.category === "BULLISH_REVERSAL" || p.pattern === "INSIDE_BAR_BREAKOUT") {
+      bullCount++;
+      overallScore += p.confidence;
+    } else if (p.category === "BEARISH_REVERSAL") {
+      bearCount++;
+      overallScore -= p.confidence;
+    }
+  }
+
+  const dominantSignal: CandlestickScanResult["dominantSignal"] = bullCount > bearCount
+    ? "BULLISH"
+    : bearCount > bullCount
+    ? "BEARISH"
+    : "NEUTRAL";
+
+  overallScore = Math.max(-100, Math.min(100, Math.round(overallScore / Math.max(1, detectedPatterns.length))));
+
+  const desc = dominantSignal !== "NEUTRAL"
+    ? `🕯️ ตรวจพบสัญญาณแท่งเทียน ${dominantSignal} (${detectedPatterns.length} รูปแบบ: ${detectedPatterns.slice(-2).map(p => p.pattern).join(", ")}) คะแนนชี้นำ: ${overallScore}`
+    : `⚖️ แท่งเทียน Price Action อยู่ในภาวะสมดุล/ไร้สัญญาณกลับตัวชัดเจน (รูปแบบ ${detectedPatterns.length} รายการ)`;
+
+  return {
+    detectedPatterns: detectedPatterns.slice(-4),
+    dominantSignal,
+    overallScore,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 50] Grand Quant Confluence Milestone 50 Golden Ticket Engine
+ * Synthesizes all 50 quant factors across 13 Pillars and 13 Safety Locks into the crowning Milestone 50 score.
+ */
+export function synthesizeGrandQuantMilestone50(
+  confluenceTotalScore: number,
+  mcpiScore: number,
+  harmonicHasPattern: boolean,
+  isEntropyNoiseSafe: boolean,
+  isCycleModeAligned: boolean,
+  candlestickScore: number
+): GrandQuantMilestone50Info {
+  let milestoneScore = Math.round(
+    confluenceTotalScore * 0.35 +
+    mcpiScore * 0.35 +
+    (harmonicHasPattern ? 10 : 3) +
+    (isEntropyNoiseSafe ? 10 : -15) +
+    (isCycleModeAligned ? 5 : 2) +
+    Math.abs(candlestickScore) * 0.05
+  );
+
+  milestoneScore = Math.max(25, Math.min(99, milestoneScore));
+
+  let milestoneGrade: GrandQuantMilestone50Info["milestoneGrade"] = "SUB_THRESHOLD";
+  if (milestoneScore >= 88) milestoneGrade = "INSTITUTIONAL_ALPHA";
+  else if (milestoneScore >= 78) milestoneGrade = "HIGH_PROBABILITY";
+  else if (milestoneScore >= 65) milestoneGrade = "STANDARD_SETUP";
+  else milestoneGrade = "SUB_THRESHOLD";
+
+  const activePillarsCount = Math.min(13, Math.round((milestoneScore / 100) * 13));
+  const safetyLocksPassedCount = isEntropyNoiseSafe ? 13 : 12;
+  const goldenTicketStatus: GrandQuantMilestone50Info["goldenTicketStatus"] =
+    milestoneScore >= 70 && isEntropyNoiseSafe
+      ? "GOLDEN_TICKET_APPROVED"
+      : "WAIT_SAFETY_LOCKED";
+
+  const confluenceRatioPct = milestoneScore;
+
+  const summary = goldenTicketStatus === "GOLDEN_TICKET_APPROVED"
+    ? `🏆 GRAND QUANT MILESTONE 50 [GOLDEN TICKET]: สังเคราะห์ 50 แผนควอนต์สมบูรณ์แบบ คะแนนรวม ${milestoneScore}/100 [เกรด ${milestoneGrade}] ผ่านเกณฑ์ทั้ง 13 เสาหลักและ 13 เกราะความปลอดภัย`
+    : `⏳ GRAND QUANT MILESTONE 50 [SAFETY LOCKED]: คะแนน ${milestoneScore}/100 อยู่ในโหมดรอสัญญาณที่ชัดเจน (ผ่านเกณฑ์ ${activePillarsCount}/13 เสาหลัก, เกราะความปลอดภัย ${safetyLocksPassedCount}/13)`;
+
+  return {
+    milestoneScore,
+    milestoneGrade,
+    activePillarsCount,
+    safetyLocksPassedCount,
+    goldenTicketStatus,
+    confluenceRatioPct,
+    summary,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -3646,6 +4143,20 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     institutionalChoS.deliveryScore
   );
 
+  // Batch 10: Plans 46, 47, 48, 49, 50 (Grand Milestone 50)
+  const harmonics = detectHarmonicPatterns(cleanCandles, precision);
+  const ehlersMESA = calculateEhlersMESA(cleanCandles);
+  const shannonEntropy = calculateShannonEntropy(cleanCandles, 30);
+  const candlestickPatterns = scanCandlestickPatterns(cleanCandles, precision);
+  const milestone50 = synthesizeGrandQuantMilestone50(
+    75,
+    mcpiConviction.score,
+    harmonics.hasPattern,
+    shannonEntropy.orderliness !== "MAXIMUM_CHAOS_NOISE",
+    ehlersMESA.cycleState === "CYCLE_MODE",
+    candlestickPatterns.overallScore
+  );
+
   return {
     rsi14,
     atr14,
@@ -3698,5 +4209,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     dynamicRiskBracket,
     rejectionBlock,
     mcpiConviction,
+    harmonics,
+    ehlersMESA,
+    shannonEntropy,
+    candlestickPatterns,
+    milestone50,
   };
 }

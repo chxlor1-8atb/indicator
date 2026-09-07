@@ -40,6 +40,11 @@ import {
   DynamicRiskBracketInfo,
   RejectionBlockInfo,
   MCPIConvictionInfo,
+  HarmonicScanResult,
+  EhlersMESAInfo,
+  ShannonEntropyInfo,
+  CandlestickScanResult,
+  GrandQuantMilestone50Info,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -83,6 +88,11 @@ import {
   calculateDynamicRiskBracket,
   calculateRejectionBlocks,
   calculateUnifiedMCPI,
+  detectHarmonicPatterns,
+  calculateEhlersMESA,
+  calculateShannonEntropy,
+  scanCandlestickPatterns,
+  synthesizeGrandQuantMilestone50,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -301,6 +311,12 @@ export function generateRuleBasedAnalysis(
   const institutionalChoS = indicators.institutionalChoS || calculateInstitutionalChoS(candles);
   const rejectionBlock = indicators.rejectionBlock || calculateRejectionBlocks(candles, precision);
 
+  // ─── BATCH 10 PRE-COMPUTATIONS (PLANS 46-50) ───
+  const harmonics = indicators.harmonics || detectHarmonicPatterns(candles, precision);
+  const ehlersMESA = indicators.ehlersMESA || calculateEhlersMESA(candles);
+  const shannonEntropy = indicators.shannonEntropy || calculateShannonEntropy(candles, 30);
+  const candlestickPatterns = indicators.candlestickPatterns || scanCandlestickPatterns(candles, precision);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -406,6 +422,12 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 40);
   }
+  // SAFETY LOCK 13: Shannon Entropy Noise Shield (Chaos vs Orderliness) [แผน 48]
+  else if (shannonEntropy.orderliness === "MAXIMUM_CHAOS_NOISE") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -419,6 +441,9 @@ export function generateRuleBasedAnalysis(
     if (footprintAbsorption.isInstitutionalAbsorption && footprintAbsorption.bias === "BULLISH") confidence = Math.min(98, confidence + 5);
     if (mtfStructureMatrix.overallAlignment === "FULL_BULLISH_CONFLUENCE") confidence = Math.min(98, confidence + 5);
     if (institutionalChoS.deliveryState === "EXPANSION_DELIVERY") confidence = Math.min(98, confidence + 5);
+    if (harmonics.hasPattern && harmonics.bestPattern?.type === "BULLISH") confidence = Math.min(98, confidence + 5);
+    if (ehlersMESA.cycleState === "CYCLE_MODE") confidence = Math.min(98, confidence + 4);
+    if (candlestickPatterns.dominantSignal === "BULLISH") confidence = Math.min(98, confidence + 4);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -432,6 +457,9 @@ export function generateRuleBasedAnalysis(
     if (footprintAbsorption.isInstitutionalAbsorption && footprintAbsorption.bias === "BEARISH") confidence = Math.min(98, confidence + 5);
     if (mtfStructureMatrix.overallAlignment === "FULL_BEARISH_CONFLUENCE") confidence = Math.min(98, confidence + 5);
     if (institutionalChoS.deliveryState === "EXPANSION_DELIVERY") confidence = Math.min(98, confidence + 5);
+    if (harmonics.hasPattern && harmonics.bestPattern?.type === "BEARISH") confidence = Math.min(98, confidence + 5);
+    if (ehlersMESA.cycleState === "CYCLE_MODE") confidence = Math.min(98, confidence + 4);
+    if (candlestickPatterns.dominantSignal === "BEARISH") confidence = Math.min(98, confidence + 4);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -494,6 +522,13 @@ export function generateRuleBasedAnalysis(
     if (rejectionBlock.nearestBlock && rejectionBlock.nearestBlock.type === "BULLISH_REJECTION_BLOCK" && rejectionBlock.nearestBlock.low < pendingPrice) {
       stopLoss = Number(Math.min(stopLoss, rejectionBlock.nearestBlock.low - currentATR * 0.1).toFixed(precision));
     }
+    // [แผน 46] Harmonic PRZ Alignment
+    if (harmonics.hasPattern && harmonics.bestPattern && harmonics.bestPattern.type === "BULLISH") {
+      entryZone = harmonics.bestPattern.prz;
+      pendingPrice = harmonics.bestPattern.points.D.price;
+      takeProfit1 = harmonics.bestPattern.targetTP1;
+      takeProfit2 = harmonics.bestPattern.targetTP2;
+    }
     riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / risk).toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
@@ -523,6 +558,13 @@ export function generateRuleBasedAnalysis(
     // [แผน 44] Rejection Block High Protection
     if (rejectionBlock.nearestBlock && rejectionBlock.nearestBlock.type === "BEARISH_REJECTION_BLOCK" && rejectionBlock.nearestBlock.high > pendingPrice) {
       stopLoss = Number(Math.max(stopLoss, rejectionBlock.nearestBlock.high + currentATR * 0.1).toFixed(precision));
+    }
+    // [แผน 46] Harmonic PRZ (Potential Reversal Zone) Alignment
+    if (harmonics.hasPattern && harmonics.bestPattern && harmonics.bestPattern.type === "BEARISH") {
+      entryZone = harmonics.bestPattern.prz;
+      pendingPrice = harmonics.bestPattern.points.D.price;
+      takeProfit1 = harmonics.bestPattern.targetTP1;
+      takeProfit2 = harmonics.bestPattern.targetTP2;
     }
     riskRewardRatio = `1:${((pendingPrice - takeProfit2) / risk).toFixed(1)}`;
   }
@@ -585,6 +627,16 @@ export function generateRuleBasedAnalysis(
     institutionalChoS.deliveryScore
   );
 
+  // ─── BATCH 10: MILESTONE 50 SYNTHESIS (PLANS 46-50) ───
+  const milestone50 = indicators.milestone50 || synthesizeGrandQuantMilestone50(
+    masterConfluence.totalScore,
+    mcpiConviction.score,
+    harmonics.hasPattern,
+    shannonEntropy.orderliness !== "MAXIMUM_CHAOS_NOISE",
+    ehlersMESA.cycleState === "CYCLE_MODE",
+    candlestickPatterns.overallScore
+  );
+
   // SAFETY LOCK 12 (part b): MCPI Conviction Gating (Block if MCPI < 70 or Inducement Trap active)
   if (!mcpiConviction.isApprovedForExecution && (signal === "BUY" || signal === "SELL" || signal === "STRONG_BUY" || signal === "STRONG_SELL")) {
     signal = "WAIT";
@@ -592,7 +644,7 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 50);
   }
 
-  // 8-Point Confluence Checklist with News Shield, Order Flow, Volume Profile & Anchored VWAP
+  // 13-Point Confluence Checklist with News Shield, Order Flow, Volume Profile, Anchored VWAP, & Harmonics
   const confluenceChecklist: ConfluenceCheckItem[] = [
     {
       name: `Pillar 1: Trend & Regime (${regimeInfo.title})`,
@@ -662,6 +714,11 @@ export function generateRuleBasedAnalysis(
       passed: mcpiConviction.isApprovedForExecution && !liquidityInducement.isInducementTrap,
       note: `${mcpiConviction.description} • Inducement: ${liquidityInducement.trapType}`,
     },
+    {
+      name: `Pillar 13: Harmonics & DSP State (${ehlersMESA.cycleState} | Entropy: ${shannonEntropy.normalizedEntropy})`,
+      passed: harmonics.hasPattern || (ehlersMESA.cycleState === "TREND_MODE" && shannonEntropy.orderliness !== "MAXIMUM_CHAOS_NOISE"),
+      note: `${ehlersMESA.description} • ${shannonEntropy.description} • Harmonics: ${harmonics.hasPattern ? harmonics.bestPattern?.patternName : "None"} • Patterns: ${candlestickPatterns.dominantSignal}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -718,6 +775,11 @@ export function generateRuleBasedAnalysis(
     rejectionBlock,
     mcpiConviction,
     kellySizing,
+    harmonics,
+    ehlersMESA,
+    shannonEntropy,
+    candlestickPatterns,
+    milestone50,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -761,6 +823,11 @@ export function generateRuleBasedAnalysis(
         `Dynamic Risk Bracket: [${dynamicRiskBracket.currentRiskBracket}] แนะนำเสี่ยง ${dynamicRiskBracket.recommendedRiskPct}% (Scale ${dynamicRiskBracket.drawdownThrottleMultiplier}x)`,
         `Rejection Blocks: พบ ${rejectionBlock.blocks.length} บล็อค (Wick Ratio: ${rejectionBlock.rejectionWickRatioPct}% | Exhaustion: ${rejectionBlock.wickExhaustionScore}/100)`,
         `Unified MCPI Conviction: ${mcpiConviction.score}/100 [เกรด ${mcpiConviction.convictionTier}] (สถานะอนุมัติ: ${mcpiConviction.isApprovedForExecution ? "APPROVED" : "BLOCKED"})`,
+        `Harmonic PRZ: ${harmonics.hasPattern ? `${harmonics.bestPattern?.patternName} (${harmonics.bestPattern?.type}) PRZ: ${harmonics.bestPattern?.prz.min}-${harmonics.bestPattern?.prz.max}` : "No Active Pattern"}`,
+        `Ehlers MESA DSP: ${ehlersMESA.cycleState} (Dominant Period: ${ehlersMESA.dominantCyclePeriod} bars, Phase: ${ehlersMESA.phaseAngle}°)`,
+        `Shannon Entropy: ${shannonEntropy.normalizedEntropy} (${shannonEntropy.orderliness} - Noise: ${shannonEntropy.noisePct}%)`,
+        `Candlestick Matrix: ${candlestickPatterns.dominantSignal} (${candlestickPatterns.detectedPatterns.length} Patterns found)`,
+        `Grand Milestone 50: [${milestone50.milestoneGrade}] Score: ${milestone50.milestoneScore}/100 - ${milestone50.goldenTicketStatus}`,
       ],
     },
     newsSentimentAnalysis: {
@@ -824,6 +891,11 @@ export function generateRuleBasedAnalysis(
       dynamicRiskBracket,
       rejectionBlock,
       mcpiConviction,
+      harmonics,
+      ehlersMESA,
+      shannonEntropy,
+      candlestickPatterns,
+      milestone50,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1169,6 +1241,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.rejectionBlock = ruleAnalysis.rejectionBlock;
     parsed.mcpiConviction = ruleAnalysis.mcpiConviction;
     parsed.kellySizing = ruleAnalysis.kellySizing;
+    parsed.harmonics = ruleAnalysis.harmonics;
+    parsed.ehlersMESA = ruleAnalysis.ehlersMESA;
+    parsed.shannonEntropy = ruleAnalysis.shannonEntropy;
+    parsed.candlestickPatterns = ruleAnalysis.candlestickPatterns;
+    parsed.milestone50 = ruleAnalysis.milestone50;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -1202,6 +1279,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.dynamicRiskBracket = ruleAnalysis.tradeSetup.dynamicRiskBracket;
       parsed.tradeSetup.rejectionBlock = ruleAnalysis.tradeSetup.rejectionBlock;
       parsed.tradeSetup.mcpiConviction = ruleAnalysis.tradeSetup.mcpiConviction;
+      parsed.tradeSetup.harmonics = ruleAnalysis.tradeSetup.harmonics;
+      parsed.tradeSetup.ehlersMESA = ruleAnalysis.tradeSetup.ehlersMESA;
+      parsed.tradeSetup.shannonEntropy = ruleAnalysis.tradeSetup.shannonEntropy;
+      parsed.tradeSetup.candlestickPatterns = ruleAnalysis.tradeSetup.candlestickPatterns;
+      parsed.tradeSetup.milestone50 = ruleAnalysis.tradeSetup.milestone50;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

@@ -112,6 +112,11 @@ export default function AnalysisCard({
     const drb = analysis.tradeSetup.dynamicRiskBracket || analysis.dynamicRiskBracket;
     const rej = analysis.tradeSetup.rejectionBlock || analysis.rejectionBlock;
     const mcpi = analysis.tradeSetup.mcpiConviction || analysis.mcpiConviction;
+    const harm = analysis.tradeSetup.harmonics || analysis.harmonics;
+    const mesa = analysis.tradeSetup.ehlersMESA || analysis.ehlersMESA;
+    const ent = analysis.tradeSetup.shannonEntropy || analysis.shannonEntropy;
+    const cs = analysis.tradeSetup.candlestickPatterns || analysis.candlestickPatterns;
+    const m50 = analysis.tradeSetup.milestone50 || analysis.milestone50;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -120,6 +125,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (harm && harm.hasPattern && harm.bestPattern ? `• 📐 Harmonic Pattern: ${harm.bestPattern.patternName} (${harm.bestPattern.type}) | PRZ: ${harm.bestPattern.prz.min}-${harm.bestPattern.prz.max} | TP1: ${harm.bestPattern.targetTP1}\n` : "") +
+      (mesa ? `• 📡 Ehlers MESA DSP: ${mesa.cycleState} (Dominant Period: ${mesa.dominantCyclePeriod} bars | Phase: ${mesa.phaseAngle}°)\n` : "") +
+      (ent ? `• 🎲 Shannon Entropy: ${ent.normalizedEntropy} (${ent.orderliness} | Noise: ${ent.noisePct}% | Lock 13: ${ent.safetyLock13Passed ? "PASSED" : "BLOCKED"})\n` : "") +
+      (cs && cs.detectedPatterns && cs.detectedPatterns.length > 0 ? `• 🕯️ Candlestick Matrix: ${cs.dominantSignal} (${cs.detectedPatterns.map(m => m.pattern).join(", ")})\n` : "") +
+      (m50 ? `• 🏛️ Milestone 50 Golden Ticket: [${m50.milestoneGrade}] Score ${m50.milestoneScore}/100 - ${m50.goldenTicketStatus} (ผ่าน ${m50.activePillarsCount}/13 เสาหลัก, ${m50.safetyLocksPassedCount}/13 Safety Locks)\n` : "") +
       (fvg && fvg.recommendedEntryLimit ? `• FVG C.E. 50%: ${fvg.recommendedEntryLimit} (${fvg.bias} | Unmitigated: ${fvg.unmitigatedCount})\n` : "") +
       (mss && mss.detected ? `• Market Structure Shift: ${mss.type} (Displacement: ${mss.displacementMultiplier}x ATR - ${mss.displacementVelocity})\n` : "") +
       (pd ? `• Premium/Discount: ${pd.percentile}% (${pd.zone} | Equilibrium: ${pd.equilibrium})\n` : "") +
@@ -2437,6 +2447,245 @@ export default function AnalysisCard({
 
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.mcpiConviction.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5j. 🏛️ Grand Quant Milestone 50: Harmonics, DSP Cycles, Entropy & Pattern Matrix (Plans 46-50) */}
+      {(analysis.harmonics || analysis.ehlersMESA || analysis.shannonEntropy || analysis.candlestickPatterns || analysis.milestone50) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-purple-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                <Award className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Grand Quant Milestone 50: Harmonics, DSP Cycles, Entropy & Pattern Matrix (แผน 46-50)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500/20 to-amber-500/20 text-amber-300 border border-amber-500/30">
+                    🏛️ 50-Point Institutional Golden Ticket
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  เครื่องยนต์ตรวจจับแพทเทิร์นฮาร์โมนิก PRZ, วิเคราะห์คลื่นวงจรสถิติ Ehlers MESA DSP, เกราะกรองสัญญาณรบกวน Shannon Entropy, แท่งเทียน Price Action Matrix และบทสรุป 50 ยุทธวิธีควอนท์
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Harmonic PRZ Pattern Engine (Plan 46) */}
+            {analysis.harmonics && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📐 Harmonic PRZ Patterns</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.harmonics.hasPattern
+                      ? analysis.harmonics.bestPattern?.type === "BULLISH"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                        : "bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold"
+                      : "bg-surface-50 text-slate-400 border border-slate-700"
+                  }`}>
+                    {analysis.harmonics.hasPattern ? `${analysis.harmonics.bestPattern?.type} PATTERN` : "SCANNING"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">แพทเทิร์นเด่น:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {analysis.harmonics.bestPattern?.patternName ?? "None"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">โซนกลับตัว PRZ:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.harmonics.bestPattern?.prz ? `${analysis.harmonics.bestPattern.prz.min} - ${analysis.harmonics.bestPattern.prz.max}` : "N/A"}
+                    </span>
+                  </div>
+                  {analysis.harmonics.bestPattern && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">เป้าหมาย TP1 / TP2:</span>
+                        <span className="font-mono text-emerald-300 text-[10px]">
+                          {analysis.harmonics.bestPattern.targetTP1} / {analysis.harmonics.bestPattern.targetTP2}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Invalidation SL:</span>
+                        <span className="font-mono text-rose-300 text-[10px]">
+                          {analysis.harmonics.bestPattern.invalidationSL} (ความสมบูรณ์ {analysis.harmonics.bestPattern.confluenceScore}%)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.harmonics.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Ehlers MESA DSP Dominant Cycle (Plan 47) */}
+            {analysis.ehlersMESA && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📡 Ehlers MESA DSP Cycle</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.ehlersMESA.cycleState === "CYCLE_MODE"
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold"
+                      : "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                  }`}>
+                    {analysis.ehlersMESA.cycleState}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">รอบคลื่นหลัก (Dominant):</span>
+                    <span className="font-mono font-bold text-white">
+                      {analysis.ehlersMESA.dominantCyclePeriod} แท่งเทียน
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Phase Angle:</span>
+                    <span className="font-mono text-indigo-300 font-bold">
+                      {analysis.ehlersMESA.phaseAngle}° ({analysis.ehlersMESA.isCycleTurning ? "⚡ Turning Point" : "Steady"})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">InPhase / Quadrature:</span>
+                    <span className="font-mono text-slate-300 text-[10px]">
+                      {analysis.ehlersMESA.inPhase} / {analysis.ehlersMESA.quadrature}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.ehlersMESA.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Shannon Entropy & Statistical Noise Filter (Plan 48 & Safety Lock 13) */}
+            {analysis.shannonEntropy && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🎲 Shannon Entropy Shield</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.shannonEntropy.safetyLock13Passed
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold animate-pulse"
+                  }`}>
+                    {analysis.shannonEntropy.safetyLock13Passed ? "🛡️ LOCK 13 PASS" : "⛔ NOISE BLOCKED"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Entropy ความโกลาหล:</span>
+                    <span className={`font-mono font-bold ${
+                      analysis.shannonEntropy.normalizedEntropy >= 0.8
+                        ? "text-rose-400"
+                        : analysis.shannonEntropy.normalizedEntropy <= 0.4
+                        ? "text-emerald-400"
+                        : "text-amber-300"
+                    }`}>
+                      {analysis.shannonEntropy.normalizedEntropy} ({analysis.shannonEntropy.orderliness})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">สัดส่วน Noise ตลาด:</span>
+                    <span className="font-mono text-slate-300">
+                      {analysis.shannonEntropy.noisePct ?? 50}% (สัญญาณแท้ {100 - (analysis.shannonEntropy.noisePct ?? 50)}%)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">สถานะระเบียบของราคา:</span>
+                    <span className="font-mono text-cyan-300 text-[10px]">
+                      {analysis.shannonEntropy.orderliness === "HIGHLY_ORDERED_TREND"
+                        ? "ระเบียบสูง (เทรนด์คม)"
+                        : analysis.shannonEntropy.orderliness === "MODERATE_ENTROPY"
+                        ? "โครงสร้างปานกลาง"
+                        : "สัญญาณรบกวนหนาแน่น"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.shannonEntropy.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Candlestick Matrix & Grand Milestone 50 Golden Ticket (Plan 49 & 50) */}
+            {(analysis.candlestickPatterns || analysis.milestone50) && (
+              <div className="p-3 rounded-xl bg-gradient-to-br from-surface-100 via-surface-100/90 to-purple-950/20 border border-purple-500/40 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🕯️ Candlesticks & Milestone 50</span>
+                  {analysis.milestone50 && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.milestone50.goldenTicketStatus === "GOLDEN_TICKET_APPROVED"
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/50 glow-gold"
+                        : "bg-surface-50 text-slate-400 border border-slate-700"
+                    }`}>
+                      {analysis.milestone50.goldenTicketStatus === "GOLDEN_TICKET_APPROVED" ? "🏆 GOLDEN TICKET" : analysis.milestone50.goldenTicketStatus}
+                    </span>
+                  )}
+                </div>
+
+                {/* Big Score Display */}
+                {analysis.milestone50 && (
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-surface-50 border border-purple-500/30">
+                    <div className="text-center flex-1">
+                      <span className="text-[10px] text-slate-400 block">Milestone Score</span>
+                      <span className="text-lg font-black font-mono text-amber-300">
+                        {analysis.milestone50.milestoneScore} <span className="text-xs font-normal text-slate-400">/ 100</span>
+                      </span>
+                    </div>
+                    <div className="text-center flex-1 border-l border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">เกรด 50 ปัจจัย</span>
+                      <span className="text-sm font-black font-mono text-purple-300">
+                        {analysis.milestone50.milestoneGrade}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Candlestick & Locks detail */}
+                <div className="space-y-1 text-xs">
+                  {analysis.candlestickPatterns && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Candlestick Signal:</span>
+                      <span className={`font-mono font-bold text-[10px] ${
+                        analysis.candlestickPatterns.dominantSignal.includes("BULLISH")
+                          ? "text-emerald-400"
+                          : analysis.candlestickPatterns.dominantSignal.includes("BEARISH")
+                          ? "text-rose-400"
+                          : "text-slate-300"
+                      }`}>
+                        {analysis.candlestickPatterns.dominantSignal} ({analysis.candlestickPatterns.detectedPatterns.length} รูปแบบ)
+                      </span>
+                    </div>
+                  )}
+                  {analysis.milestone50 && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Confluence Pillars:</span>
+                        <span className="font-mono text-emerald-300 font-bold">
+                          {analysis.milestone50.activePillarsCount} / 13 เสาหลัก
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Safety Locks ผ่าน:</span>
+                        <span className="font-mono text-cyan-300 font-bold">
+                          {analysis.milestone50.safetyLocksPassedCount} / 13 ตัวล็อค
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.milestone50?.summary || analysis.candlestickPatterns?.description}
                 </p>
               </div>
             )}

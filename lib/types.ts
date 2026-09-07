@@ -656,6 +656,11 @@ export interface IndicatorData {
   dynamicRiskBracket?: DynamicRiskBracketInfo;
   rejectionBlock?: RejectionBlockInfo;
   mcpiConviction?: MCPIConvictionInfo;
+  harmonics?: HarmonicScanResult;
+  ehlersMESA?: EhlersMESAInfo;
+  shannonEntropy?: ShannonEntropyInfo;
+  candlestickPatterns?: CandlestickScanResult;
+  milestone50?: GrandQuantMilestone50Info;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -782,6 +787,11 @@ export interface AnalysisResult {
   dynamicRiskBracket?: DynamicRiskBracketInfo;
   rejectionBlock?: RejectionBlockInfo;
   mcpiConviction?: MCPIConvictionInfo;
+  harmonics?: HarmonicScanResult;
+  ehlersMESA?: EhlersMESAInfo;
+  shannonEntropy?: ShannonEntropyInfo;
+  candlestickPatterns?: CandlestickScanResult;
+  milestone50?: GrandQuantMilestone50Info;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -850,6 +860,11 @@ export interface AnalysisResult {
     dynamicRiskBracket?: DynamicRiskBracketInfo;
     rejectionBlock?: RejectionBlockInfo;
     mcpiConviction?: MCPIConvictionInfo;
+    harmonics?: HarmonicScanResult;
+    ehlersMESA?: EhlersMESAInfo;
+    shannonEntropy?: ShannonEntropyInfo;
+    candlestickPatterns?: CandlestickScanResult;
+    milestone50?: GrandQuantMilestone50Info;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1123,6 +1138,9 @@ export interface ShannonEntropyInfo {
   entropy: number; // bits
   normalizedEntropy: number; // 0 - 1
   orderliness: "HIGHLY_ORDERED_TREND" | "MODERATE_ENTROPY" | "MAXIMUM_CHAOS_NOISE";
+  noisePct?: number;
+  description?: string;
+  safetyLock13Passed?: boolean;
 }
 
 export interface HalfLifeInfo {
@@ -1136,6 +1154,18 @@ export interface EhlersMESAInfo {
   quadrature: number;
   phaseAngle: number;
   cycleState: "CYCLE_MODE" | "TREND_MODE";
+  isCycleTurning?: boolean;
+  description?: string;
+}
+
+export interface GrandQuantMilestone50Info {
+  milestoneScore: number; // 0 to 100
+  milestoneGrade: "INSTITUTIONAL_ALPHA" | "HIGH_PROBABILITY" | "STANDARD_SETUP" | "SUB_THRESHOLD";
+  activePillarsCount: number; // out of 13
+  safetyLocksPassedCount: number; // out of 13
+  goldenTicketStatus: "GOLDEN_TICKET_APPROVED" | "WAIT_SAFETY_LOCKED";
+  confluenceRatioPct: number;
+  summary: string;
 }
 
 export interface HarmonicPatternMatch {
@@ -1159,6 +1189,7 @@ export interface HarmonicScanResult {
   hasPattern: boolean;
   patterns: HarmonicPatternMatch[];
   bestPattern: HarmonicPatternMatch | null;
+  description?: string;
 }
 
 export interface CandlestickPatternMatch {
@@ -1191,6 +1222,7 @@ export interface CandlestickScanResult {
   detectedPatterns: CandlestickPatternMatch[];
   dominantSignal: "BULLISH" | "BEARISH" | "NEUTRAL";
   overallScore: number; // -100 to +100
+  description?: string;
 }
 
 export interface MasterIndicatorSuite {
