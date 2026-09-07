@@ -5789,7 +5789,7 @@ export function synthesizeGrandQuantMilestone75(
   efiTrend: number,
   rvi: number,
   mdTrend: "BULLISH" | "BEARISH",
-  activePillarsCount = 18
+  activePillarsCount = 20
 ): Milestone75QuantFusionInfo {
   // Safety Lock 18: blocks if market has extreme chaotic fractal dimension (D >= 1.80) while force contradicts trend
   const isForceContradicting = (mdTrend === "BULLISH" && efiTrend < 0) || (mdTrend === "BEARISH" && efiTrend > 0);
@@ -5814,13 +5814,13 @@ export function synthesizeGrandQuantMilestone75(
     : milestoneScore >= 55 ? "STANDARD"
     : "CAUTION_FRACTAL";
 
-  const safetyLocksPassedCount = safetyLock18Passed ? 18 : 17;
+  const safetyLocksPassedCount = safetyLock18Passed ? 20 : 19;
 
   const desc = !safetyLock18Passed
     ? `🛡️ Safety Lock 18 [ACTIVATED]: มิติแฟร็กทัลอลหม่านรุนแรง (D: ${framaD} >= 1.80) สวนทางกับพลังงานจลน์สถาบัน EFI ระงับการเข้าเทรดฉุกเฉิน`
     : phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED"
-    ? `🏆 Grand Milestone 75 [PHASE 3 COMPLETE]: คะแนนรวม ${milestoneScore}/100 ผ่าน 18 เสาหลักสถาบัน ผสานมิติแฟร็กทัล พลังงานจลน์ และความผันผวนสมบูรณ์แบบ`
-    : `🏛️ Grand Milestone 75 สถานะสะสมพลัง (คะแนน: ${milestoneScore}/100 | มิติ D: ${framaD} | RVI: ${rvi}% | ผ่าน Lock 18)`;
+    ? `🏆 Grand Milestone 75 [PHASE 3 COMPLETE]: คะแนนรวม ${milestoneScore}/100 ผ่าน 20 เสาหลักสถาบัน ผสานมิติแฟร็กทัล พลังงานจลน์ และความผันผวนสมบูรณ์แบบ`
+    : `🏛️ Grand Milestone 75 สถานะสะสมพลัง (คะแนน: ${milestoneScore}/100 | มิติ D: ${framaD} | RVI: ${rvi}% | ผ่าน 20 Safety Locks)`;
 
   return {
     milestoneScore,
@@ -5999,7 +5999,7 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     elderForce.efiTrend,
     rvi.rvi,
     mcginley.trendState,
-    18
+    20
   );
 
   return {

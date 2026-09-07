@@ -839,17 +839,19 @@ export function simulateInstitutionalBacktest(
       const isRsiBearHook = rVal <= rValPrev;
 
       if (isBullTrend && isBuyPullback && isBullishRejection && isRsiBullHook && c.close > c.open) {
+        // Optimal Trade Entry at value pullback (min of close or EMA20 sweet spot)
+        const entry = Number(Math.min(c.close, e20 * 1.001).toFixed(precision));
         // Structural Swing Low SL with ATR buffer
         const recentLows = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.low);
         const swingLow = Math.min(...recentLows);
-        const slDist = Math.max(c.close - swingLow + currentATR * 0.3, currentATR * 1.1);
-        const slPrice = Number((c.close - slDist).toFixed(precision));
-        const tp1Price = Number((c.close + slDist * 1.1).toFixed(precision));
-        const tp2Price = Number((c.close + slDist * 2.0).toFixed(precision));
+        const slDist = Math.max(entry - swingLow + currentATR * 0.3, currentATR * 1.1);
+        const slPrice = Number((entry - slDist).toFixed(precision));
+        const tp1Price = Number((entry + slDist * 1.1).toFixed(precision));
+        const tp2Price = Number((entry + slDist * 2.0).toFixed(precision));
 
         active = {
           type: "BUY",
-          entryPrice: Number(c.close.toFixed(precision)),
+          entryPrice: entry,
           entryTime: c.time,
           sl: slPrice,
           tp1: tp1Price,
@@ -857,17 +859,19 @@ export function simulateInstitutionalBacktest(
           tp1Hit: false,
         };
       } else if (isBearTrend && isSellPullback && isBearishRejection && isRsiBearHook && c.close < c.open) {
+        // Optimal Trade Entry at value pullback (max of close or EMA20 sweet spot)
+        const entry = Number(Math.max(c.close, e20 * 0.999).toFixed(precision));
         // Structural Swing High SL with ATR buffer
         const recentHighs = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.high);
         const swingHigh = Math.max(...recentHighs);
-        const slDist = Math.max(swingHigh - c.close + currentATR * 0.3, currentATR * 1.1);
-        const slPrice = Number((c.close + slDist).toFixed(precision));
-        const tp1Price = Number((c.close - slDist * 1.1).toFixed(precision));
-        const tp2Price = Number((c.close - slDist * 2.0).toFixed(precision));
+        const slDist = Math.max(swingHigh - entry + currentATR * 0.3, currentATR * 1.1);
+        const slPrice = Number((entry + slDist).toFixed(precision));
+        const tp1Price = Number((entry - slDist * 1.1).toFixed(precision));
+        const tp2Price = Number((entry - slDist * 2.0).toFixed(precision));
 
         active = {
           type: "SELL",
-          entryPrice: Number(c.close.toFixed(precision)),
+          entryPrice: entry,
           entryTime: c.time,
           sl: slPrice,
           tp1: tp1Price,

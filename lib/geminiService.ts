@@ -427,7 +427,7 @@ export function generateRuleBasedAnalysis(
     elderForce.efiTrend,
     rvi.rvi,
     mcginley.trendState,
-    18
+    20
   );
 
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
@@ -594,6 +594,19 @@ export function generateRuleBasedAnalysis(
     (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 22) ||
     (tier1Bias === "BULLISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) < (indicators.ema50.slice(-4)[0] ?? 0)) ||
     (tier1Bias === "BEARISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) > (indicators.ema50.slice(-4)[0] ?? 0))
+  ) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  }
+  // SAFETY LOCK 20: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
+  else if (
+    (tier1Bias === "BULLISH" && (mtfMatrix.h4 === "BEARISH" || mtfStructureMatrix.htfTrend === "BEARISH" || (mtfMatrix.alignmentScore ?? 0) <= -25)) ||
+    (tier1Bias === "BEARISH" && (mtfMatrix.h4 === "BULLISH" || mtfStructureMatrix.htfTrend === "BULLISH" || (mtfMatrix.alignmentScore ?? 0) >= 25)) ||
+    (tier1Bias === "BULLISH" && harmonics.hasPattern && harmonics.bestPattern?.type === "BEARISH") ||
+    (tier1Bias === "BEARISH" && harmonics.hasPattern && harmonics.bestPattern?.type === "BULLISH") ||
+    (tier1Bias === "BULLISH" && footprintAbsorption.vsaSignal === "NO_DEMAND") ||
+    (tier1Bias === "BEARISH" && footprintAbsorption.vsaSignal === "NO_SUPPLY")
   ) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
@@ -979,6 +992,11 @@ export function generateRuleBasedAnalysis(
       passed: (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) >= 22) ?? true,
       note: `กรองสภาวะตลาดไร้แนวโน้ม ป้องกันการออกออเดอร์ในกรอบ Sideways (ADX >= 22 และ EMA50 Slope สอดคล้องทิศทางเทรนด์)`,
     },
+    {
+      name: `Pillar 20: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
+      passed: !isCounterTrend && !mtfStructureMatrix.isHTFConflict && !(harmonics.hasPattern && ((tradeAction === "BUY" && harmonics.bestPattern?.type === "BEARISH") || (tradeAction === "SELL" && harmonics.bestPattern?.type === "BULLISH"))),
+      note: `Macro HTF Alignment: ${mtfMatrix.h4}/${mtfMatrix.d1} (Score: ${mtfMatrix.alignmentScore}%) • Harmonic PRZ Guard: ${harmonics.hasPattern ? `${harmonics.bestPattern?.patternName} (${harmonics.bestPattern?.type})` : "Clear"} • VSA: ${footprintAbsorption.vsaSignal}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -1157,9 +1175,9 @@ export function generateRuleBasedAnalysis(
     tradeSetup: {
       action: tradeAction,
       orderType: tradeAction === "BUY"
-        ? "BUY_LIMIT"
+        ? (currentPrice > pendingPrice || Math.abs(currentPrice - pendingPrice) >= currentATR * 0.25 ? "BUY_LIMIT" : "MARKET_EXECUTION")
         : tradeAction === "SELL"
-        ? "SELL_LIMIT"
+        ? (currentPrice < pendingPrice || Math.abs(currentPrice - pendingPrice) >= currentATR * 0.25 ? "SELL_LIMIT" : "MARKET_EXECUTION")
         : "WAIT_NO_ORDER",
       pendingPrice,
       entryZone,

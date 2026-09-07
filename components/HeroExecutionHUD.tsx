@@ -165,6 +165,8 @@ export default function HeroExecutionHUD({
               ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 glow-green"
               : ts.orderType === "SELL_LIMIT"
               ? "bg-rose-500/20 text-rose-300 border-rose-500/50 glow-red"
+              : ts.orderType === "MARKET_EXECUTION"
+              ? (isBuy ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 glow-green" : "bg-rose-500/20 text-rose-300 border-rose-500/50 glow-red")
               : ts.orderType === "BUY_STOP"
               ? "bg-sky-500/20 text-sky-300 border-sky-500/50"
               : ts.orderType === "SELL_STOP"
@@ -172,9 +174,11 @@ export default function HeroExecutionHUD({
               : "bg-surface-50 text-slate-400 border-slate-700"
           }`}>
             {ts.orderType === "BUY_LIMIT"
-              ? "🟢 BUY LIMIT (ตั้งรับซื้อของถูก)"
+              ? "🟢 BUY LIMIT (ตั้งรับซื้อโซน OTE)"
               : ts.orderType === "SELL_LIMIT"
-              ? "🔴 SELL LIMIT (ตั้งรอขายราคาสูง)"
+              ? "🔴 SELL LIMIT (ตั้งรอขายโซน OTE)"
+              : ts.orderType === "MARKET_EXECUTION"
+              ? (isBuy ? "⚡ MARKET BUY (เข้าทันทีที่ราคาตลาด)" : "⚡ MARKET SELL (เข้าทันทีที่ราคาตลาด)")
               : ts.orderType === "BUY_STOP"
               ? "🚀 BUY STOP (ดักซื้อเมื่อทะลุ)"
               : ts.orderType === "SELL_STOP"

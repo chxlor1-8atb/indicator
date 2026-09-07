@@ -58,6 +58,12 @@ export function evaluateMasterConfluence(
   const isADXStrong = lastADX >= 22; // Confirms trend is genuine and not choppy sideways
   const isAboveVWAP = lastVWAP ? currentPrice >= lastVWAP.vwap : true;
 
+  // Multi-Timeframe Ribbon Convergence (H1 + H4 + D1)
+  const mtf = indicators.mtfStructureMatrix;
+  const lastEMA20 = indicators.ema20?.slice(-1)[0] ?? currentPrice;
+  const isEmaRibbonBull = currentPrice > lastEMA20 && lastEMA20 > lastEMA50 && lastEMA50 > lastEMA200;
+  const isEmaRibbonBear = currentPrice < lastEMA20 && lastEMA20 < lastEMA50 && lastEMA50 < lastEMA200;
+
   if (bias === "BULLISH") {
     if (stDirection === "UP") p1Score += 7;
     if (currentPrice > lastEMA200) p1Score += 5;
@@ -66,6 +72,11 @@ export function evaluateMasterConfluence(
     else p1Score -= 4; // Penalty if slope is falling against BUY
     if (isAboveVWAP) p1Score += 2; // [แผน 2] VWAP confirmation
     if (lastHA && lastHA.isUp && lastHA.hasNoLowerWick) p1Score += 2; // [แผน 1] Strong Bullish Heikin-Ashi
+    if (isEmaRibbonBull) p1Score += 3; // Triple EMA Ribbon stacked bull
+    if (mtf) {
+      if (mtf.htfTrend === "BULLISH" || mtf.overallAlignment === "FULL_BULLISH_CONFLUENCE") p1Score += 4;
+      if (mtf.isHTFConflict || mtf.htfTrend === "BEARISH") p1Score -= 6;
+    }
   } else if (bias === "BEARISH") {
     if (stDirection === "DOWN") p1Score += 7;
     if (currentPrice < lastEMA200) p1Score += 5;
@@ -74,13 +85,18 @@ export function evaluateMasterConfluence(
     else p1Score -= 4; // Penalty if slope is rising against SELL
     if (!isAboveVWAP) p1Score += 2; // [แผน 2] VWAP confirmation
     if (lastHA && !lastHA.isUp && lastHA.hasNoUpperWick) p1Score += 2; // [แผน 1] Strong Bearish Heikin-Ashi
+    if (isEmaRibbonBear) p1Score += 3; // Triple EMA Ribbon stacked bear
+    if (mtf) {
+      if (mtf.htfTrend === "BEARISH" || mtf.overallAlignment === "FULL_BEARISH_CONFLUENCE") p1Score += 4;
+      if (mtf.isHTFConflict || mtf.htfTrend === "BULLISH") p1Score -= 6;
+    }
   } else {
     p1Score += 8;
   }
   p1Score = Math.max(0, p1Score);
 
   const p1Status = isADXStrong
-    ? `เทรนด์ชัดเจน (ADX ${lastADX.toFixed(1)}, SuperTrend ${stDirection}, EMA50 Slope ${bias === "BULLISH" ? (isEMA50SlopeBull ? "ชันขึ้น" : "หัวทิ่ม") : (isEMA50SlopeBear ? "กดลง" : "เงยขึ้น")})`
+    ? `เทรนด์ชัดเจน (ADX ${lastADX.toFixed(1)}, SuperTrend ${stDirection}, EMA50 Slope ${bias === "BULLISH" ? (isEMA50SlopeBull ? "ชันขึ้น" : "หัวทิ่ม") : (isEMA50SlopeBear ? "กดลง" : "เงยขึ้น")}${mtf ? `, HTF: ${mtf.htfTrend}` : ""})`
     : `ตลาดพลังอ่อนแอ/ไซด์เวย์ (ADX ${lastADX.toFixed(1)})`;
 
   // ─── PILLAR 2: MOMENTUM & CYCLES (Max 20) ───
