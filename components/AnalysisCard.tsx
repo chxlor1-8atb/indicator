@@ -45,6 +45,7 @@ import {
   Scale
 } from "lucide-react";
 import { StrategyPersonaSelector } from "./StrategyPersonaSelector";
+import HeroExecutionHUD from "./HeroExecutionHUD";
 
 interface AnalysisCardProps {
   analysis: AnalysisResult | null;
@@ -67,6 +68,7 @@ export default function AnalysisCard({
   const [customRiskPct, setCustomRiskPct] = useState<number>(2);
   const [accountType, setAccountType] = useState<"STANDARD" | "CENT">("STANDARD");
   const [activeQuantLayer, setActiveQuantLayer] = useState<1 | 2 | 3 | 4 | 5>(3);
+  const [activeCardTab, setActiveCardTab] = useState<"STRATEGY" | "DEEP_QUANT">("STRATEGY");
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -132,6 +134,11 @@ export default function AnalysisCard({
     const ao = analysis.tradeSetup.awesomeOsc || analysis.awesomeOsc;
     const tsi = analysis.tradeSetup.tsi || analysis.tsi;
     const advVol = analysis.tradeSetup.advancedVol || analysis.advancedVol;
+    const keltner = analysis.tradeSetup.keltner || analysis.keltner;
+    const donchian = analysis.tradeSetup.donchian || analysis.donchian;
+    const cvol = analysis.tradeSetup.chaikinVol || analysis.chaikinVol;
+    const ker = analysis.tradeSetup.ker || analysis.ker;
+    const vpci = analysis.tradeSetup.vpci || analysis.vpci;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -140,6 +147,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (keltner ? `• 🗂️ Keltner Bands: %B ${keltner.percentB}% | BW ${keltner.bandwidth}% (${keltner.isExpanding ? "EXPANDING" : "CONTRACTING"})\n` : "") +
+      (donchian ? `• 🐢 Donchian Turtle Breakout: ${donchian.breakoutState} (Width: ${donchian.channelWidth})\n` : "") +
+      (cvol ? `• 📊 Chaikin Volatility: CVOL ${cvol.cvol}% (${cvol.volatilityTrend})\n` : "") +
+      (ker ? `• 🎯 Kaufman KER Ratio: ${ker.efficiencyRatio} (Score: ${ker.noiseDecouplingScore} | ${ker.regime})\n` : "") +
+      (vpci ? `• ⛽ VPCI Volume Energy Shield: VPCI ${vpci.vpci} (Signal: ${vpci.vpciSignal} | ${vpci.volumeEnergyState} | Lock 17: ${vpci.safetyLock17Passed ? "PASSED" : "BLOCKED"})\n` : "") +
       (fisher ? `• 🔮 Fisher Transform: ${fisher.fisher} (Trigger: ${fisher.trigger} | Cross: ${fisher.crossSignal})\n` : "") +
       (crsi ? `• 🎯 ConnorsRSI: ${crsi.crsi} (RSI3: ${crsi.rsiClose} | StreakRSI: ${crsi.streakRSI} | Rank: ${crsi.percentRank}%)\n` : "") +
       (ao ? `• ⚡ Awesome Oscillator: ${ao.ao} (${ao.isGreen ? "GREEN" : "RED"} | Saucer: ${ao.saucerSignal})\n` : "") +
@@ -350,10 +362,64 @@ export default function AnalysisCard({
         </div>
       </div>
 
-      {/* 🛡️ ANTI-CLASH STRATEGY ORCHESTRATOR & PERSONA SELECTOR */}
-      {analysis.orchestrator && (
-        <StrategyPersonaSelector orchestrator={analysis.orchestrator} />
-      )}
+      {/* 🌟 2. HERO TRADE EXECUTION COCKPIT (แผงควบคุมการเข้าเทรดเด่นชัดที่สุด - สะดุดตาทันที) */}
+      <HeroExecutionHUD
+        analysis={analysis}
+        copiedKey={copiedKey}
+        onCopy={copyToClipboard}
+        customBalance={customBalance}
+        setCustomBalance={setCustomBalance}
+        customRiskPct={customRiskPct}
+        setCustomRiskPct={setCustomRiskPct}
+        accountType={accountType}
+        setAccountType={setAccountType}
+      />
+
+      {/* ─── 3. MODULAR WORKSPACE TABS (บีบรวม UI ให้กระชับ ไม่รก ทำงานเบื้องหลัง) ─── */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5 pt-1">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveCardTab("STRATEGY")}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeCardTab === "STRATEGY"
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                : "bg-surface-50 text-slate-400 hover:text-slate-200 border border-slate-800"
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>กลยุทธ์ & เกราะป้องกันข่าว (Strategy & Shield)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveCardTab("DEEP_QUANT")}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeCardTab === "DEEP_QUANT"
+                ? "bg-purple-600 text-white shadow-md shadow-purple-500/25"
+                : "bg-surface-50 text-slate-400 hover:text-slate-200 border border-slate-800"
+            }`}
+          >
+            <Cpu className="w-4 h-4" />
+            <span>คลังอินดิเคเตอร์ 70 ตัวเชิงลึก (Deep Quant Lab)</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
+              รันในพื้นหลัง
+            </span>
+          </button>
+        </div>
+
+        <span className="text-[11px] text-slate-500 hidden md:inline font-medium">
+          {activeCardTab === "STRATEGY"
+            ? "🛡️ คัดกรองกลยุทธ์ & ป้องกันสัญญาณตีกัน"
+            : "⚡ คำนวณเบื้องหลัง 70 เครื่องมือแบบเรียลไทม์"}
+        </span>
+      </div>
+
+      {/* ─── TAB 1: STRATEGY & MACRO SHIELD ─── */}
+      {activeCardTab === "STRATEGY" && (
+        <div className="space-y-5 animate-fadeIn">
+          {/* 🛡️ ANTI-CLASH STRATEGY ORCHESTRATOR & PERSONA SELECTOR */}
+          {analysis.orchestrator && (
+            <StrategyPersonaSelector orchestrator={analysis.orchestrator} />
+          )}
 
       {/* 2. 📅 ECONOMIC CALENDAR & RED FOLDER SHIELD (กล่องแดง เหลือง เทา) */}
       {cal && (
@@ -821,6 +887,23 @@ export default function AnalysisCard({
           )}
         </div>
       )}
+        </div>
+      )}
+
+      {/* ─── TAB 2: DEEP QUANT LAB (65 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
+      {activeCardTab === "DEEP_QUANT" && (
+        <div className="space-y-5 animate-fadeIn">
+          <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-purple-200">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+              <span>
+                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 65 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
+              </span>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+              65 Pillars Active (รันในพื้นหลัง)
+            </span>
+          </div>
 
       {/* ─── 🏛️ 5-LAYER INSTITUTIONAL QUANT ENGINE (ระดับสถาบันสากล) ─── */}
       {iq && (
@@ -3464,445 +3547,231 @@ export default function AnalysisCard({
         </div>
       )}
 
-      {/* 6. 📱 MT4 / MT5 Mobile Pending Order Ticket */}
-      <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-surface-50 to-indigo-950/20 border border-blue-500/40 space-y-3.5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30">
-              <Smartphone className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                <span>MT4 / MT5 Mobile Pending Order Ticket</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
-                  สำหรับกดตั้งค่าบนมือถือ
-                </span>
-              </h4>
-              <p className="text-[10px] text-slate-400">คำนวณราคารับล่วงหน้า (Limit Order) และระยะ SL/TP พร้อมเปิดแอปกรอกตามได้ทันที</p>
-            </div>
-          </div>
-
-          {/* Order Type Badge */}
-          <div className="flex items-center gap-2">
-            <span className={`px-3 py-1 rounded-lg border text-xs font-black tracking-wide ${
-              analysis.tradeSetup.orderType === "BUY_LIMIT"
-                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 glow-green"
-                : analysis.tradeSetup.orderType === "SELL_LIMIT"
-                ? "bg-rose-500/20 text-rose-300 border-rose-500/40 glow-red"
-                : analysis.tradeSetup.orderType === "BUY_STOP"
-                ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
-                : analysis.tradeSetup.orderType === "SELL_STOP"
-                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                : "bg-surface-100 text-slate-400 border-slate-700"
-            }`}>
-              {analysis.tradeSetup.orderType === "BUY_LIMIT"
-                ? "🟢 BUY LIMIT (ตั้งรับซื้อของถูกล่วงหน้า)"
-                : analysis.tradeSetup.orderType === "SELL_LIMIT"
-                ? "🔴 SELL LIMIT (ตั้งรอขายราคาสูงล่วงหน้า)"
-                : analysis.tradeSetup.orderType === "BUY_STOP"
-                ? "🚀 BUY STOP (ดักซื้อเมื่อราคาพุ่งทะลุ)"
-                : analysis.tradeSetup.orderType === "SELL_STOP"
-                ? "🔻 SELL STOP (ดักขายเมื่อราคาหลุดร่วง)"
-                : "⚪ พักดูจังหวะ (ตลาดยังไม่ให้แต้มต่อ)"}
-            </span>
-
-            <span className="text-[11px] text-slate-400 font-mono">
-              ความคุ้มค่า (R:R): <strong className="text-brand-green">{analysis.tradeSetup.riskRewardRatio}</strong>
-            </span>
-          </div>
-        </div>
-
-        {/* 4 Main MT4/MT5 Mobile Input Fields */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {/* 1. Price */}
-          <div
-            onClick={() => copyToClipboard(`${analysis.tradeSetup.pendingPrice || analysis.tradeSetup.entryZone.min}`, "price")}
-            className="p-3 rounded-xl bg-surface-100/90 hover:bg-slate-800 border border-slate-700 hover:border-blue-500/50 cursor-pointer transition-all group relative"
-          >
-            <div className="flex items-center justify-between text-[11px] text-slate-400 mb-0.5">
-              <span className="font-semibold text-white">1. ราคาตั้งเปิด (Price)</span>
-              {copiedKey === "price" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-slate-400" />}
-            </div>
-            <span className="text-sm font-mono font-black text-amber-300 block">
-              {analysis.tradeSetup.pendingPrice || analysis.tradeSetup.entryZone.min}
-            </span>
-            <span className="text-[10px] text-slate-400 font-sans block truncate">
-              {analysis.tradeSetup.oteZone ? `OTE 70.5% (${analysis.tradeSetup.entryZone.min}-${analysis.tradeSetup.entryZone.max})` : "แตะเพื่อคัดลอก • รอซื้อที่แนวรับ"}
-            </span>
-          </div>
-
-          {/* 2. Stop Loss */}
-          <div
-            onClick={() => copyToClipboard(`${analysis.tradeSetup.stopLoss}`, "sl")}
-            className="p-3 rounded-xl bg-surface-100/90 hover:bg-slate-800 border border-slate-700 hover:border-rose-500/50 cursor-pointer transition-all group relative"
-          >
-            <div className="flex items-center justify-between text-[11px] text-rose-400 mb-0.5">
-              <span className="font-semibold text-rose-300">2. จุดยอมแพ้ (Stop Loss)</span>
-              {copiedKey === "sl" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-slate-400" />}
-            </div>
-            <span className="text-sm font-mono font-black text-rose-300 block">
-              {analysis.tradeSetup.stopLoss}
-            </span>
-            <span className="text-[10px] font-sans text-rose-300/80 block">
-              {analysis.tradeSetup.structuralSL ? `🛡️ Liquidity Shield (-${analysis.tradeSetup.slPips || 0} pips)` : analysis.tradeSetup.slPips ? `-${analysis.tradeSetup.slPips} pips (ตัดขาดทุนอัตโนมัติ)` : "ซ่อนหลัง Swing"}
-            </span>
-          </div>
-
-          {/* 3. Take Profit 1 */}
-          <div
-            onClick={() => copyToClipboard(`${analysis.tradeSetup.takeProfit1}`, "tp1")}
-            className="p-3 rounded-xl bg-surface-100/90 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/50 cursor-pointer transition-all group relative"
-          >
-            <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-0.5">
-              <span className="font-semibold text-emerald-300">3. กำไรเป้าแรก (TP1)</span>
-              {copiedKey === "tp1" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-slate-400" />}
-            </div>
-            <span className="text-sm font-mono font-black text-emerald-300 block">
-              {analysis.tradeSetup.takeProfit1}
-            </span>
-            <span className="text-[10px] font-sans text-emerald-300/80 block">
-              +{analysis.tradeSetup.tp1Pips || 0} pips (TP1 +1.0R / เลื่อนบังทุน)
-            </span>
-          </div>
-
-          {/* 4. Take Profit 2 */}
-          <div
-            onClick={() => copyToClipboard(`${analysis.tradeSetup.takeProfit2}`, "tp2")}
-            className="p-3 rounded-xl bg-surface-100/90 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/50 cursor-pointer transition-all group relative"
-          >
-            <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-0.5">
-              <span className="font-semibold text-emerald-300">4. กำไรเป้าใหญ่ (TP2)</span>
-              {copiedKey === "tp2" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-slate-400" />}
-            </div>
-            <span className="text-sm font-mono font-black text-emerald-300 block">
-              {analysis.tradeSetup.takeProfit2}
-            </span>
-            <span className="text-[10px] font-sans text-emerald-300/80 block">
-              +{analysis.tradeSetup.tp2Pips || 0} pips (TP2 รันเทรนด์สถาบัน)
-            </span>
-          </div>
-        </div>
-
-        {/* Automated Risk-Free Breakeven Shield [แผน 14] */}
-        {(analysis.tradeSetup.breakevenAdvice || analysis.breakevenAdvice) && (
-          <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 flex items-start gap-2.5 text-xs">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <div className="space-y-0.5">
-              <span className="font-bold text-emerald-300 text-[11px] block">
-                🛡️ เกราะป้องกันทุน Breakeven Shield (+1.0R Rule):
-              </span>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                {(analysis.tradeSetup.breakevenAdvice || analysis.breakevenAdvice)?.actionText}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Chandelier ATR Trailing Stop [แผน 20] */}
-        {(analysis.tradeSetup.trailingStop || analysis.trailingStop) && (
-          <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 flex items-start gap-2.5 text-xs">
-            <Sliders className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-            <div className="space-y-1 w-full">
-              <div className="flex flex-wrap items-center justify-between gap-1">
-                <span className="font-bold text-purple-300 text-[11px] flex items-center gap-1.5">
-                  <span>🎯 Chandelier ATR Trailing Stop (แผน 20 - เลื่อนล็อคกำไรอัตโนมัติ):</span>
-                  <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-200 border border-purple-500/30">
-                    +{(analysis.tradeSetup.trailingStop || analysis.trailingStop)?.stepPips} pips Trailing Step
-                  </span>
-                </span>
-                <span className="font-mono font-black text-amber-300 text-xs">
-                  Trail SL: {(analysis.tradeSetup.trailingStop || analysis.trailingStop)?.trailingStopPrice}
-                </span>
+      {/* 5n. 📐 Channel Envelopes, Turtle Breakouts & VPCI Energy Matrix (Plans 66-70) */}
+      {(analysis.keltner || analysis.donchian || analysis.chaikinVol || analysis.ker || analysis.vpci) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-emerald-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <Layers className="w-4 h-4" />
               </div>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                {(analysis.tradeSetup.trailingStop || analysis.trailingStop)?.instruction}
-              </p>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Channel Envelopes, Turtle Breakouts & VPCI Energy (แผน 66-70)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-500/30">
+                    📐 Envelopes & Volume-Price
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  Keltner Channels ปรับตัวตาม ATR, Donchian Channel ดัก Turtle Breakout 20 แท่ง, Chaikin Volatility วัดสปีดขยายกรอบ, Kaufman KER กรองคลื่นรบกวน, และ VPCI ตรวจจับเบรกเอาท์กลวง (Lock 17)
+                </p>
+              </div>
             </div>
           </div>
-        )}
 
-        {/* Dynamic Spread & Slippage Impact Calculator [แผน 18] */}
-        {(analysis.tradeSetup.spreadImpact || analysis.spreadImpact) && (() => {
-          const sp = analysis.tradeSetup.spreadImpact || analysis.spreadImpact!;
-          return (
-            <div className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
-              sp.isSpreadWarning
-                ? "bg-rose-950/30 border-rose-500/40 text-rose-200"
-                : "bg-surface-100/90 border-slate-800 text-slate-300"
-            }`}>
-              <div className="flex items-center gap-2">
-                <div className={`p-1.5 rounded-lg ${sp.isSpreadWarning ? "bg-rose-500/20 text-rose-400" : "bg-blue-500/10 text-blue-400"}`}>
-                  <AlertTriangle className="w-4 h-4" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Keltner Channels ATR Volatility Envelope (Plan 66) */}
+            {analysis.keltner && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🗂️ Keltner Channels</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.keltner.isExpanding
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse"
+                      : "bg-surface-50 text-slate-400 border border-slate-700"
+                  }`}>
+                    {analysis.keltner.isExpanding ? "⚡ BAND EXPANSION" : "CONTRACTING"}
+                  </span>
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-white text-[11px]">ต้นทุนสเปรดโบรกเกอร์ (Broker Spread Impact - แผน 18)</span>
-                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                      sp.isSpreadWarning
-                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold"
-                        : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
-                    }`}>
-                      {sp.isSpreadWarning ? "⚠️ SPREAD HIGH DANGER" : "✅ SPREAD ACCEPTABLE"}
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Upper / Mid / Lower:</span>
+                    <span className="font-mono text-[10px] font-bold text-white">
+                      {analysis.keltner.upper} / {analysis.keltner.middle} / {analysis.keltner.lower}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-400">
-                    สเปรดประมาณ {sp.estimatedSpreadPips} pips (${sp.spreadCostUSD} USD / 0.01 lot) • กินระยะ SL ไป {sp.spreadToSLPercent}%
-                    {sp.warningMessage ? ` • ${sp.warningMessage}` : ""}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 self-end sm:self-center font-mono">
-                <span className="text-[10px] text-slate-400">Net R:R สุทธิ:</span>
-                <span className={`text-xs font-black px-2 py-0.5 rounded ${
-                  sp.isSpreadWarning ? "bg-rose-500/20 text-rose-300" : "bg-emerald-500/20 text-emerald-300"
-                }`}>
-                  {sp.effectiveRiskReward}
-                </span>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Micro-Account Interactive Lot & Risk Calculator (เริ่มต้นตั้งแต่ $10 USD) */}
-        {(() => {
-          const balance = Math.max(1, Number(customBalance) || 10);
-          const slPipsVal = Math.max(10, analysis.tradeSetup.slPips || 50);
-          const tp1PipsVal = Math.max(10, analysis.tradeSetup.tp1Pips || 50);
-          const tp2PipsVal = Math.max(10, analysis.tradeSetup.tp2Pips || 100);
-
-          // Asset-aware pip value per 0.01 lot standard
-          const sym = analysis.symbol.toUpperCase();
-          const isCrypto = sym.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(c => sym.startsWith(c));
-          const isJPY = sym.includes("JPY");
-          const pipDollarPer001 = isCrypto ? 0.01 : isJPY ? 0.07 : 0.10;
-
-          // Standard Account Calculation (0.01 lot min)
-          const stdCalculatedLot = Math.max(0.01, Number(((balance * (customRiskPct / 100)) / (slPipsVal * (pipDollarPer001 * 10))).toFixed(2)));
-          const stdLot = balance < 100 ? 0.01 : stdCalculatedLot;
-          const stdLossUSD = Number((stdLot * slPipsVal * pipDollarPer001).toFixed(2));
-          const stdTp1USD = Number((stdLot * tp1PipsVal * pipDollarPer001).toFixed(2));
-          const stdTp2USD = Number((stdLot * tp2PipsVal * pipDollarPer001).toFixed(2));
-          const stdRiskPctActual = ((stdLossUSD / balance) * 100).toFixed(1);
-
-          // Cent Account Calculation (USC - 100x smaller, ideal for $10-$50)
-          const centBalanceUSC = balance * 100;
-          const centLot = Math.max(0.01, Number(((centBalanceUSC * (customRiskPct / 100)) / (slPipsVal * (pipDollarPer001 * 10))).toFixed(2)));
-          const centLossUSD = Number((centLot * slPipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
-          const centTp1USD = Number((centLot * tp1PipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
-          const centTp2USD = Number((centLot * tp2PipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
-
-          const isCent = accountType === "CENT";
-          const activeLot = isCent ? centLot : stdLot;
-          const activeLossUSD = isCent ? centLossUSD : stdLossUSD;
-          const activeTp1USD = isCent ? centTp1USD : stdTp1USD;
-          const activeTp2USD = isCent ? centTp2USD : stdTp2USD;
-          const activeRiskPct = isCent ? customRiskPct.toFixed(1) : stdRiskPctActual;
-
-          return (
-            <div className="p-3.5 rounded-xl bg-surface-100/80 border border-slate-800 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="p-1 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                    <Calculator className="w-4 h-4" />
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Bandwidth (%BW):</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.keltner.bandwidth}%
+                    </span>
                   </div>
-                  <div>
-                    <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <span>คำนวณขนาดไม้ & ความเสี่ยงเงินจริง (เริ่ม $10 USD)</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        สำหรับ MT4 / MT5
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ตำแหน่งราคา (%B):</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.keltner.percentB > 90
+                        ? "text-emerald-400"
+                        : analysis.keltner.percentB < 10
+                        ? "text-rose-400"
+                        : "text-amber-300"
+                    }`}>
+                      {analysis.keltner.percentB}% {analysis.keltner.percentB > 90 ? "(เหนือกรอบบน)" : analysis.keltner.percentB < 10 ? "(ใต้กรอบล่าง)" : "(ในกรอบ)"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.keltner.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Donchian Channels & Turtle Breakout Engine (Plan 67) */}
+            {analysis.donchian && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🐢 Donchian Breakout</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.donchian.breakoutState === "BULLISH_BREAKOUT_20"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse"
+                      : analysis.donchian.breakoutState === "BEARISH_BREAKOUT_20"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                      : "bg-surface-50 text-slate-400 border border-slate-700"
+                  }`}>
+                    {analysis.donchian.breakoutState === "BULLISH_BREAKOUT_20"
+                      ? "🟢 TURTLE BUY 20"
+                      : analysis.donchian.breakoutState === "BEARISH_BREAKOUT_20"
+                      ? "🔴 TURTLE SELL 20"
+                      : "WITHIN RANGE"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">20-Bar High (Upper):</span>
+                    <span className="font-mono font-bold text-emerald-400 text-[10px]">
+                      {analysis.donchian.upper}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">20-Bar Low (Lower):</span>
+                    <span className="font-mono font-bold text-rose-400 text-[10px]">
+                      {analysis.donchian.lower}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Range Width / Mid:</span>
+                    <span className="font-mono text-cyan-300 text-[10px]">
+                      {analysis.donchian.channelWidth} (Mid: {analysis.donchian.middle})
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.donchian.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Chaikin Volatility & Kaufman KER Index (Plans 68 & 69) */}
+            {(analysis.chaikinVol || analysis.ker) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📊 Chaikin Vol & KER</span>
+                  {analysis.ker && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.ker.regime === "HYPER_EFFICIENT_DIRECTED"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : analysis.ker.regime === "SMOOTH_SWING"
+                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                        : analysis.ker.regime === "ENTANGLED_NOISE"
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                        : "bg-surface-50 text-slate-400 border border-slate-700"
+                    }`}>
+                      {analysis.ker.regime}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.chaikinVol && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Chaikin Volatility (CVOL):</span>
+                      <span className={`font-mono font-bold text-[10px] ${
+                        analysis.chaikinVol.volatilityTrend === "CLIMAX"
+                          ? "text-rose-400 animate-pulse"
+                          : analysis.chaikinVol.cvol > 0
+                          ? "text-emerald-400"
+                          : "text-slate-300"
+                      }`}>
+                        {analysis.chaikinVol.cvol > 0 ? `+${analysis.chaikinVol.cvol}%` : `${analysis.chaikinVol.cvol}%`} ({analysis.chaikinVol.volatilityTrend})
                       </span>
-                    </h5>
-                    <p className="text-[10px] text-slate-400">คำนวณกำไร/ขาดทุนเป็นดอลลาร์จริง ละเอียดยิบตามเงินทุนในพอร์ต</p>
-                  </div>
-                </div>
-
-                {/* Account Type Toggle */}
-                <div className="flex items-center gap-1 bg-surface-50 p-1 rounded-lg border border-slate-800 text-[10px]">
-                  <button
-                    onClick={() => setAccountType("STANDARD")}
-                    className={`px-2 py-0.5 rounded font-medium transition-all ${
-                      accountType === "STANDARD" ? "bg-blue-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    💵 Standard ($)
-                  </button>
-                  <button
-                    onClick={() => setAccountType("CENT")}
-                    className={`px-2 py-0.5 rounded font-medium transition-all ${
-                      accountType === "CENT" ? "bg-amber-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    🪙 Cent (USC พอร์ตเล็ก)
-                  </button>
-                </div>
-              </div>
-
-              {/* Controls: Balance Input & Risk Selector */}
-              <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-                {/* Balance Selector */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] text-slate-400 font-semibold">เงินทุนพอร์ต:</span>
-                  {[10, 20, 50, 100, 500, 1000].map((bVal) => (
-                    <button
-                      key={bVal}
-                      onClick={() => setCustomBalance(bVal)}
-                      className={`px-2 py-0.5 rounded text-[11px] font-mono transition-all border ${
-                        customBalance === bVal
-                          ? "bg-indigo-600 text-white border-indigo-500 shadow-sm"
-                          : "bg-surface-50 text-slate-400 border-slate-800 hover:text-white"
-                      }`}
-                    >
-                      ${bVal}
-                    </button>
-                  ))}
-                  <div className="flex items-center gap-1 bg-surface-50 px-2 py-0.5 rounded border border-slate-800">
-                    <span className="text-[10px] text-slate-500">$</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={100000}
-                      value={customBalance}
-                      onChange={(e) => setCustomBalance(Math.max(1, Number(e.target.value)))}
-                      className="w-14 bg-transparent text-[11px] font-mono font-bold text-white focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Risk Selector */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-slate-400 font-semibold">ยอมเสี่ยง:</span>
-                  {[1, 2, 5, 10].map((rVal) => (
-                    <button
-                      key={rVal}
-                      onClick={() => setCustomRiskPct(rVal)}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-all border ${
-                        customRiskPct === rVal
-                          ? "bg-rose-500/20 text-rose-300 border-rose-500/40 font-bold"
-                          : "bg-surface-50 text-slate-400 border-slate-800 hover:text-white"
-                      }`}
-                    >
-                      {rVal}%
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Kelly Criterion Math Sizing Advisor [แผน 21] */}
-              {(analysis.tradeSetup.kellySizing || analysis.kellySizing) && (() => {
-                const ks = analysis.tradeSetup.kellySizing || analysis.kellySizing!;
-                return (
-                  <div className="p-3 rounded-xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/30 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-1.5 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <Calculator className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="font-bold text-white text-[11px]">
-                          Kelly Criterion Math Sizing (แผน 21):
+                    </div>
+                  )}
+                  {analysis.ker && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Kaufman Efficiency Ratio:</span>
+                        <span className="font-mono font-bold text-amber-300 text-[10px]">
+                          {(analysis.ker.efficiencyRatio * 100).toFixed(1)}% (ER: {analysis.ker.efficiencyRatio})
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                        <span className="text-slate-400">Half-Kelly: <strong className="text-indigo-300">{ks.halfKellyPct}%</strong></span>
-                        <span className="text-slate-400">•</span>
-                        <span className="text-emerald-300 font-bold bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                          แนะนำเสี่ยง: {ks.volatilityAdjustedPct}%
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Noise Decoupling Score:</span>
+                        <span className="font-mono text-cyan-300 text-[10px]">
+                          {analysis.ker.noiseDecouplingScore} / 100 (Signal purity)
                         </span>
-                        <button
-                          onClick={() => setCustomRiskPct(ks.volatilityAdjustedPct)}
-                          className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-sans text-[10px] transition-all font-semibold cursor-pointer"
-                        >
-                          ใช้ค่านี้
-                        </button>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center font-mono text-[10px] pt-0.5">
-                      <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
-                        <span className="text-slate-400 block text-[9px]">พอร์ต $10 USD</span>
-                        <span className="text-xs font-bold text-amber-300">{ks.suggestedLot10USD} lot</span>
-                      </div>
-                      <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
-                        <span className="text-slate-400 block text-[9px]">พอร์ต $100 USD</span>
-                        <span className="text-xs font-bold text-emerald-300">{ks.suggestedLot100USD} lot</span>
-                      </div>
-                      <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
-                        <span className="text-slate-400 block text-[9px]">พอร์ต $1,000 USD</span>
-                        <span className="text-xs font-bold text-sky-300">{ks.suggestedLot1000USD} lot</span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-slate-400 leading-tight border-t border-slate-800/80 pt-1">
-                      {ks.rationale}
-                    </p>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.ker?.description || analysis.chaikinVol?.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: VPCI Volume Energy & Safety Lock 17 (Plan 70) */}
+            {analysis.vpci && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⛽ VPCI Volume Energy</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.vpci.safetyLock17Passed
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                  }`}>
+                    {analysis.vpci.safetyLock17Passed ? "🛡️ LOCK 17 PASS" : "⛔ HOLLOW BREAKOUT"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">VPCI Indicator:</span>
+                    <span className={`font-mono font-bold text-[10px] ${
+                      analysis.vpci.vpci > 1.5
+                        ? "text-emerald-400"
+                        : analysis.vpci.vpci < -1.5
+                        ? "text-rose-400"
+                        : "text-white"
+                    }`}>
+                      {analysis.vpci.vpci > 0 ? `+${analysis.vpci.vpci}` : analysis.vpci.vpci}
+                    </span>
                   </div>
-                );
-              })()}
-
-              {/* Detailed Real-Dollar Calculation Breakdown */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                {/* 1. Recommended Lot */}
-                <div className="p-2 rounded-lg bg-surface-50 border border-slate-800 space-y-0.5">
-                  <span className="text-[10px] text-slate-400 block">ขนาดไม้แนะนำ (Lot)</span>
-                  <span className="text-sm font-mono font-black text-amber-300 block">
-                    {activeLot} {isCent ? "Cent" : "Lot"}
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-mono block truncate">
-                    {isCent ? `(${balance * 100} Cents)` : `(Min 0.01)`}
-                  </span>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Signal Line (EMA):</span>
+                    <span className="font-mono text-cyan-300 text-[10px]">
+                      {analysis.vpci.vpciSignal > 0 ? `+${analysis.vpci.vpciSignal}` : analysis.vpci.vpciSignal}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Volume Energy State:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.vpci.volumeEnergyState === "CONFIRMED_TREND"
+                        ? "text-emerald-400"
+                        : analysis.vpci.volumeEnergyState === "HOLLOW_BREAKOUT"
+                        ? "text-rose-400"
+                        : "text-amber-300"
+                    }`}>
+                      {analysis.vpci.volumeEnergyState}
+                    </span>
+                  </div>
                 </div>
-
-                {/* 2. Loss at SL */}
-                <div className="p-2 rounded-lg bg-rose-950/20 border border-rose-500/30 space-y-0.5">
-                  <span className="text-[10px] text-rose-400 block">ถ้าชน SL เสียเงิน</span>
-                  <span className="text-sm font-mono font-black text-rose-300 block">
-                    -${activeLossUSD} USD
-                  </span>
-                  <span className="text-[10px] text-rose-400/80 font-mono block">
-                    เสี่ยง {activeRiskPct}% ของพอร์ต
-                  </span>
-                </div>
-
-                {/* 3. Profit at TP1 */}
-                <div className="p-2 rounded-lg bg-emerald-950/20 border border-emerald-500/30 space-y-0.5">
-                  <span className="text-[10px] text-emerald-400 block">ถ้าชน TP1 ได้เงิน</span>
-                  <span className="text-sm font-mono font-black text-emerald-300 block">
-                    +${activeTp1USD} USD
-                  </span>
-                  <span className="text-[10px] text-emerald-400/80 font-mono block">
-                    กำไร +{((activeTp1USD / balance) * 100).toFixed(1)}%
-                  </span>
-                </div>
-
-                {/* 4. Profit at TP2 */}
-                <div className="p-2 rounded-lg bg-emerald-950/20 border border-emerald-500/30 space-y-0.5">
-                  <span className="text-[10px] text-emerald-400 block">ถ้าชน TP2 ได้เงิน</span>
-                  <span className="text-sm font-mono font-black text-emerald-300 block">
-                    +${activeTp2USD} USD
-                  </span>
-                  <span className="text-[10px] text-emerald-400/80 font-mono block">
-                    กำไร +{((activeTp2USD / balance) * 100).toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-
-              {/* Micro-account Advice for Beginners */}
-              <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-[11px] text-slate-300 space-y-1.5 leading-relaxed">
-                <span className="font-bold text-amber-300 flex items-center gap-1.5">
-                  <span>💡</span> คำแนะนำสำหรับมือใหม่ที่เพิ่งเริ่มต้นเทรด:
-                </span>
-                <p className="text-[10px] text-slate-300">
-                  • <strong>พอร์ตขนาดเล็ก ($10 – $50):</strong> แนะนำให้ใช้ <strong>บัญชี Cent (USC)</strong> เพราะเงิน $10 จะกลายเป็น 1,000 Cents ทำให้คุณสามารถเปิดไม้ขนาดเล็กและคุมความเสี่ยงให้เสียไม่เกินไม้ละ <strong>${centLossUSD} USD (ประมาณ {Math.max(1, Math.round(centLossUSD * 36))} บาท)</strong> ช่วยให้ฝึกเทรดได้สบายใจ พอร์ตไม่มีวันแตก
-                </p>
-                <p className="text-[10px] text-slate-300">
-                  • <strong>พอร์ตเติบโต ($100 ขึ้นไป):</strong> สามารถเลือกใช้ <strong>บัญชี Standard ($)</strong> ได้ตามปกติ โดยตั้งขนาดไม้เริ่มต้นที่ 0.01 Lot
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.vpci.description}
                 </p>
               </div>
-            </div>
-          );
-        })()}
-
-        {/* Invalidation Rule */}
-        <div className="p-2 rounded-lg bg-surface-100/40 border border-slate-800/80 text-[11px] text-slate-400 flex items-start gap-1.5">
-          <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-          <span><strong>เงื่อนไขยกเลิกออเดอร์:</strong> {analysis.tradeSetup.invalidationNote}</span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+        </div>
+      )}
     </div>
   );
 }

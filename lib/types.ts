@@ -676,6 +676,11 @@ export interface IndicatorData {
   awesomeOsc?: AwesomeOscillatorPoint;
   tsi?: TSIInfo;
   advancedVol?: AdvancedVolatilitySuite;
+  keltner?: KeltnerChannelPoint;
+  donchian?: DonchianChannelPoint;
+  chaikinVol?: ChaikinVolatilityInfo;
+  ker?: KaufmanEfficiencyRatioInfo;
+  vpci?: VPCIInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -822,6 +827,11 @@ export interface AnalysisResult {
   awesomeOsc?: AwesomeOscillatorPoint;
   tsi?: TSIInfo;
   advancedVol?: AdvancedVolatilitySuite;
+  keltner?: KeltnerChannelPoint;
+  donchian?: DonchianChannelPoint;
+  chaikinVol?: ChaikinVolatilityInfo;
+  ker?: KaufmanEfficiencyRatioInfo;
+  vpci?: VPCIInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -910,6 +920,11 @@ export interface AnalysisResult {
     awesomeOsc?: AwesomeOscillatorPoint;
     tsi?: TSIInfo;
     advancedVol?: AdvancedVolatilitySuite;
+    keltner?: KeltnerChannelPoint;
+    donchian?: DonchianChannelPoint;
+    chaikinVol?: ChaikinVolatilityInfo;
+    ker?: KaufmanEfficiencyRatioInfo;
+    vpci?: VPCIInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1149,12 +1164,40 @@ export interface KeltnerChannelPoint {
   upper: number;
   middle: number;
   lower: number;
+  bandwidth: number;
+  percentB: number;
+  isExpanding: boolean;
+  description: string;
 }
 
 export interface DonchianChannelPoint {
   upper: number;
   middle: number;
   lower: number;
+  channelWidth: number;
+  breakoutState: "BULLISH_BREAKOUT_20" | "BEARISH_BREAKOUT_20" | "WITHIN_CHANNEL";
+  description: string;
+}
+
+export interface ChaikinVolatilityInfo {
+  cvol: number; // Rate of Change %
+  volatilityTrend: "EXPANDING" | "CONTRACTING" | "CLIMAX";
+  description: string;
+}
+
+export interface KaufmanEfficiencyRatioInfo {
+  efficiencyRatio: number; // 0.0 to 1.0
+  noiseDecouplingScore: number; // 0 to 100
+  regime: "HYPER_EFFICIENT_DIRECTED" | "SMOOTH_SWING" | "MODERATE_CHOP" | "ENTANGLED_NOISE";
+  description: string;
+}
+
+export interface VPCIInfo {
+  vpci: number;
+  vpciSignal: number;
+  volumeEnergyState: "CONFIRMED_TREND" | "HOLLOW_BREAKOUT" | "VOLUME_EXHAUSTION" | "NEUTRAL";
+  safetyLock17Passed: boolean;
+  description: string;
 }
 
 export interface AdvancedVolatilitySuite {

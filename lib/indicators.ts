@@ -73,6 +73,11 @@ import {
   AwesomeOscillatorPoint,
   TSIInfo,
   AdvancedVolatilitySuite,
+  KeltnerChannelPoint,
+  DonchianChannelPoint,
+  ChaikinVolatilityInfo,
+  KaufmanEfficiencyRatioInfo,
+  VPCIInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -5148,6 +5153,322 @@ export function calculateAdvancedVolatilitySuite(candles: Candle[], period = 20)
   };
 }
 
+/**
+ * [แผน 66] Keltner Channels (KC) Adaptive ATR Volatility Bands & Bandwidth Breakout Engine
+ * 20-period EMA center line with ATR dynamic envelope
+ */
+export function calculateKeltnerChannels(
+  candles: Candle[],
+  emaPeriod = 20,
+  atrPeriod = 10,
+  multiplier = 2.0,
+  precision = 2
+): KeltnerChannelPoint {
+  if (candles.length < Math.max(emaPeriod, atrPeriod)) {
+    const c = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      upper: c,
+      middle: c,
+      lower: c,
+      bandwidth: 0,
+      percentB: 50,
+      isExpanding: false,
+      description: "Keltner Channels: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const ema = calculateEMA(candles, emaPeriod);
+  const atr = calculateATR(candles, atrPeriod);
+
+  const idx = candles.length - 1;
+  const middleVal = ema[idx] ?? candles[idx].close;
+  const atrVal = atr[idx] ?? 1.0;
+
+  const upper = Number((middleVal + multiplier * atrVal).toFixed(precision));
+  const middle = Number(middleVal.toFixed(precision));
+  const lower = Number((middleVal - multiplier * atrVal).toFixed(precision));
+
+  const bandwidth = middle === 0 ? 0 : Number((((upper - lower) / middle) * 100).toFixed(2));
+  const channelSpan = upper - lower;
+  const percentB = channelSpan === 0 ? 50 : Number((((candles[idx].close - lower) / channelSpan) * 100).toFixed(1));
+
+  // Check if bandwidth expanded compared to 5 bars ago
+  const prevIdx = Math.max(0, idx - 5);
+  const prevMiddle = ema[prevIdx] ?? candles[prevIdx].close;
+  const prevATR = atr[prevIdx] ?? 1.0;
+  const prevBandwidth = prevMiddle === 0 ? 0 : (((prevMiddle + multiplier * prevATR) - (prevMiddle - multiplier * prevATR)) / prevMiddle) * 100;
+  const isExpanding = bandwidth > prevBandwidth * 1.08;
+
+  const desc = percentB >= 90
+    ? `🗂️ Keltner Channels ปะทะขอบบน (${percentB}%): ราคาไต่ขอบ Upper Band (${upper}) สะท้อนโมเมนตัมพุ่งทะยานแรง`
+    : percentB <= 10
+    ? `🗂️ Keltner Channels หลุดติดขอบล่าง (${percentB}%): ราคาจมสู่ Lower Band (${lower}) เสี่ยงขายหมูเกินพิกัด`
+    : isExpanding
+    ? `🗂️ Keltner Channels กำลังขยายตัว (Bandwidth: ${bandwidth}%): ความผันผวนของช่องเปิดรับเทรนด์สถาบัน`
+    : `🗂️ Keltner Channels ทรงตัว (Upper: ${upper} | Mid: ${middle} | Lower: ${lower} | BW: ${bandwidth}%)`;
+
+  return {
+    upper,
+    middle,
+    lower,
+    bandwidth,
+    percentB,
+    isExpanding,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 67] Donchian Channels (DC) & Turtle Breakout / Range High-Low Extremes Engine
+ * 20-period highest high and lowest low bands with Turtle breakout detection
+ */
+export function calculateDonchianChannels(
+  candles: Candle[],
+  period = 20,
+  precision = 2
+): DonchianChannelPoint {
+  if (candles.length < period) {
+    const c = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      upper: c,
+      middle: c,
+      lower: c,
+      channelWidth: 0,
+      breakoutState: "WITHIN_CHANNEL",
+      description: "Donchian Channels: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  // Look at prior period candles excluding the current live candle to detect breakouts
+  const priorSlice = candles.slice(-(period + 1), -1);
+  let priorHigh = -Infinity;
+  let priorLow = Infinity;
+  for (const bar of priorSlice) {
+    if (bar.high > priorHigh) priorHigh = bar.high;
+    if (bar.low < priorLow) priorLow = bar.low;
+  }
+
+  const currentBar = candles[candles.length - 1];
+  const fullSlice = candles.slice(-period);
+  let currentUpper = -Infinity;
+  let currentLower = Infinity;
+  for (const bar of fullSlice) {
+    if (bar.high > currentUpper) currentUpper = bar.high;
+    if (bar.low < currentLower) currentLower = bar.low;
+  }
+
+  const upper = Number(currentUpper.toFixed(precision));
+  const lower = Number(currentLower.toFixed(precision));
+  const middle = Number(((upper + lower) / 2).toFixed(precision));
+  const channelWidth = Number((upper - lower).toFixed(precision));
+
+  let breakoutState: DonchianChannelPoint["breakoutState"] = "WITHIN_CHANNEL";
+  if (currentBar.close > priorHigh) {
+    breakoutState = "BULLISH_BREAKOUT_20";
+  } else if (currentBar.close < priorLow) {
+    breakoutState = "BEARISH_BREAKOUT_20";
+  }
+
+  const desc = breakoutState === "BULLISH_BREAKOUT_20"
+    ? `🐢 Donchian Turtle Breakout ขาขึ้น (ทะลุ High ${period} แท่งที่ ${priorHigh.toFixed(precision)}): สัญญาณเบรกเอาท์สถาบันสมบูรณ์แบบ`
+    : breakoutState === "BEARISH_BREAKOUT_20"
+    ? `🐢 Donchian Turtle Breakdown ขาลง (หลุด Low ${period} แท่งที่ ${priorLow.toFixed(precision)}): สัญญาณหลุดกรอบสถาบันฝั่งขาย`
+    : `🐢 Donchian Channel เคลื่อนไหวในกรอบ (High: ${upper} | Mid: ${middle} | Low: ${lower} | กว้าง: ${channelWidth})`;
+
+  return {
+    upper,
+    middle,
+    lower,
+    channelWidth,
+    breakoutState,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 68] Mark Chaikin's Chaikin Volatility (CVOL) Rate of Change Engine
+ * Percentage Rate of Change of the 10-period EMA of High-Low spreads
+ */
+export function calculateChaikinVolatility(
+  candles: Candle[],
+  emaPeriod = 10,
+  rocPeriod = 10
+): ChaikinVolatilityInfo {
+  if (candles.length < emaPeriod + rocPeriod + 5) {
+    return {
+      cvol: 0,
+      volatilityTrend: "CONTRACTING",
+      description: "Chaikin Volatility: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  // Calculate High-Low ranges
+  const hlDiffCandles: Candle[] = candles.map((c) => ({
+    ...c,
+    close: Math.max(0.0001, c.high - c.low),
+  }));
+
+  const hlEMA = calculateEMA(hlDiffCandles, emaPeriod);
+  const len = hlEMA.length;
+  const currentHL = hlEMA[len - 1] ?? 1.0;
+  const pastHL = hlEMA[len - 1 - rocPeriod] ?? currentHL;
+
+  const rawCVOL = pastHL === 0 ? 0 : ((currentHL - pastHL) / pastHL) * 100;
+  const cvol = Number(rawCVOL.toFixed(2));
+
+  let volatilityTrend: ChaikinVolatilityInfo["volatilityTrend"] = "CONTRACTING";
+  if (cvol > 45) {
+    volatilityTrend = "CLIMAX";
+  } else if (cvol > 0) {
+    volatilityTrend = "EXPANDING";
+  } else {
+    volatilityTrend = "CONTRACTING";
+  }
+
+  const desc = volatilityTrend === "CLIMAX"
+    ? `📊 Chaikin Volatility พุ่งสู่ Climax (+${cvol}%): ช่วงสเปรดแท่งเทียนขยายตัวคลั่ง เสี่ยงกลับตัวกะทันหัน`
+    : volatilityTrend === "EXPANDING"
+    ? `📊 Chaikin Volatility กำลังขยายตัว (+${cvol}%): การเคลื่อนไหวของราคามีพลังผลักดันเทรนด์`
+    : `📊 Chaikin Volatility หดตัว (${cvol}%): ความผันผวนกำลังบีบตัวสะสมพลัง`;
+
+  return {
+    cvol,
+    volatilityTrend,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 69] Perry Kaufman's Efficiency Ratio & Market Noise Decoupler (KER Index)
+ * Quantifies market signal-to-noise ratio over 20 bars
+ */
+export function calculateKaufmanEfficiencyRatio(
+  candles: Candle[],
+  period = 20
+): KaufmanEfficiencyRatioInfo {
+  if (candles.length < period + 1) {
+    return {
+      efficiencyRatio: 0.5,
+      noiseDecouplingScore: 50,
+      regime: "MODERATE_CHOP",
+      description: "KER Index: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const slice = candles.slice(-(period + 1));
+  const netChange = Math.abs(slice[slice.length - 1].close - slice[0].close);
+
+  let sumChanges = 0;
+  for (let i = 1; i < slice.length; i++) {
+    sumChanges += Math.abs(slice[i].close - slice[i - 1].close);
+  }
+
+  const rawER = sumChanges === 0 ? 0 : netChange / sumChanges;
+  const efficiencyRatio = Number(Math.min(1.0, Math.max(0.0, rawER)).toFixed(4));
+  const noiseDecouplingScore = Number((efficiencyRatio * 100).toFixed(1));
+
+  let regime: KaufmanEfficiencyRatioInfo["regime"] = "MODERATE_CHOP";
+  if (efficiencyRatio >= 0.60) {
+    regime = "HYPER_EFFICIENT_DIRECTED";
+  } else if (efficiencyRatio >= 0.38) {
+    regime = "SMOOTH_SWING";
+  } else if (efficiencyRatio >= 0.20) {
+    regime = "MODERATE_CHOP";
+  } else {
+    regime = "ENTANGLED_NOISE";
+  }
+
+  const desc = regime === "HYPER_EFFICIENT_DIRECTED"
+    ? `🎯 Kaufman KER ประสิทธิภาพสูงสุด (${(efficiencyRatio * 100).toFixed(1)}%): ตลาดวิ่งทางเดียวไร้คลื่นรบกวน เหมาะกับการ Trend-Surfing`
+    : regime === "SMOOTH_SWING"
+    ? `🎯 Kaufman KER สวิงราบรื่น (${(efficiencyRatio * 100).toFixed(1)}%): โมเมนตัมสวิงตัวมีทิศทางชัดเจน สัญญาณเทรดเชื่อถือได้`
+    : regime === "MODERATE_CHOP"
+    ? `🎯 Kaufman KER ความผันผวนปานกลาง (${(efficiencyRatio * 100).toFixed(1)}%): มีคลื่นรบกวนแทรก แนะนำถือตามกรอบ Stop Loss`
+    : `🎯 Kaufman KER ไร้ทิศทางติดหล่มสัญญาณรบกวน (${(efficiencyRatio * 100).toFixed(1)}%): กราฟฟันปลา Whipsaw หนาแน่น`;
+
+  return {
+    efficiencyRatio,
+    noiseDecouplingScore,
+    regime,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 70] Buff Dormeier's Volume-Price Confirmation Indicator (VPCI) & Safety Lock 17
+ * Combines Volume-Price Trend (VPC) and Volume Multiplier (VM) to detect hollow breakouts
+ */
+export function calculateVPCI(
+  candles: Candle[],
+  shortPeriod = 5,
+  longPeriod = 25
+): VPCIInfo {
+  if (candles.length < longPeriod + 5) {
+    return {
+      vpci: 0,
+      vpciSignal: 0,
+      volumeEnergyState: "NEUTRAL",
+      safetyLock17Passed: true,
+      description: "VPCI: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const vwapList = new Array(candles.length).fill(0);
+  for (let i = longPeriod - 1; i < candles.length; i++) {
+    const sub = candles.slice(i - longPeriod + 1, i + 1);
+    let vSum = 0;
+    let pvSum = 0;
+    for (const b of sub) {
+      const vol = b.volume > 0 ? b.volume : 1;
+      vSum += vol;
+      pvSum += b.close * vol;
+    }
+    vwapList[i] = vSum === 0 ? candles[i].close : pvSum / vSum;
+  }
+
+  const closes = candles.map((c) => ({ ...c, close: c.close }));
+  const smaLong = calculateEMA(closes, longPeriod);
+  const volumes = candles.map((c) => ({ ...c, close: c.volume > 0 ? c.volume : 1 }));
+  const volShort = calculateEMA(volumes, shortPeriod);
+  const volLong = calculateEMA(volumes, longPeriod);
+
+  const idx = candles.length - 1;
+  const vpc = (vwapList[idx] || candles[idx].close) - (smaLong[idx] || candles[idx].close);
+  const vm = (volLong[idx] && volLong[idx]! > 0) ? (volShort[idx] || 1) / volLong[idx]! : 1;
+  const rawVPCI = vpc * vm;
+
+  const vpci = Number(rawVPCI.toFixed(2));
+  const vpciSignal = Number((vpci * 0.75).toFixed(2));
+
+  let volumeEnergyState: VPCIInfo["volumeEnergyState"] = "NEUTRAL";
+  if (vpci > 2.0) {
+    volumeEnergyState = "CONFIRMED_TREND";
+  } else if (vpci < -1.5) {
+    volumeEnergyState = "HOLLOW_BREAKOUT";
+  } else if (Math.abs(vpci) <= 1.0) {
+    volumeEnergyState = "VOLUME_EXHAUSTION";
+  } else {
+    volumeEnergyState = "NEUTRAL";
+  }
+
+  // Safety Lock 17: blocks if VPCI indicates hollow breakout (< -1.5)
+  const safetyLock17Passed = vpci >= -1.5;
+
+  const desc = !safetyLock17Passed
+    ? `🛡️ Safety Lock 17 [ACTIVATED]: VPCI เตือนเบรกเอาท์กลวงไร้วอลุ่มหนุน (VPCI: ${vpci} < -1.5): สถาบันไม่ร่วมดันราคา เสี่ยงติดกับดัก Fakeout`
+    : volumeEnergyState === "CONFIRMED_TREND"
+    ? `⛽ VPCI พลังงานวอลุ่มหนุนเทรนด์สมบูรณ์ (VPCI: ${vpci} > Signal: ${vpciSignal}): ปริมาณการซื้อขายสถาบันไหลเข้าสอดคล้องกับทิศทางราคา`
+    : `⛽ VPCI อยู่ในเกณฑ์ปกติ (VPCI: ${vpci} | Signal: ${vpciSignal} | สถานะ: ${volumeEnergyState})`;
+
+  return {
+    vpci,
+    vpciSignal,
+    volumeEnergyState,
+    safetyLock17Passed,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -5295,6 +5616,13 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const tsi = calculateTSI(cleanCandles, 25, 13);
   const advancedVol = calculateAdvancedVolatilitySuite(cleanCandles, 20);
 
+  // Batch 14: Plans 66, 67, 68, 69, 70 (Keltner Channels, Donchian Channels, Chaikin Volatility, Kaufman ER, VPCI)
+  const keltner = calculateKeltnerChannels(cleanCandles, 20, 2.0, precision);
+  const donchian = calculateDonchianChannels(cleanCandles, 20, precision);
+  const chaikinVol = calculateChaikinVolatility(cleanCandles, 10, 10);
+  const ker = calculateKaufmanEfficiencyRatio(cleanCandles, 20);
+  const vpci = calculateVPCI(cleanCandles, 5, 25);
+
   return {
     rsi14,
     atr14,
@@ -5367,5 +5695,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     awesomeOsc,
     tsi,
     advancedVol,
+    keltner,
+    donchian,
+    chaikinVol,
+    ker,
+    vpci,
   };
 }
