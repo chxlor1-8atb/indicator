@@ -936,6 +936,13 @@ export function generateRuleBasedAnalysis(
               vpci.safetyLock17Passed) ?? false,
       note: `${keltner.description} • ${donchian.description} • ${chaikinVol.description} • ${ker.description} • ${vpci.description}`,
     },
+    {
+      name: `Pillar 18: Fractal Dynamics & Kinetic Force Pulse (MD: ${mcginley.trendState} | EFI: ${elderForce.forceState} | FRAMA: D=${frama.fractalDimension})`,
+      passed: ((tradeAction === "BUY" && (mcginley.trendState === "BULLISH" || elderForce.forceState === "STRONG_BULL_FORCE" || rvi.rvi > 50 || frama.state === "TRENDING_SMOOTH")) ||
+              (tradeAction === "SELL" && (mcginley.trendState === "BEARISH" || elderForce.forceState === "STRONG_BEAR_FORCE" || rvi.rvi < 50 || frama.state === "TRENDING_SMOOTH")) ||
+              milestone75.safetyLock18Passed) ?? false,
+      note: `${mcginley.description} • ${elderForce.description} • ${rvi.description} • ${frama.description} • ${milestone75.description}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -1017,6 +1024,11 @@ export function generateRuleBasedAnalysis(
     chaikinVol,
     ker,
     vpci,
+    mcginley,
+    elderForce,
+    rvi,
+    frama,
+    milestone75,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
