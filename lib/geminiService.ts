@@ -239,9 +239,30 @@ export function generateRuleBasedAnalysis(
     tier2Note = `✅ ราคาพักตัวเข้าสู่ Value Zone (ต้นทุนได้เปรียบระหว่าง EMA ${optimizedConfig.emaFast} - ${optimizedConfig.emaSlow})`;
   }
 
-  // ─── TIER 3: EXECUTION TRIGGER (Confirmation & No-Divergence) ───
-  const hasBuyTrigger = tier1Bias === "BULLISH" && (rejection.isBullishRejection || lastCandle.close > lastCandle.open) && !divergence.bearishDivergence;
-  const hasSellTrigger = tier1Bias === "BEARISH" && (rejection.isBearishRejection || lastCandle.close < lastCandle.open) && !divergence.bullishDivergence;
+  // ─── TIER 3: EXECUTION TRIGGER (Smart Money Rejection & RSI Momentum Hook) ───
+  const prevC = prevCandle ?? lastCandle;
+  const candleRange = lastCandle.high - lastCandle.low;
+  const lowerWick = Math.min(lastCandle.close, lastCandle.open) - lastCandle.low;
+  const upperWick = lastCandle.high - Math.max(lastCandle.close, lastCandle.open);
+
+  const isSmartBullRejection =
+    candleRange > 0 &&
+    (rejection.isBullishRejection ||
+     lowerWick >= candleRange * 0.28 ||
+     (lastCandle.close > lastCandle.open && lastCandle.close > prevC.high));
+
+  const isSmartBearRejection =
+    candleRange > 0 &&
+    (rejection.isBearishRejection ||
+     upperWick >= candleRange * 0.28 ||
+     (lastCandle.close < lastCandle.open && lastCandle.close < prevC.low));
+
+  const prevRSI = indicators.rsi14.length >= 2 ? (indicators.rsi14.slice(-2)[0] ?? lastRSI) : lastRSI;
+  const isRsiBullHook = lastRSI >= prevRSI;
+  const isRsiBearHook = lastRSI <= prevRSI;
+
+  const hasBuyTrigger = tier1Bias === "BULLISH" && isSmartBullRejection && isRsiBullHook && !divergence.bearishDivergence;
+  const hasSellTrigger = tier1Bias === "BEARISH" && isSmartBearRejection && isRsiBearHook && !divergence.bullishDivergence;
   const isTriggerConfirmed = Boolean(hasBuyTrigger || hasSellTrigger);
 
   const traderHierarchy: TraderTierHierarchy = {
@@ -410,7 +431,7 @@ export function generateRuleBasedAnalysis(
   );
 
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
-  const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
+  const minThreshold = Math.max(75, adaptiveConfig?.minScoreThreshold ?? 75);
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
   let signal: AnalysisResult["signal"] = "WAIT";
   let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier + (quadEma?.scoreBonus ?? 0) + correlationScoreBonus));
@@ -568,8 +589,18 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 30);
     milestone75.safetyLock18Passed = false;
   }
+  // SAFETY LOCK 19: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
+  else if (
+    (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 22) ||
+    (tier1Bias === "BULLISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) < (indicators.ema50.slice(-4)[0] ?? 0)) ||
+    (tier1Bias === "BEARISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) > (indicators.ema50.slice(-4)[0] ?? 0))
+  ) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
-  else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
+  else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 60) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
   } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= minThreshold) {
@@ -942,6 +973,11 @@ export function generateRuleBasedAnalysis(
               (tradeAction === "SELL" && (mcginley.trendState === "BEARISH" || elderForce.forceState === "STRONG_BEAR_FORCE" || rvi.rvi < 50 || frama.state === "TRENDING_SMOOTH")) ||
               milestone75.safetyLock18Passed) ?? false,
       note: `${mcginley.description} • ${elderForce.description} • ${rvi.description} • ${frama.description} • ${milestone75.description}`,
+    },
+    {
+      name: `Pillar 19: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
+      passed: (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) >= 22) ?? true,
+      note: `กรองสภาวะตลาดไร้แนวโน้ม ป้องกันการออกออเดอร์ในกรอบ Sideways (ADX >= 22 และ EMA50 Slope สอดคล้องทิศทางเทรนด์)`,
     },
   ];
 

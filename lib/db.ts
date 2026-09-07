@@ -214,9 +214,14 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
   if (!sql) return { saved: false, reason: "No database connection" };
   const { symbol, timeframe, signal, tradeSetup, masterConfluence, setupGrade } = analysis;
 
-  // Only store actionable trades (Grade A+, A, B, or B+ with valid TP & SL)
-  if (signal === "WAIT" || tradeSetup.orderType === "WAIT_NO_ORDER") {
-    return { saved: false, reason: "Not an actionable trade setup" };
+  // Only store high-conviction Grade A and A+ actionable trades (Confluence >= 75)
+  if (
+    signal === "WAIT" ||
+    tradeSetup.orderType === "WAIT_NO_ORDER" ||
+    (masterConfluence && masterConfluence.totalScore < 75) ||
+    (setupGrade && (setupGrade.includes("B") || setupGrade.includes("C")) && (!masterConfluence || masterConfluence.totalScore < 75))
+  ) {
+    return { saved: false, reason: "Signal skipped: Below Grade A sniper threshold (Confluence < 75)" };
   }
 
   try {
@@ -389,8 +394,10 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
 
     for (const sig of activeSignals) {
       const isBuy = sig.action === "BUY";
-      const isGold = symbol.toUpperCase().includes("XAU") || symbol.toUpperCase() === "GOLD";
-      const pipMultiplier = isGold ? 10 : 10000;
+      const sym = symbol.toUpperCase();
+      const isGold = sym.includes("XAU") || sym === "GOLD";
+      const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some((c) => sym.includes(c));
+      const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
 
       let outcome: "HIT_TP2" | "HIT_TP1" | "HIT_SL" | null = null;
       let pips = 0;

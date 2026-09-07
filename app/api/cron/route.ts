@@ -66,10 +66,11 @@ export async function GET(request: NextRequest) {
         await saveAiSignal(analysis).catch(console.error);
       }
 
-      // If high confidence signal (Strong Buy/Sell or >= 80% confidence), send alert
+      // If high confidence signal (Strong Buy/Sell or >= 80% confidence and Grade A/A+), send alert
       if (
         botToken &&
         chatId &&
+        (analysis.masterConfluence?.totalScore ?? 0) >= 75 &&
         (analysis.signal === "STRONG_BUY" || analysis.signal === "STRONG_SELL" || analysis.confidence >= 80)
       ) {
         await sendTelegramMessage({ botToken, chatId, analysis });

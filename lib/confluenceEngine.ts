@@ -48,50 +48,65 @@ export function evaluateMasterConfluence(
   const lastEMA200 = indicators.ema200.slice(-1)[0] ?? currentPrice;
   const lastVWAP = indicators.vwap?.slice(-1)[0];
   const lastHA = indicators.heikinAshi?.slice(-1)[0];
+  const ema50List = indicators.ema50 ?? [];
+  const lastEMA50 = ema50List.slice(-1)[0] ?? currentPrice;
+  const prevEMA50_3 = ema50List.length >= 4 ? (ema50List.slice(-4)[0] ?? lastEMA50) : lastEMA50;
+  const isEMA50SlopeBull = lastEMA50 >= prevEMA50_3;
+  const isEMA50SlopeBear = lastEMA50 <= prevEMA50_3;
 
   const stDirection = lastST.direction;
   const isADXStrong = lastADX >= 22; // Confirms trend is genuine and not choppy sideways
   const isAboveVWAP = lastVWAP ? currentPrice >= lastVWAP.vwap : true;
 
   if (bias === "BULLISH") {
-    if (stDirection === "UP") p1Score += 8;
-    if (currentPrice > lastEMA200) p1Score += 6;
+    if (stDirection === "UP") p1Score += 7;
+    if (currentPrice > lastEMA200) p1Score += 5;
     if (isADXStrong) p1Score += 5;
-    if (isAboveVWAP) p1Score += 3; // [แผน 2] VWAP confirmation
-    if (lastHA && lastHA.isUp && lastHA.hasNoLowerWick) p1Score += 3; // [แผน 1] Strong Bullish Heikin-Ashi
+    if (isEMA50SlopeBull) p1Score += 4;
+    else p1Score -= 4; // Penalty if slope is falling against BUY
+    if (isAboveVWAP) p1Score += 2; // [แผน 2] VWAP confirmation
+    if (lastHA && lastHA.isUp && lastHA.hasNoLowerWick) p1Score += 2; // [แผน 1] Strong Bullish Heikin-Ashi
   } else if (bias === "BEARISH") {
-    if (stDirection === "DOWN") p1Score += 8;
-    if (currentPrice < lastEMA200) p1Score += 6;
+    if (stDirection === "DOWN") p1Score += 7;
+    if (currentPrice < lastEMA200) p1Score += 5;
     if (isADXStrong) p1Score += 5;
-    if (!isAboveVWAP) p1Score += 3; // [แผน 2] VWAP confirmation
-    if (lastHA && !lastHA.isUp && lastHA.hasNoUpperWick) p1Score += 3; // [แผน 1] Strong Bearish Heikin-Ashi
+    if (isEMA50SlopeBear) p1Score += 4;
+    else p1Score -= 4; // Penalty if slope is rising against SELL
+    if (!isAboveVWAP) p1Score += 2; // [แผน 2] VWAP confirmation
+    if (lastHA && !lastHA.isUp && lastHA.hasNoUpperWick) p1Score += 2; // [แผน 1] Strong Bearish Heikin-Ashi
   } else {
     p1Score += 8;
   }
+  p1Score = Math.max(0, p1Score);
 
   const p1Status = isADXStrong
-    ? `เทรนด์แรงชัดเจน (ADX ${lastADX.toFixed(1)}, SuperTrend ${stDirection}${lastVWAP ? `, VWAP: ${isAboveVWAP ? "เหนือ" : "ใต้"}` : ""})`
+    ? `เทรนด์ชัดเจน (ADX ${lastADX.toFixed(1)}, SuperTrend ${stDirection}, EMA50 Slope ${bias === "BULLISH" ? (isEMA50SlopeBull ? "ชันขึ้น" : "หัวทิ่ม") : (isEMA50SlopeBear ? "กดลง" : "เงยขึ้น")})`
     : `ตลาดพลังอ่อนแอ/ไซด์เวย์ (ADX ${lastADX.toFixed(1)})`;
 
   // ─── PILLAR 2: MOMENTUM & CYCLES (Max 20) ───
   let p2Score = 0;
   const lastRSI = indicators.rsi14.slice(-1)[0] ?? 50;
+  const prevRSI = indicators.rsi14.length >= 2 ? (indicators.rsi14.slice(-2)[0] ?? lastRSI) : lastRSI;
+  const isRsiBullHook = lastRSI >= prevRSI;
+  const isRsiBearHook = lastRSI <= prevRSI;
   const lastStoch = indicators.stochRSI?.slice(-1)[0] ?? { k: 50, d: 50 };
   const intraBar = indicators.intraBarMomentum;
 
   if (bias === "BULLISH") {
-    if (lastRSI >= 45 && lastRSI <= 75) p2Score += 8;
-    if (lastStoch.k >= lastStoch.d) p2Score += 8;
+    if (lastRSI >= 42 && lastRSI <= 72) p2Score += 7;
+    if (isRsiBullHook) p2Score += 3;
+    if (lastStoch.k >= lastStoch.d) p2Score += 6;
     if (intraBar && intraBar.bias === "STRONG_BUYERS") p2Score += 4; // [แผน 5] Intra-bar live buyers
   } else if (bias === "BEARISH") {
-    if (lastRSI >= 25 && lastRSI <= 55) p2Score += 8;
-    if (lastStoch.k <= lastStoch.d) p2Score += 8;
+    if (lastRSI >= 28 && lastRSI <= 58) p2Score += 7;
+    if (isRsiBearHook) p2Score += 3;
+    if (lastStoch.k <= lastStoch.d) p2Score += 6;
     if (intraBar && intraBar.bias === "STRONG_SELLERS") p2Score += 4; // [แผน 5] Intra-bar live sellers
   } else {
     p2Score += 8;
   }
 
-  const p2Status = `RSI ${lastRSI.toFixed(1)} | StochRSI K: ${lastStoch.k.toFixed(1)} / D: ${lastStoch.d.toFixed(1)}${intraBar ? ` (Intra-Bar: ${intraBar.percentInRange}%)` : ""}`;
+  const p2Status = `RSI ${lastRSI.toFixed(1)} (${isRsiBullHook ? "หักหัวขึ้น" : "หักหัวลง"}) | StochRSI K: ${lastStoch.k.toFixed(1)} / D: ${lastStoch.d.toFixed(1)}${intraBar ? ` (Intra-Bar: ${intraBar.percentInRange}%)` : ""}`;
 
   // ─── PILLAR 3: VOLATILITY & SQUEEZE (Max 20) ───
   let p3Score = 0;
@@ -121,18 +136,22 @@ export function evaluateMasterConfluence(
 
   const avgVol = candles.slice(-20).reduce((a, c) => a + c.volume, 0) / 20;
   const hasVolumeSpike = lastCandle.volume > avgVol * 1.3;
+  const isVeryLowVolume = avgVol > 0 && lastCandle.volume < avgVol * 0.65;
   const hasAnomalySpike = (indicators.volumeAnomalies?.length ?? 0) > 0 && (indicators.volumeAnomalies?.slice(-1)[0]?.index ?? -1) >= candles.length - 3;
 
   if (bias === "BULLISH" && obvTrend === "UP") p4Score += 6;
   if (bias === "BEARISH" && obvTrend === "DOWN") p4Score += 6;
   if (hasVolumeSpike) p4Score += 5;
   if (hasAnomalySpike) p4Score += 4; // [แผน 4] Institutional Volume Spike > 2.5x
-  if (p4Score === 0) p4Score = 6;
+  if (isVeryLowVolume) p4Score = Math.max(2, p4Score - 5); // Penalty for low liquidity deadzone
+  if (p4Score === 0) p4Score = 5;
 
   const p4Status = hasAnomalySpike
     ? `🚨 ตรวจพบ Institutional Volume Anomaly (${indicators.volumeAnomalies?.slice(-1)[0]?.ratio}x) สถาบันเข้าสะสม`
     : hasVolumeSpike
     ? `มี Volume Spike วอลุ่มกระชาก (+${Math.round((lastCandle.volume / avgVol) * 100 - 100)}%) ยืนยันแรงสถาบัน`
+    : isVeryLowVolume
+    ? "⚠️ ปริมาณการซื้อขายต่ำกว่าค่าเฉลี่ยมาก (Deadzone) เสี่ยงต่อสัญญาณหลอก"
     : `OBV ทิศทาง ${obvTrend} วอลุ่มสะสมสม่ำเสมอ`;
 
   // ─── PILLAR 5: SMART MONEY & STRUCTURE (Max 20) ───
@@ -163,12 +182,12 @@ export function evaluateMasterConfluence(
   if (totalScore >= 85) {
     grade = "A+";
     verdict = "🌟 สัญญาณเกรด A+ ระดับสถาบัน: 5 เสาหลักสอดคล้องกันสมบูรณ์แบบ ได้เปรียบสูงสุด";
-  } else if (totalScore >= 70) {
+  } else if (totalScore >= 75) {
     grade = "A";
     verdict = "✅ สัญญาณเกรด A คุณภาพสูง: เทรนด์และโมเมนตัมยืนยันร่วมกัน เข้าเทรดตามแผนได้";
-  } else if (totalScore >= 55) {
+  } else if (totalScore >= 60) {
     grade = "B";
-    verdict = "⚖️ สัญญาณเกรด B: มีบางปัจจัยยังก้ำกึ่ง แนะนำคุมความเสี่ยงแบ่งไม้เข้า";
+    verdict = "⚖️ สัญญาณเกรด B (เฝ้าระวัง): ปัจจัยก้ำกึ่ง ยังไม่ผ่านเกณฑ์ Sniper (แนะนำ WAIT เพื่อรักษา Win Rate)";
   }
 
   if (isSelfTuned) {
