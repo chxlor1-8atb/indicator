@@ -101,6 +101,12 @@ export default function AnalysisCard({
     const pd = analysis.tradeSetup.premiumDiscount || analysis.premiumDiscount;
     const key = analysis.tradeSetup.keyLevelTargets || analysis.keyLevelTargets;
     const flow = analysis.tradeSetup.orderFlowVelocity || analysis.orderFlowVelocity;
+    const beLadder = analysis.tradeSetup.breakevenLadder || analysis.breakevenLadder;
+    const lVoid = analysis.tradeSetup.liquidityVoid || analysis.liquidityVoid;
+    const fibExt = analysis.tradeSetup.fibonacciExtension || analysis.fibonacciExtension;
+    const vsa = analysis.tradeSetup.footprintAbsorption || analysis.footprintAbsorption;
+    const mtf = analysis.tradeSetup.mtfStructureMatrix || analysis.mtfStructureMatrix;
+    const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
       `• Signal: ${analysis.signal} (Grade: ${analysis.setupGrade || "A"}, Confluence: ${mc?.totalScore || analysis.confidence}%)\n` +
@@ -113,6 +119,11 @@ export default function AnalysisCard({
       (pd ? `• Premium/Discount: ${pd.percentile}% (${pd.zone} | Equilibrium: ${pd.equilibrium})\n` : "") +
       (key ? `• Key Liquidity Target: ${key.nearestLiquidityTarget.name} (${key.nearestLiquidityTarget.price} - ${key.nearestLiquidityTarget.distancePips} pips)\n` : "") +
       (flow ? `• Order Flow Velocity: Score ${flow.velocityScore} (${flow.momentumState})\n` : "") +
+      (beLadder ? `• Multi-Stage BE Ladder: ขั้นที่ ${beLadder.currentStage}/3 (${beLadder.actionAdvice} | Rec SL: ${beLadder.recommendedSL})\n` : "") +
+      (lVoid && lVoid.activeVoidCount > 0 ? `• Liquidity Void: ${lVoid.vacuumDirection} (${lVoid.activeVoidCount} จุด, เติม 50% ที่ ${lVoid.nearestVoid?.fillTarget50} - ความน่าจะเป็น ${lVoid.fastFillProbabilityPct}%)\n` : "") +
+      (fibExt && fibExt.bestTakeProfitTarget ? `• Fib Extension Mesh: 1.618 Golden Target ${fibExt.bestTakeProfitTarget.price} (${fibExt.bestTakeProfitTarget.label})\n` : "") +
+      (vsa ? `• VSA Footprint: ${vsa.vsaSignal} (Effort/Result: ${vsa.effortVsResult} | Vol: ${vsa.relativeVolume}x)\n` : "") +
+      (mtf ? `• MTF Structure Matrix: ${mtf.overallAlignment} (สอดคล้อง ${mtf.alignmentScorePct}% | HTF: ${mtf.htfTrend})\n` : "") +
       (vp ? `• Volume Profile Value Area: ${vp.val} - ${vp.vah} (POC: ${vp.poc})\n` : "") +
       (vwap ? `• Anchored VWAP: ${vwap.vwap} (Pos: ${vwap.pricePosition} | ±2σ: ${vwap.lowerBand2}-${vwap.upperBand2})\n` : "") +
       (cvd ? `• CVD Flow: ${cvd.cvdTrend} (${cvd.divergence !== "NONE" ? cvd.divergence : `Buyer ${cvd.buyerVolumeRatio}%`})\n` : "") +
@@ -1945,6 +1956,229 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.keyLevelTargets?.description || analysis.orderFlowVelocity?.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5h. 📈 Dynamic Multi-Stage Breakeven, Liquidity Void & MTF Structure Dashboard (Plans 36-40) */}
+      {(analysis.breakevenLadder || analysis.liquidityVoid || analysis.fibonacciExtension || analysis.footprintAbsorption || analysis.mtfStructureMatrix) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                <Layers className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Dynamic BE Ladder, Liquidity Void & MTF Structure Dashboard (แผน 36-40)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                    Execution & Structure Matrix
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  ระบบบันไดเลื่อน SL กึ่งอัตโนมัติ 3 ขั้น, แรงดูดสุญญากาศสภาพคล่อง Liquidity Void, ตาข่าย Fibonacci Extension Mesh, ปริมาณดูดซับสถาบัน VSA และแดชบอร์ดโครงสร้าง 4 ไทม์เฟรม (Safety Lock 11)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Multi-Stage Breakeven Ladder (Plan 36) */}
+            {analysis.breakevenLadder && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🪜 Dynamic BE Ladder</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.breakevenLadder.currentStage >= 2
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                      : analysis.breakevenLadder.currentStage === 1
+                      ? "bg-teal-500/20 text-teal-300 border border-teal-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    ขั้นที่ {analysis.breakevenLadder.currentStage}/3 ({analysis.breakevenLadder.currentRMultiple > 0 ? `+${analysis.breakevenLadder.currentRMultiple}` : analysis.breakevenLadder.currentRMultiple}R)
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">SL ที่แนะนำตอนนี้:</span>
+                    <span className="font-mono text-emerald-400 font-bold">{analysis.breakevenLadder.recommendedSL}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">สัดส่วนแบ่งปิดกำไร:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {analysis.breakevenLadder.partialCloseRecommendedPct}%
+                    </span>
+                  </div>
+                  {/* Stages indicator */}
+                  <div className="pt-1 space-y-1">
+                    {analysis.breakevenLadder.stages.map((st) => (
+                      <div key={st.stage} className="flex items-center justify-between text-[9px] font-mono text-slate-400">
+                        <span className={st.isTriggered ? "text-emerald-300 font-bold" : "text-slate-500"}>
+                          {st.isTriggered ? "✅" : "⏳"} ขั้น {st.stage} (+{st.triggerGainR}R)
+                        </span>
+                        <span className="text-slate-300">SL: {st.slMovePrice}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.breakevenLadder.actionAdvice}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Liquidity Void & Fast-Fill Vacuum (Plan 37) */}
+            {analysis.liquidityVoid && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌪️ Liquidity Void Fast-Fill</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.liquidityVoid.vacuumDirection === "UPWARD_VACUUM"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.liquidityVoid.vacuumDirection === "DOWNWARD_VACUUM"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.liquidityVoid.vacuumDirection !== "NONE" ? analysis.liquidityVoid.vacuumDirection : "No Big Void"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ช่องว่างค้างในตลาด:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {analysis.liquidityVoid.activeVoidCount} โซน
+                    </span>
+                  </div>
+                  {analysis.liquidityVoid.nearestVoid && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">เป้าดูด 50% Fast-Fill:</span>
+                        <span className="font-mono text-cyan-300 font-bold">
+                          {analysis.liquidityVoid.nearestVoid.fillTarget50}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">ความน่าจะเป็นเติมเต็ม:</span>
+                        <span className="font-mono text-emerald-400 font-bold">
+                          {analysis.liquidityVoid.fastFillProbabilityPct}% (เติมแล้ว {analysis.liquidityVoid.nearestVoid.fillPercentage}%)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.liquidityVoid.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Fibonacci Extension Mesh & VSA Footprint (Plan 38 & 39) */}
+            {(analysis.fibonacciExtension || analysis.footprintAbsorption) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📐 Fib Mesh & Footprint</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.footprintAbsorption?.isInstitutionalAbsorption
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold animate-pulse"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.footprintAbsorption?.vsaSignal !== "NORMAL" ? analysis.footprintAbsorption?.vsaSignal : "VSA Balanced"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.fibonacciExtension?.bestTakeProfitTarget && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">1.618 Golden Extension:</span>
+                      <span className="font-mono font-bold text-amber-300">
+                        {analysis.fibonacciExtension.bestTakeProfitTarget.price}
+                      </span>
+                    </div>
+                  )}
+                  {analysis.footprintAbsorption && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Effort vs Result:</span>
+                        <span className={`font-mono text-[10px] font-bold ${
+                          analysis.footprintAbsorption.effortVsResult === "HIGH_EFFORT_LOW_RESULT"
+                            ? "text-purple-300"
+                            : "text-slate-300"
+                        }`}>
+                          {analysis.footprintAbsorption.effortVsResult}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Relative Volume:</span>
+                        <span className="font-mono text-slate-200">
+                          {analysis.footprintAbsorption.relativeVolume}x (Spread: {analysis.footprintAbsorption.spreadRatio}x)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.footprintAbsorption?.description || analysis.fibonacciExtension?.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: MTF Structure Matrix Dashboard (Plan 40 & Safety Lock 11) */}
+            {analysis.mtfStructureMatrix && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌐 MTF Structure Matrix</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.mtfStructureMatrix.isHTFConflict
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold animate-pulse"
+                      : analysis.mtfStructureMatrix.overallAlignment.includes("FULL")
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.mtfStructureMatrix.alignmentScorePct}% Aligned
+                  </span>
+                </div>
+
+                {/* 4-Timeframe Grid: 15m, 1h, 4h, 1D */}
+                <div className="grid grid-cols-4 gap-1 pt-0.5">
+                  {(["m15", "h1", "h4", "d1"] as const).map((tfKey) => {
+                    const tf = analysis.mtfStructureMatrix?.timeframes[tfKey];
+                    if (!tf) return null;
+                    const isBull = tf.trendBias === "BULLISH";
+                    const isBear = tf.trendBias === "BEARISH";
+                    return (
+                      <div
+                        key={tfKey}
+                        className={`p-1 rounded text-center border ${
+                          isBull
+                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                            : isBear
+                            ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                            : "bg-surface-50 border-slate-800 text-slate-400"
+                        }`}
+                      >
+                        <div className="text-[9px] font-bold uppercase">{tf.timeframe}</div>
+                        <div className="text-[8px] font-mono font-black">{tf.structure}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Safety Lock 11 (HTF):</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.mtfStructureMatrix.isHTFConflict
+                        ? "text-rose-400 animate-pulse"
+                        : "text-emerald-400"
+                    }`}>
+                      {analysis.mtfStructureMatrix.isHTFConflict ? "⛔ สวนเทรนด์ H4/D1" : "✅ สอดคล้องโครงสร้างใหญ่"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.mtfStructureMatrix.description}
                 </p>
               </div>
             )}
