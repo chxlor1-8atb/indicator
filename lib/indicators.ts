@@ -58,6 +58,11 @@ import {
   CandlestickPatternMatch,
   CandlestickScanResult,
   GrandQuantMilestone50Info,
+  HurstExponentInfo,
+  KalmanFilterPoint,
+  HalfLifeInfo,
+  TTMSqueezeInfo,
+  CMFInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -4031,6 +4036,394 @@ export function synthesizeGrandQuantMilestone50(
   };
 }
 
+/**
+ * [แผน 51] Hurst Exponent Long-Memory & Persistence Engine
+ * Computes Rescaled Range (R/S) over logarithmic sub-periods to discern:
+ * - Persistent Trending (H > 0.55)
+ * - Mean-Reverting Anti-Persistent (H < 0.45)
+ * - Random Walk Brownian Noise (0.45 <= H <= 0.55)
+ */
+export function calculateHurstExponent(candles: Candle[]): HurstExponentInfo {
+  if (candles.length < 30) {
+    return {
+      hurst: 0.50,
+      marketCharacter: "RANDOM_WALK_BROWNIAN",
+      confidence: 50,
+      interpretation: "ข้อมูลแท่งเทียนยังไม่เพียงพอต่อการวิเคราะห์ Rescaled Range (R/S)",
+      description: "Hurst Exponent: 0.50 (Random Walk Brownian - ข้อมูลจำกัด)",
+    };
+  }
+
+  const closes = candles.map((c) => c.close);
+  const returns: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const prev = closes[i - 1] > 0 ? closes[i - 1] : 1;
+    returns.push(Math.log(closes[i] / prev));
+  }
+
+  const lags = [8, 16, 32];
+  const rsValues: number[] = [];
+
+  for (const lag of lags) {
+    const numSubsets = Math.floor(returns.length / lag);
+    if (numSubsets < 1) continue;
+
+    let totalRS = 0;
+    for (let s = 0; s < numSubsets; s++) {
+      const subset = returns.slice(s * lag, (s + 1) * lag);
+      const mean = subset.reduce((a, b) => a + b, 0) / lag;
+
+      const dev: number[] = [];
+      let cum = 0;
+      for (const val of subset) {
+        cum += val - mean;
+        dev.push(cum);
+      }
+
+      const range = Math.max(...dev) - Math.min(...dev);
+      const variance = subset.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / lag;
+      const stdDev = Math.sqrt(Math.max(1e-8, variance));
+
+      totalRS += range / stdDev;
+    }
+
+    rsValues.push(totalRS / numSubsets);
+  }
+
+  if (rsValues.length < 2) {
+    return {
+      hurst: 0.50,
+      marketCharacter: "RANDOM_WALK_BROWNIAN",
+      confidence: 50,
+      interpretation: "สถิติ R/S ยังไม่เพียงพอต่อการคำนวณถดถอย",
+      description: "Hurst Exponent: 0.50 (Random Walk Brownian)",
+    };
+  }
+
+  const logX = lags.slice(0, rsValues.length).map((l) => Math.log(l));
+  const logY = rsValues.map((rs) => Math.log(Math.max(1e-4, rs)));
+
+  const meanX = logX.reduce((a, b) => a + b, 0) / logX.length;
+  const meanY = logY.reduce((a, b) => a + b, 0) / logY.length;
+
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < logX.length; i++) {
+    num += (logX[i] - meanX) * (logY[i] - meanY);
+    den += Math.pow(logX[i] - meanX, 2);
+  }
+
+  let rawHurst = den === 0 ? 0.5 : num / den;
+  rawHurst = Math.max(0.1, Math.min(0.9, rawHurst));
+  const hurst = Number(rawHurst.toFixed(2));
+
+  let marketCharacter: HurstExponentInfo["marketCharacter"] = "RANDOM_WALK_BROWNIAN";
+  let interpretation = "";
+
+  if (hurst > 0.55) {
+    marketCharacter = "PERSISTENT_TRENDING";
+    interpretation = `ตลาดมีหน่วยความจำเทรนด์ต่อเนื่องสูง (H=${hurst}): ระบบ Breakout & Trend Surfing มีแต้มต่อสูงสุด`;
+  } else if (hurst < 0.45) {
+    marketCharacter = "MEAN_REVERTING_ANTI_PERSISTENT";
+    interpretation = `ตลาดมีแรงดีดกลับสู่ค่ากลางเฉลี่ยสูง (H=${hurst}): ระบบ Mean Reversion & Harmonic PRZ มีแต้มต่อสูงสุด`;
+  } else {
+    marketCharacter = "RANDOM_WALK_BROWNIAN";
+    interpretation = `ตลาดเคลื่อนไหวแบบสุ่ม Geometric Brownian (H=${hurst}): แนะนำควบคุมความเสี่ยงเคร่งครัด`;
+  }
+
+  const confidence = Math.min(100, Math.max(35, Number((Math.abs(hurst - 0.5) * 200).toFixed(0))));
+  const desc = `🧬 Hurst H=${hurst} [${marketCharacter}]: ${interpretation}`;
+
+  return {
+    hurst,
+    marketCharacter,
+    confidence,
+    interpretation,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 52] Kalman Filter Adaptive State Estimator
+ * 1D Recursive Bayesian state estimator tracking true latent price and innovation residual
+ */
+export function calculateKalmanFilter(
+  candles: Candle[],
+  precision = 2,
+  qProcessNoise = 0.0001,
+  rMeasureNoise = 0.01
+): KalmanFilterPoint {
+  if (candles.length === 0) {
+    return {
+      filteredPrice: 0,
+      estimationError: 0,
+      innovativeResidual: 0,
+      kalmanGain: 0,
+      trendBias: "EQUILIBRIUM",
+      description: "Kalman Filter: ไม่มีข้อมูลแท่งเทียน",
+    };
+  }
+
+  let xEst = candles[0].close;
+  let pErr = 1.0;
+  let lastResidual = 0;
+  let lastGain = 0;
+
+  for (let i = 1; i < candles.length; i++) {
+    const z = candles[i].close;
+    const pTemp = pErr + qProcessNoise;
+    const kGain = pTemp / (pTemp + rMeasureNoise);
+    lastResidual = z - xEst;
+    xEst = xEst + kGain * lastResidual;
+    pErr = (1 - kGain) * pTemp;
+    lastGain = kGain;
+  }
+
+  const currentPrice = candles[candles.length - 1].close;
+  const filteredPrice = Number(xEst.toFixed(precision));
+  const innovativeResidual = Number(lastResidual.toFixed(precision));
+  const estimationError = Number(pErr.toFixed(4));
+  const kalmanGain = Number(lastGain.toFixed(4));
+
+  const diff = currentPrice - filteredPrice;
+  let trendBias: KalmanFilterPoint["trendBias"] = "EQUILIBRIUM";
+  if (diff > 0.1) trendBias = "BULLISH_ABOVE_KALMAN";
+  else if (diff < -0.1) trendBias = "BEARISH_BELOW_KALMAN";
+
+  const desc = trendBias === "BULLISH_ABOVE_KALMAN"
+    ? `🎯 ราคาจริง (${currentPrice}) อยู่เหนือเส้นประเมิน Kalman Filter (${filteredPrice}) สถาบันผลักดันราคาฝั่งซื้อ (Residual: +${innovativeResidual})`
+    : trendBias === "BEARISH_BELOW_KALMAN"
+    ? `🎯 ราคาจริง (${currentPrice}) อยู่ใต้เส้นประเมิน Kalman Filter (${filteredPrice}) แรงขายสถาบันกดดันใต้ค่าสมดุล (Residual: ${innovativeResidual})`
+    : `⚖️ ราคาจริงทรงตัวอยู่ที่เส้นดุลยภาพ Kalman Filter (${filteredPrice})`;
+
+  return {
+    filteredPrice,
+    estimationError,
+    innovativeResidual,
+    kalmanGain,
+    trendBias,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 53] Ornstein-Uhlenbeck Mean Reversion Half-Life Engine
+ * Models mean-reversion rate lambda and calculates Half-Life in bars: t_half = -ln(2) / lambda
+ */
+export function calculateHalfLife(candles: Candle[]): HalfLifeInfo {
+  if (candles.length < 25) {
+    return {
+      halfLifeCandles: 20,
+      reversionVelocity: "MEDIUM_SWING",
+      description: "Half-Life: ข้อมูลไม่เพียงพอ ใช้ค่าเริ่มต้น 20 แท่งเทียน",
+    };
+  }
+
+  const closes = candles.map((c) => c.close);
+  const deltaY: number[] = [];
+  const yLag: number[] = [];
+
+  for (let i = 1; i < closes.length; i++) {
+    deltaY.push(closes[i] - closes[i - 1]);
+    yLag.push(closes[i - 1]);
+  }
+
+  const meanX = yLag.reduce((a, b) => a + b, 0) / yLag.length;
+  const meanY = deltaY.reduce((a, b) => a + b, 0) / deltaY.length;
+
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < yLag.length; i++) {
+    num += (yLag[i] - meanX) * (deltaY[i] - meanY);
+    den += Math.pow(yLag[i] - meanX, 2);
+  }
+
+  const lambda = den === 0 ? 0 : num / den;
+
+  if (lambda >= 0) {
+    return {
+      halfLifeCandles: 999,
+      reversionVelocity: "NON_MEAN_REVERTING",
+      description: "⏱️ พฤติกรรมราคาไม่กลับสู่ค่ากลาง (Non-Mean Reverting) ตลาดวิ่งตามเทรนด์โมเมนตัมบริสุทธิ์",
+    };
+  }
+
+  const halfLife = -Math.LN2 / lambda;
+  const clampedHL = Number(Math.min(200, Math.max(1, halfLife)).toFixed(1));
+
+  let reversionVelocity: HalfLifeInfo["reversionVelocity"] = "MEDIUM_SWING";
+  if (clampedHL < 8) reversionVelocity = "FAST_SCALP";
+  else if (clampedHL > 40) reversionVelocity = "NON_MEAN_REVERTING";
+
+  const desc = reversionVelocity === "FAST_SCALP"
+    ? `⚡ คืนตัวสู่ค่ากลางฉับพลัน (Half-Life ${clampedHL} แท่ง): เหมาะสำหรับดักสวิง Scalp คืนค่าเฉลี่ยสถาบัน`
+    : reversionVelocity === "MEDIUM_SWING"
+    ? `⏱️ คืนตัวสู่ค่ากลางปกติ (Half-Life ${clampedHL} แท่ง): ระยะเวลาถือครองคำสั่ง Swing Trading ที่เหมาะสม`
+    : `🌊 การดีดกลับช้ามาก (Half-Life ${clampedHL} แท่ง): โครงสร้างราคาหลุดสถิติค่ากลาง ถือตามแนวโน้มใหญ่`;
+
+  return {
+    halfLifeCandles: clampedHL,
+    reversionVelocity,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 54] John Carter's TTM Squeeze Volatility Compression Engine
+ * Measures Bollinger Bands (20, 2.0) vs Keltner Channels (20, 1.5) to detect coiling and breakout release
+ */
+export function calculateTTMSqueeze(candles: Candle[]): TTMSqueezeInfo {
+  if (candles.length < 25) {
+    return {
+      isSqueezeOn: false,
+      squeezeFired: false,
+      momentum: 0,
+      momentumDirection: "INCREASING_BULL",
+      histogramColor: "GREEN",
+      description: "TTM Squeeze: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  // Calculate BB(20, 2.0)
+  const period = 20;
+  const n = candles.length;
+  const slice = candles.slice(-period);
+  const mean = slice.reduce((a, b) => a + b.close, 0) / period;
+  const variance = slice.reduce((a, b) => a + Math.pow(b.close - mean, 2), 0) / period;
+  const stdDev = Math.sqrt(variance);
+  const bbUpper = mean + 2.0 * stdDev;
+  const bbLower = mean - 2.0 * stdDev;
+
+  // Calculate Keltner Channel(20, 1.5)
+  let trSum = 0;
+  for (let i = n - period; i < n; i++) {
+    const cur = candles[i];
+    const prev = candles[i - 1];
+    const tr = Math.max(cur.high - cur.low, Math.abs(cur.high - prev.close), Math.abs(cur.low - prev.close));
+    trSum += tr;
+  }
+  const atr20 = trSum / period;
+  const kcUpper = mean + 1.5 * atr20;
+  const kcLower = mean - 1.5 * atr20;
+
+  // Check previous bar squeeze
+  const prevSlice = candles.slice(-period - 1, -1);
+  const prevMean = prevSlice.reduce((a, b) => a + b.close, 0) / period;
+  const prevVariance = prevSlice.reduce((a, b) => a + Math.pow(b.close - prevMean, 2), 0) / period;
+  const prevStd = Math.sqrt(prevVariance);
+  const prevBBUpper = prevMean + 2.0 * prevStd;
+  const prevBBLower = prevMean - 2.0 * prevStd;
+  const prevKCUpper = prevMean + 1.5 * atr20;
+  const prevKCLower = prevMean - 1.5 * atr20;
+
+  const isCurrentSqueeze = bbUpper <= kcUpper && bbLower >= kcLower;
+  const wasPrevSqueeze = prevBBUpper <= prevKCUpper && prevBBLower >= prevKCLower;
+  const squeezeFired = wasPrevSqueeze && !isCurrentSqueeze;
+
+  // Momentum via Linear Regression Delta
+  let highest = -Infinity;
+  let lowest = Infinity;
+  for (const b of slice) {
+    if (b.high > highest) highest = b.high;
+    if (b.low < lowest) lowest = b.low;
+  }
+  const basis = ((highest + lowest) / 2 + mean) / 2;
+  const delta = candles[n - 1].close - basis;
+  const prevDelta = candles[n - 2].close - basis;
+
+  let momentumDirection: TTMSqueezeInfo["momentumDirection"] = "INCREASING_BULL";
+  let histogramColor: TTMSqueezeInfo["histogramColor"] = "LIME";
+
+  if (delta >= 0) {
+    if (delta >= prevDelta) {
+      momentumDirection = "INCREASING_BULL";
+      histogramColor = "LIME";
+    } else {
+      momentumDirection = "DECREASING_BULL";
+      histogramColor = "GREEN";
+    }
+  } else {
+    if (delta <= prevDelta) {
+      momentumDirection = "INCREASING_BEAR";
+      histogramColor = "RED";
+    } else {
+      momentumDirection = "DECREASING_BEAR";
+      histogramColor = "MAROON";
+    }
+  }
+
+  const desc = isCurrentSqueeze
+    ? `🗜️ TTM SQUEEZE ON (จุดดำ/แดง): วอลุ่มบีบอัดตัวรุนแรง สถาบันกำลังสะสมพลังเตรียมระเบิดกรอบราคา (โมเมนตัม ${momentumDirection})`
+    : squeezeFired
+    ? `💥 TTM SQUEEZE FIRED: สัญญาณบีบอัดถูกปลดปล่อยแล้ว ระเบิดความผันผวนไปในทิศทาง ${momentumDirection} (Histogram: ${histogramColor})`
+    : `📊 TTM Squeeze Off: ความผันผวนเปิดกว้างเป็นปกติ (Histogram: ${histogramColor} | Delta: ${delta.toFixed(2)})`;
+
+  return {
+    isSqueezeOn: isCurrentSqueeze,
+    squeezeFired,
+    momentum: Number(delta.toFixed(2)),
+    momentumDirection,
+    histogramColor,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 55] Chaikin Money Flow (CMF) & Volume Accumulation Matrix
+ * Measures volume-weighted Close Location Value (CLV) to uncover institutional stealth accumulation/distribution
+ */
+export function calculateCMF(candles: Candle[], period = 20): CMFInfo {
+  if (candles.length < period) {
+    return {
+      cmf: 0,
+      capitalFlow: "MILD_ACCUMULATION",
+      safetyLock14Passed: true,
+      description: "CMF: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const slice = candles.slice(-period);
+  let moneyFlowVolumeSum = 0;
+  let totalVolume = 0;
+
+  for (const bar of slice) {
+    const hl = bar.high - bar.low;
+    const vol = bar.volume > 0 ? bar.volume : 1;
+    totalVolume += vol;
+
+    if (hl > 0) {
+      const clv = ((bar.close - bar.low) - (bar.high - bar.close)) / hl;
+      moneyFlowVolumeSum += clv * vol;
+    }
+  }
+
+  const rawCMF = totalVolume === 0 ? 0 : moneyFlowVolumeSum / totalVolume;
+  const cmf = Number(rawCMF.toFixed(2));
+
+  let capitalFlow: CMFInfo["capitalFlow"] = "MILD_ACCUMULATION";
+  if (cmf >= 0.15) capitalFlow = "STRONG_ACCUMULATION";
+  else if (cmf >= 0.0) capitalFlow = "MILD_ACCUMULATION";
+  else if (cmf >= -0.15) capitalFlow = "DISTRIBUTION";
+  else capitalFlow = "HEAVY_DISTRIBUTION";
+
+  const safetyLock14Passed = Math.abs(cmf) <= 0.35;
+
+  const desc = capitalFlow === "STRONG_ACCUMULATION"
+    ? `💰 สถาบันสะสมวอลุ่มฝั่งซื้อรุนแรง (CMF: +${cmf}): เงินทุนไหลเข้าหนุนทิศทางขาขึ้นอย่างมีนัยสำคัญ`
+    : capitalFlow === "MILD_ACCUMULATION"
+    ? `📈 มีกระแสเงินทุนไหลเข้าต่อเนื่อง (CMF: +${cmf}): โมเมนตัมเงินทุนเป็นบวกอ่อนๆ`
+    : capitalFlow === "DISTRIBUTION"
+    ? `📉 กระแสเงินทุนไหลออกกระจายของ (CMF: ${cmf}): แรงขายสถาบันกดดันเล็กน้อย`
+    : `🚨 สถาบันเทกระจายของทิ้งของหนัก (CMF: ${cmf}): สภาพคล่องไหลออกรุนแรง (Safety Lock 14 เตือนความเสี่ยงฝั่ง Buy)`;
+
+  return {
+    cmf,
+    capitalFlow,
+    safetyLock14Passed,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -4157,6 +4550,13 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     candlestickPatterns.overallScore
   );
 
+  // Batch 11: Plans 51, 52, 53, 54, 55 (Statistical Memory & Volatility Squeeze)
+  const hurstExponent = calculateHurstExponent(cleanCandles);
+  const kalmanFilter = calculateKalmanFilter(cleanCandles, precision);
+  const halfLife = calculateHalfLife(cleanCandles);
+  const ttmSqueeze = calculateTTMSqueeze(cleanCandles);
+  const chaikinMoneyFlow = calculateCMF(cleanCandles);
+
   return {
     rsi14,
     atr14,
@@ -4214,5 +4614,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     shannonEntropy,
     candlestickPatterns,
     milestone50,
+    hurstExponent,
+    kalmanFilter,
+    halfLife,
+    ttmSqueeze,
+    chaikinMoneyFlow,
   };
 }

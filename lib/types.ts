@@ -661,6 +661,11 @@ export interface IndicatorData {
   shannonEntropy?: ShannonEntropyInfo;
   candlestickPatterns?: CandlestickScanResult;
   milestone50?: GrandQuantMilestone50Info;
+  hurstExponent?: HurstExponentInfo;
+  kalmanFilter?: KalmanFilterPoint;
+  halfLife?: HalfLifeInfo;
+  ttmSqueeze?: TTMSqueezeInfo;
+  chaikinMoneyFlow?: CMFInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -792,6 +797,11 @@ export interface AnalysisResult {
   shannonEntropy?: ShannonEntropyInfo;
   candlestickPatterns?: CandlestickScanResult;
   milestone50?: GrandQuantMilestone50Info;
+  hurstExponent?: HurstExponentInfo;
+  kalmanFilter?: KalmanFilterPoint;
+  halfLife?: HalfLifeInfo;
+  ttmSqueeze?: TTMSqueezeInfo;
+  chaikinMoneyFlow?: CMFInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -865,6 +875,11 @@ export interface AnalysisResult {
     shannonEntropy?: ShannonEntropyInfo;
     candlestickPatterns?: CandlestickScanResult;
     milestone50?: GrandQuantMilestone50Info;
+    hurstExponent?: HurstExponentInfo;
+    kalmanFilter?: KalmanFilterPoint;
+    halfLife?: HalfLifeInfo;
+    ttmSqueeze?: TTMSqueezeInfo;
+    chaikinMoneyFlow?: CMFInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1087,6 +1102,7 @@ export interface TTMSqueezeInfo {
   momentum: number;
   momentumDirection: "INCREASING_BULL" | "DECREASING_BULL" | "INCREASING_BEAR" | "DECREASING_BEAR";
   histogramColor: "LIME" | "GREEN" | "RED" | "MAROON";
+  description?: string;
 }
 
 export interface KeltnerChannelPoint {
@@ -1113,6 +1129,8 @@ export interface AdvancedVolatilitySuite {
 export interface CMFInfo {
   cmf: number;
   capitalFlow: "STRONG_ACCUMULATION" | "MILD_ACCUMULATION" | "DISTRIBUTION" | "HEAVY_DISTRIBUTION";
+  safetyLock14Passed?: boolean;
+  description?: string;
 }
 
 export interface MFIInfo {
@@ -1126,12 +1144,16 @@ export interface HurstExponentInfo {
   marketCharacter: "PERSISTENT_TRENDING" | "RANDOM_WALK_BROWNIAN" | "MEAN_REVERTING_ANTI_PERSISTENT";
   confidence: number;
   interpretation: string;
+  description?: string;
 }
 
 export interface KalmanFilterPoint {
   filteredPrice: number;
   estimationError: number;
   innovativeResidual: number;
+  kalmanGain?: number;
+  trendBias?: "BULLISH_ABOVE_KALMAN" | "BEARISH_BELOW_KALMAN" | "EQUILIBRIUM";
+  description?: string;
 }
 
 export interface ShannonEntropyInfo {
@@ -1146,6 +1168,7 @@ export interface ShannonEntropyInfo {
 export interface HalfLifeInfo {
   halfLifeCandles: number;
   reversionVelocity: "FAST_SCALP" | "MEDIUM_SWING" | "NON_MEAN_REVERTING";
+  description?: string;
 }
 
 export interface EhlersMESAInfo {

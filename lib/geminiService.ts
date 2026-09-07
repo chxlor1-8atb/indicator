@@ -45,6 +45,11 @@ import {
   ShannonEntropyInfo,
   CandlestickScanResult,
   GrandQuantMilestone50Info,
+  HurstExponentInfo,
+  KalmanFilterPoint,
+  HalfLifeInfo,
+  TTMSqueezeInfo,
+  CMFInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -93,6 +98,11 @@ import {
   calculateShannonEntropy,
   scanCandlestickPatterns,
   synthesizeGrandQuantMilestone50,
+  calculateHurstExponent,
+  calculateKalmanFilter,
+  calculateHalfLife,
+  calculateTTMSqueeze,
+  calculateCMF,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -317,6 +327,13 @@ export function generateRuleBasedAnalysis(
   const shannonEntropy = indicators.shannonEntropy || calculateShannonEntropy(candles, 30);
   const candlestickPatterns = indicators.candlestickPatterns || scanCandlestickPatterns(candles, precision);
 
+  // ─── BATCH 11 PRE-COMPUTATIONS (PLANS 51-55) ───
+  const hurstExponent = indicators.hurstExponent || calculateHurstExponent(candles);
+  const kalmanFilter = indicators.kalmanFilter || calculateKalmanFilter(candles, precision);
+  const halfLife = indicators.halfLife || calculateHalfLife(candles);
+  const ttmSqueeze = indicators.ttmSqueeze || calculateTTMSqueeze(candles);
+  const chaikinMoneyFlow = indicators.chaikinMoneyFlow || calculateCMF(candles);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -428,6 +445,16 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
   }
+  // SAFETY LOCK 14: Chaikin Money Flow (CMF) Institutional Divergence Shield [แผน 55]
+  else if (tier1Bias === "BULLISH" && chaikinMoneyFlow.cmf < -0.15) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  } else if (tier1Bias === "BEARISH" && chaikinMoneyFlow.cmf > 0.15) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -444,6 +471,10 @@ export function generateRuleBasedAnalysis(
     if (harmonics.hasPattern && harmonics.bestPattern?.type === "BULLISH") confidence = Math.min(98, confidence + 5);
     if (ehlersMESA.cycleState === "CYCLE_MODE") confidence = Math.min(98, confidence + 4);
     if (candlestickPatterns.dominantSignal === "BULLISH") confidence = Math.min(98, confidence + 4);
+    if (ttmSqueeze.squeezeFired && ttmSqueeze.momentumDirection === "INCREASING_BULL") confidence = Math.min(98, confidence + 5);
+    if (hurstExponent.marketCharacter === "PERSISTENT_TRENDING") confidence = Math.min(98, confidence + 4);
+    if (chaikinMoneyFlow.capitalFlow === "STRONG_ACCUMULATION") confidence = Math.min(98, confidence + 4);
+    if (kalmanFilter.trendBias === "BULLISH_ABOVE_KALMAN") confidence = Math.min(98, confidence + 3);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -460,6 +491,10 @@ export function generateRuleBasedAnalysis(
     if (harmonics.hasPattern && harmonics.bestPattern?.type === "BEARISH") confidence = Math.min(98, confidence + 5);
     if (ehlersMESA.cycleState === "CYCLE_MODE") confidence = Math.min(98, confidence + 4);
     if (candlestickPatterns.dominantSignal === "BEARISH") confidence = Math.min(98, confidence + 4);
+    if (ttmSqueeze.squeezeFired && ttmSqueeze.momentumDirection === "INCREASING_BEAR") confidence = Math.min(98, confidence + 5);
+    if (hurstExponent.marketCharacter === "PERSISTENT_TRENDING") confidence = Math.min(98, confidence + 4);
+    if (chaikinMoneyFlow.capitalFlow === "HEAVY_DISTRIBUTION") confidence = Math.min(98, confidence + 4);
+    if (kalmanFilter.trendBias === "BEARISH_BELOW_KALMAN") confidence = Math.min(98, confidence + 3);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -719,6 +754,14 @@ export function generateRuleBasedAnalysis(
       passed: harmonics.hasPattern || (ehlersMESA.cycleState === "TREND_MODE" && shannonEntropy.orderliness !== "MAXIMUM_CHAOS_NOISE"),
       note: `${ehlersMESA.description} • ${shannonEntropy.description} • Harmonics: ${harmonics.hasPattern ? harmonics.bestPattern?.patternName : "None"} • Patterns: ${candlestickPatterns.dominantSignal}`,
     },
+    {
+      name: `Pillar 14: Statistical Memory & Volatility Squeeze (${hurstExponent.marketCharacter} | ${ttmSqueeze.isSqueezeOn ? "SQUEEZE_ON" : ttmSqueeze.squeezeFired ? "SQUEEZE_FIRED" : "NORMAL"})`,
+      passed: (tradeAction === "BUY" && chaikinMoneyFlow.cmf >= -0.05) ||
+              (tradeAction === "SELL" && chaikinMoneyFlow.cmf <= 0.05) ||
+              ttmSqueeze.squeezeFired ||
+              hurstExponent.marketCharacter === "PERSISTENT_TRENDING",
+      note: `${hurstExponent.description} • ${ttmSqueeze.description} • ${chaikinMoneyFlow.description} • Kalman: ${kalmanFilter.trendBias}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -780,6 +823,11 @@ export function generateRuleBasedAnalysis(
     shannonEntropy,
     candlestickPatterns,
     milestone50,
+    hurstExponent,
+    kalmanFilter,
+    halfLife,
+    ttmSqueeze,
+    chaikinMoneyFlow,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -828,6 +876,11 @@ export function generateRuleBasedAnalysis(
         `Shannon Entropy: ${shannonEntropy.normalizedEntropy} (${shannonEntropy.orderliness} - Noise: ${shannonEntropy.noisePct}%)`,
         `Candlestick Matrix: ${candlestickPatterns.dominantSignal} (${candlestickPatterns.detectedPatterns.length} Patterns found)`,
         `Grand Milestone 50: [${milestone50.milestoneGrade}] Score: ${milestone50.milestoneScore}/100 - ${milestone50.goldenTicketStatus}`,
+        `Hurst Exponent: H=${hurstExponent.hurst} (${hurstExponent.marketCharacter} - Conf: ${hurstExponent.confidence}%)`,
+        `Kalman Filter: True Price ${kalmanFilter.filteredPrice} (Bias: ${kalmanFilter.trendBias} | Residual: ${kalmanFilter.innovativeResidual})`,
+        `O-U Half-Life: ${halfLife.halfLifeCandles} Bars (${halfLife.reversionVelocity})`,
+        `TTM Squeeze: ${ttmSqueeze.isSqueezeOn ? "SQUEEZE_ON (Coiling)" : ttmSqueeze.squeezeFired ? "SQUEEZE_FIRED (Explosive)" : "OFF"} (${ttmSqueeze.momentumDirection} - ${ttmSqueeze.histogramColor})`,
+        `Chaikin Money Flow: CMF ${chaikinMoneyFlow.cmf} (${chaikinMoneyFlow.capitalFlow} - Lock 14: ${chaikinMoneyFlow.safetyLock14Passed ? "PASSED" : "ALERT"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -896,6 +949,11 @@ export function generateRuleBasedAnalysis(
       shannonEntropy,
       candlestickPatterns,
       milestone50,
+      hurstExponent,
+      kalmanFilter,
+      halfLife,
+      ttmSqueeze,
+      chaikinMoneyFlow,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1246,6 +1304,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.shannonEntropy = ruleAnalysis.shannonEntropy;
     parsed.candlestickPatterns = ruleAnalysis.candlestickPatterns;
     parsed.milestone50 = ruleAnalysis.milestone50;
+    parsed.hurstExponent = ruleAnalysis.hurstExponent;
+    parsed.kalmanFilter = ruleAnalysis.kalmanFilter;
+    parsed.halfLife = ruleAnalysis.halfLife;
+    parsed.ttmSqueeze = ruleAnalysis.ttmSqueeze;
+    parsed.chaikinMoneyFlow = ruleAnalysis.chaikinMoneyFlow;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -1284,6 +1347,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.shannonEntropy = ruleAnalysis.tradeSetup.shannonEntropy;
       parsed.tradeSetup.candlestickPatterns = ruleAnalysis.tradeSetup.candlestickPatterns;
       parsed.tradeSetup.milestone50 = ruleAnalysis.tradeSetup.milestone50;
+      parsed.tradeSetup.hurstExponent = ruleAnalysis.tradeSetup.hurstExponent;
+      parsed.tradeSetup.kalmanFilter = ruleAnalysis.tradeSetup.kalmanFilter;
+      parsed.tradeSetup.halfLife = ruleAnalysis.tradeSetup.halfLife;
+      parsed.tradeSetup.ttmSqueeze = ruleAnalysis.tradeSetup.ttmSqueeze;
+      parsed.tradeSetup.chaikinMoneyFlow = ruleAnalysis.tradeSetup.chaikinMoneyFlow;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

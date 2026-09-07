@@ -117,6 +117,11 @@ export default function AnalysisCard({
     const ent = analysis.tradeSetup.shannonEntropy || analysis.shannonEntropy;
     const cs = analysis.tradeSetup.candlestickPatterns || analysis.candlestickPatterns;
     const m50 = analysis.tradeSetup.milestone50 || analysis.milestone50;
+    const hurst = analysis.tradeSetup.hurstExponent || analysis.hurstExponent;
+    const kalman = analysis.tradeSetup.kalmanFilter || analysis.kalmanFilter;
+    const hl = analysis.tradeSetup.halfLife || analysis.halfLife;
+    const ttm = analysis.tradeSetup.ttmSqueeze || analysis.ttmSqueeze;
+    const cmf = analysis.tradeSetup.chaikinMoneyFlow || analysis.chaikinMoneyFlow;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -125,6 +130,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (hurst ? `• 🧬 Hurst Exponent: ${hurst.hurst} (${hurst.marketCharacter} | ความเชื่อมั่น ${hurst.confidence}%)\n` : "") +
+      (kalman ? `• 🎯 Kalman Filter Latent State: ${kalman.filteredPrice} (Error: ±${kalman.estimationError} | Bias: ${kalman.trendBias || "EQUILIBRIUM"})\n` : "") +
+      (hl ? `• ⏱️ OU Half-Life Reversion: ${hl.halfLifeCandles} bars (${hl.reversionVelocity})\n` : "") +
+      (ttm ? `• 🗜️ TTM Squeeze: ${ttm.isSqueezeOn ? "SQUEEZE ON" : ttm.squeezeFired ? "SQUEEZE FIRED" : "NORMAL"} (${ttm.momentumDirection} | Momentum: ${ttm.momentum})\n` : "") +
+      (cmf ? `• 🌊 Chaikin Money Flow: ${cmf.cmf} (${cmf.capitalFlow} | Safety Lock 14: ${cmf.safetyLock14Passed ? "PASSED" : "BLOCKED"})\n` : "") +
       (harm && harm.hasPattern && harm.bestPattern ? `• 📐 Harmonic Pattern: ${harm.bestPattern.patternName} (${harm.bestPattern.type}) | PRZ: ${harm.bestPattern.prz.min}-${harm.bestPattern.prz.max} | TP1: ${harm.bestPattern.targetTP1}\n` : "") +
       (mesa ? `• 📡 Ehlers MESA DSP: ${mesa.cycleState} (Dominant Period: ${mesa.dominantCyclePeriod} bars | Phase: ${mesa.phaseAngle}°)\n` : "") +
       (ent ? `• 🎲 Shannon Entropy: ${ent.normalizedEntropy} (${ent.orderliness} | Noise: ${ent.noisePct}% | Lock 13: ${ent.safetyLock13Passed ? "PASSED" : "BLOCKED"})\n` : "") +
@@ -2686,6 +2696,269 @@ export default function AnalysisCard({
 
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.milestone50?.summary || analysis.candlestickPatterns?.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5k. 📈 Statistical Physics, Kalman Filter & Volatility Squeeze Matrix (Plans 51-55) */}
+      {(analysis.hurstExponent || analysis.kalmanFilter || analysis.halfLife || analysis.ttmSqueeze || analysis.chaikinMoneyFlow) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-teal-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                <Activity className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Statistical Physics, Kalman State & Volatility Squeeze Matrix (แผน 51-55)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-teal-500/20 to-cyan-500/20 text-teal-300 border border-teal-500/30">
+                    🔬 Physics & Dynamic Volatility
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  เครื่องยนต์คำนวณสถิติความจำตลาด Hurst Exponent, ตัวกรองแฝง Kalman Filter, คำนวณความเร็วการดึงกลับ Ornstein-Uhlenbeck Half-Life, TTM Squeeze การบีบตัว และ Chaikin Money Flow Shield
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Hurst Exponent & Long-Memory Persistence (Plan 51) */}
+            {analysis.hurstExponent && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🧬 Hurst Exponent (H)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.hurstExponent.marketCharacter === "PERSISTENT_TRENDING"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.hurstExponent.marketCharacter === "MEAN_REVERTING_ANTI_PERSISTENT"
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-700"
+                  }`}>
+                    {analysis.hurstExponent.marketCharacter === "PERSISTENT_TRENDING"
+                      ? "TRENDING H > 0.55"
+                      : analysis.hurstExponent.marketCharacter === "MEAN_REVERTING_ANTI_PERSISTENT"
+                      ? "MEAN-REVERT H < 0.45"
+                      : "RANDOM WALK H ~ 0.5"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ค่าสถิติ Hurst (H):</span>
+                    <span className={`font-mono font-bold ${
+                      analysis.hurstExponent.hurst > 0.55
+                        ? "text-emerald-400"
+                        : analysis.hurstExponent.hurst < 0.45
+                        ? "text-purple-400"
+                        : "text-slate-300"
+                    }`}>
+                      {analysis.hurstExponent.hurst}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">พฤติกรรมโครงสร้าง:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.hurstExponent.marketCharacter === "PERSISTENT_TRENDING"
+                        ? "เทรนด์จำสภาวะต่อเนื่อง"
+                        : analysis.hurstExponent.marketCharacter === "MEAN_REVERTING_ANTI_PERSISTENT"
+                        ? "ดึงกลับเข้าหาค่าเฉลี่ย"
+                        : "สุ่มไร้ทิศทาง (Random Walk)"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ความเชื่อมั่นแบบจำลอง:</span>
+                    <span className="font-mono text-emerald-300 text-[10px]">
+                      {analysis.hurstExponent.confidence}% Confidence
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.hurstExponent.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Kalman Filter Latent State Estimator (Plan 52) */}
+            {analysis.kalmanFilter && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🎯 Kalman State Estimator</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.kalmanFilter.trendBias === "BULLISH_ABOVE_KALMAN"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.kalmanFilter.trendBias === "BEARISH_BELOW_KALMAN"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-700"
+                  }`}>
+                    {analysis.kalmanFilter.trendBias === "BULLISH_ABOVE_KALMAN"
+                      ? "BULLISH BIAS"
+                      : analysis.kalmanFilter.trendBias === "BEARISH_BELOW_KALMAN"
+                      ? "BEARISH BIAS"
+                      : "EQUILIBRIUM"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Latent True Price:</span>
+                    <span className="font-mono font-bold text-white">
+                      {analysis.kalmanFilter.filteredPrice}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Estimation Error (±):</span>
+                    <span className="font-mono text-amber-300 text-[10px]">
+                      ±{analysis.kalmanFilter.estimationError} (Gain: {analysis.kalmanFilter.kalmanGain ?? 0})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Innovation Residual:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.kalmanFilter.innovativeResidual > 0
+                        ? "text-emerald-300"
+                        : analysis.kalmanFilter.innovativeResidual < 0
+                        ? "text-rose-300"
+                        : "text-slate-400"
+                    }`}>
+                      {analysis.kalmanFilter.innovativeResidual > 0 ? `+${analysis.kalmanFilter.innovativeResidual}` : analysis.kalmanFilter.innovativeResidual}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.kalmanFilter.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Ornstein-Uhlenbeck Mean Reversion Half-Life (Plan 53) */}
+            {analysis.halfLife && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⏱️ OU Half-Life Reversion</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.halfLife.reversionVelocity === "FAST_SCALP"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.halfLife.reversionVelocity === "MEDIUM_SWING"
+                      ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                      : "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                  }`}>
+                    {analysis.halfLife.reversionVelocity === "FAST_SCALP"
+                      ? "⚡ FAST SCALP"
+                      : analysis.halfLife.reversionVelocity === "MEDIUM_SWING"
+                      ? "⏱️ MEDIUM SWING"
+                      : "🌊 TRENDING"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">รอบดึงกลับ (Half-Life):</span>
+                    <span className="font-mono font-bold text-teal-300">
+                      {analysis.halfLife.halfLifeCandles < 900 ? `${analysis.halfLife.halfLifeCandles} แท่งเทียน` : "ไม่ดึงกลับ (Trend)"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">พฤติกรรม Reversion:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.halfLife.reversionVelocity === "FAST_SCALP"
+                        ? "คืนค่าเฉลี่ยรวดเร็ว (Scalp)"
+                        : analysis.halfLife.reversionVelocity === "MEDIUM_SWING"
+                        ? "คืนค่าเฉลี่ยปานกลาง (Swing)"
+                        : "หลุดสถิติค่ากลาง (เกาะเทรนด์)"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ความเร็วการคืนตัว:</span>
+                    <span className="font-mono text-emerald-300 text-[10px]">
+                      {analysis.halfLife.reversionVelocity}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.halfLife.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: TTM Squeeze & CMF Accumulation Matrix (Plans 54 & 55 + Safety Lock 14) */}
+            {(analysis.ttmSqueeze || analysis.chaikinMoneyFlow) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🗜️ TTM Squeeze & CMF</span>
+                  {analysis.chaikinMoneyFlow && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.chaikinMoneyFlow.safetyLock14Passed
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                    }`}>
+                      {analysis.chaikinMoneyFlow.safetyLock14Passed ? "🛡️ LOCK 14 PASS" : "⛔ CMF BLOCKED"}
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  {analysis.ttmSqueeze && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">สถานะ TTM Squeeze:</span>
+                        <span className={`font-mono font-bold text-[10px] px-1.5 py-0.5 rounded ${
+                          analysis.ttmSqueeze.isSqueezeOn
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse"
+                            : analysis.ttmSqueeze.squeezeFired
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                            : "bg-slate-700/40 text-slate-300"
+                        }`}>
+                          {analysis.ttmSqueeze.isSqueezeOn
+                            ? "🗜️ SQUEEZE ON"
+                            : analysis.ttmSqueeze.squeezeFired
+                            ? "💥 SQUEEZE FIRED"
+                            : "EXPANSION"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Squeeze Momentum:</span>
+                        <span className={`font-mono font-bold text-[10px] ${
+                          analysis.ttmSqueeze.momentumDirection.includes("INCREASING_BULL")
+                            ? "text-emerald-400"
+                            : analysis.ttmSqueeze.momentumDirection.includes("DECREASING_BULL")
+                            ? "text-teal-300"
+                            : analysis.ttmSqueeze.momentumDirection.includes("INCREASING_BEAR")
+                            ? "text-rose-400"
+                            : "text-amber-300"
+                        }`}>
+                          {analysis.ttmSqueeze.momentum > 0 ? `+${analysis.ttmSqueeze.momentum}` : analysis.ttmSqueeze.momentum} ({analysis.ttmSqueeze.histogramColor})
+                        </span>
+                      </div>
+                    </>
+                  )}
+
+                  {analysis.chaikinMoneyFlow && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Chaikin Money Flow:</span>
+                        <span className={`font-mono font-bold text-[10px] ${
+                          analysis.chaikinMoneyFlow.cmf > 0.05
+                            ? "text-emerald-400"
+                            : analysis.chaikinMoneyFlow.cmf < -0.05
+                            ? "text-rose-400"
+                            : "text-slate-300"
+                        }`}>
+                          {analysis.chaikinMoneyFlow.cmf > 0 ? `+${analysis.chaikinMoneyFlow.cmf}` : analysis.chaikinMoneyFlow.cmf} ({analysis.chaikinMoneyFlow.capitalFlow.replace("_ACCUMULATION", " สะสม").replace("_DISTRIBUTION", " ระบาย")})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">กระแสเงินสถาบัน:</span>
+                        <span className="font-mono text-indigo-300 text-[10px]">
+                          {analysis.chaikinMoneyFlow.capitalFlow}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.ttmSqueeze?.description || analysis.chaikinMoneyFlow?.description}
                 </p>
               </div>
             )}
