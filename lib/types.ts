@@ -291,6 +291,79 @@ export interface CorrelationShieldInfo {
   description: string;
 }
 
+// [แผน 31] Institutional Imbalance & FVG Mitigation Tracker
+export interface FVGDetailItem {
+  id: string;
+  type: "BULLISH_FVG" | "BEARISH_FVG";
+  top: number;
+  bottom: number;
+  consequentEncroachment: number; // 50% midpoint
+  sizePips: number;
+  mitigationStatus: "UNMITIGATED" | "PARTIALLY_MITIGATED" | "FULLY_MITIGATED";
+  candleIndex: number;
+  timeStr?: string;
+}
+
+export interface FVGMitigationInfo {
+  activeFVGs: FVGDetailItem[];
+  unmitigatedCount: number;
+  nearestFVG: FVGDetailItem | null;
+  recommendedEntryLimit: number | null; // C.E. 50% of nearest valid FVG
+  bias: "BULLISH_IMBALANCE" | "BEARISH_IMBALANCE" | "BALANCED";
+  description: string;
+}
+
+// [แผน 32] Market Structure Shift (MSS) with Displacement Velocity
+export interface MarketStructureShiftInfo {
+  detected: boolean;
+  type: "BULLISH_MSS" | "BEARISH_MSS" | "NONE";
+  breakPrice: number;
+  displacementMultiplier: number; // displacement candle body / ATR
+  isTrueDisplacement: boolean; // >= 1.8x ATR
+  displacementVelocity: "EXPLOSIVE" | "MODERATE" | "WEAK";
+  mssCandleIndex: number;
+  description: string;
+}
+
+// [แผน 33] Premium vs Discount Array Matrix & Dealing Range
+export interface PremiumDiscountInfo {
+  rangeHigh: number;
+  rangeLow: number;
+  equilibrium: number; // 50% midpoint
+  currentPrice: number;
+  percentile: number; // 0 - 100%
+  zone: "EXTREME_PREMIUM" | "PREMIUM" | "EQUILIBRIUM" | "DISCOUNT" | "DEEP_DISCOUNT";
+  tradeAllowed: boolean; // False if BUY in Extreme Premium (>80%) or SELL in Deep Discount (<20%)
+  actionWarning: string;
+  description: string;
+}
+
+// [แผน 34] Daily & Weekly Key High/Low (PDH, PDL, PWH, PWL) Liquidity Targets
+export interface KeyLevelTargetsInfo {
+  pdh: number; // Previous Day High
+  pdl: number; // Previous Day Low
+  pwh: number; // Previous Week High
+  pwl: number; // Previous Week Low
+  nearestLiquidityTarget: {
+    name: "PDH" | "PDL" | "PWH" | "PWL" | "NONE";
+    price: number;
+    distancePips: number;
+    type: "BUY_SIDE_LIQUIDITY" | "SELL_SIDE_LIQUIDITY";
+  };
+  description: string;
+}
+
+// [แผน 35] Algorithmic Order Flow Velocity & Momentum Acceleration Index
+export interface OrderFlowVelocityInfo {
+  velocityScore: number; // -100 to +100
+  momentumState: "ACCELERATING_BULLISH" | "ACCELERATING_BEARISH" | "DECELERATING" | "CLIMAX_EXHAUSTION" | "NEUTRAL";
+  isClimaxExhaustion: boolean;
+  acceleration3Bar: number;
+  flowVolumeRatio: number;
+  description: string;
+}
+
+
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
   grade: "A+" | "A" | "B" | "C (Wait)";
@@ -377,6 +450,7 @@ export interface CalendarSafetyStatus {
 
 export interface IndicatorData {
   rsi14: (number | null)[];
+  atr14?: (number | null)[];
   ema20: (number | null)[];
   ema50: (number | null)[];
   ema200: (number | null)[];
@@ -416,6 +490,11 @@ export interface IndicatorData {
   realizedVolatility?: RealizedVolatilityInfo;
   candleMicrostructure?: CandleMicrostructureInfo;
   correlationShield?: CorrelationShieldInfo;
+  fvgMitigation?: FVGMitigationInfo;
+  marketStructureShift?: MarketStructureShiftInfo;
+  premiumDiscount?: PremiumDiscountInfo;
+  keyLevelTargets?: KeyLevelTargetsInfo;
+  orderFlowVelocity?: OrderFlowVelocityInfo;
 }
 
 export interface NewsItem {
@@ -526,6 +605,11 @@ export interface AnalysisResult {
   realizedVolatility?: RealizedVolatilityInfo;
   candleMicrostructure?: CandleMicrostructureInfo;
   correlationShield?: CorrelationShieldInfo;
+  fvgMitigation?: FVGMitigationInfo;
+  marketStructureShift?: MarketStructureShiftInfo;
+  premiumDiscount?: PremiumDiscountInfo;
+  keyLevelTargets?: KeyLevelTargetsInfo;
+  orderFlowVelocity?: OrderFlowVelocityInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -579,6 +663,11 @@ export interface AnalysisResult {
     realizedVolatility?: RealizedVolatilityInfo;
     candleMicrostructure?: CandleMicrostructureInfo;
     correlationShield?: CorrelationShieldInfo;
+    fvgMitigation?: FVGMitigationInfo;
+    marketStructureShift?: MarketStructureShiftInfo;
+    premiumDiscount?: PremiumDiscountInfo;
+    keyLevelTargets?: KeyLevelTargetsInfo;
+    orderFlowVelocity?: OrderFlowVelocityInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -587,6 +676,120 @@ export interface AnalysisResult {
     };
     invalidationNote: string;
   };
+  institutionalQuant?: Institutional5LayerHub;
+}
+
+// ─── 5-LAYER INSTITUTIONAL QUANT INTERFACES ───
+
+export interface QuantDataHygieneInfo {
+  cleanCandlesCount: number;
+  outliersFiltered: number;
+  dataIntegrityScore: number; // 0 - 100
+  stationarityStatus: "STATIONARY" | "MILD_TREND" | "NON_STATIONARY";
+  rollingZScoreRange: { min: number; max: number; current: number };
+  status: string;
+}
+
+export interface IntermarketCorrelationInfo {
+  baseSymbol: string;
+  benchmarkSymbol: string;
+  correlationR: number; // -1.00 to +1.00
+  correlationRegime: "STRONG_INVERSE" | "MODERATE_INVERSE" | "DECOUPLED" | "MODERATE_POSITIVE" | "STRONG_POSITIVE";
+  divergenceWarning: string | null;
+  shieldAction: "PROCEED" | "REDUCE_RISK" | "FREEZE_HEDGE";
+}
+
+export interface QuantFeatureItem {
+  name: string;
+  code: string;
+  category: "TREND" | "VOLATILITY" | "STRUCTURE" | "MOMENTUM" | "ORDER_FLOW" | "MTF";
+  value: number; // -1.0 to 1.0 or normalized
+  zScore: number;
+  description: string;
+  signal: "BULLISH" | "BEARISH" | "NEUTRAL";
+}
+
+export interface FeatureVector24D {
+  features: QuantFeatureItem[];
+  aggregateBullScore: number; // 0 - 100
+  aggregateBearScore: number; // 0 - 100
+  dominantCategory: string;
+  summary: string;
+}
+
+export interface MLPredictionInfo {
+  mlDirection: "BUY" | "SELL" | "NEUTRAL";
+  probabilities: { buy: number; sell: number; neutral: number };
+  confidence: number; // 0 - 100%
+  sampleCount: number;
+  modelType: "RANDOM_FOREST_ENSEMBLE" | "GRADIENT_BOOSTED_TREE";
+  featureImportance: Array<{ featureName: string; weight: number; impact: "BULLISH" | "BEARISH" | "NEUTRAL" }>;
+  summary: string;
+}
+
+export interface RegimeAdaptiveStrategyInfo {
+  regime: MarketRegimeType;
+  strategyName: string;
+  strategyMode: "TREND_SURFING" | "SMC_PULLBACK_OTE" | "VOLATILITY_BREAKOUT" | "CAPITAL_PRESERVATION_WAIT" | "MEAN_REVERSION_SCALP";
+  tacticalExecution: string;
+  riskMultiplier: number; // 0.0 to 1.5
+  targetRR: string;
+  allowedOrderTypes: string[];
+}
+
+export interface InstitutionalRiskEngineInfo {
+  accountBalance: number;
+  riskPct: number;
+  dollarRisk: number;
+  atrValue: number;
+  slPips: number;
+  calculatedLotSize: number;
+  fractionalKellyLot: number;
+  kellyFraction: number;
+  executionBracket: {
+    entryZone: { min: number; max: number };
+    structuralSL: number;
+    beTriggerPrice: number;
+    tp1Price: number;
+    tp2Price: number;
+  };
+  confidenceGateStatus: "APPROVED" | "CAUTION_HALF_RISK" | "BLOCKED_WAIT";
+  gateReason: string;
+}
+
+export interface WalkForwardFold {
+  foldIndex: number;
+  inSampleRange: string;
+  outOfSampleRange: string;
+  isWinRate: number;
+  oosWinRate: number;
+  isProfitFactor: number;
+  oosProfitFactor: number;
+  passed: boolean;
+}
+
+export interface WalkForwardAnalysisInfo {
+  totalFolds: number;
+  walkForwardEfficiency: number; // WFE %
+  avgISWinRate: number;
+  avgOOSWinRate: number;
+  overfittingRisk: "LOW_ROBUST" | "MODERATE_ACCEPTABLE" | "HIGH_CURVE_FITTED";
+  tripleBarrierStats: {
+    hitUpperTP: number;
+    hitLowerSL: number;
+    hitVerticalTimeout: number;
+  };
+  robustnessGrade: "INSTITUTIONAL_ROBUST" | "ACCEPTABLE" | "OVERFITTED";
+  folds: WalkForwardFold[];
+  summary: string;
+}
+
+export interface Institutional5LayerHub {
+  layer1Data: QuantDataHygieneInfo & { correlation: IntermarketCorrelationInfo };
+  layer2Features: FeatureVector24D;
+  layer3Brain: MLPredictionInfo & { adaptiveStrategy: RegimeAdaptiveStrategyInfo };
+  layer4Risk: InstitutionalRiskEngineInfo;
+  layer5Validation: WalkForwardAnalysisInfo;
 }
 
 export interface TelegramConfig {

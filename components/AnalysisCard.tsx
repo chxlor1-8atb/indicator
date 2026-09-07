@@ -37,7 +37,12 @@ import {
   ChevronDown,
   ChevronUp,
   Smartphone,
-  Calculator
+  Calculator,
+  Brain,
+  Database,
+  Cpu,
+  Activity,
+  Scale
 } from "lucide-react";
 
 interface AnalysisCardProps {
@@ -60,6 +65,7 @@ export default function AnalysisCard({
   const [customBalance, setCustomBalance] = useState<number>(10);
   const [customRiskPct, setCustomRiskPct] = useState<number>(2);
   const [accountType, setAccountType] = useState<"STANDARD" | "CENT">("STANDARD");
+  const [activeQuantLayer, setActiveQuantLayer] = useState<1 | 2 | 3 | 4 | 5>(3);
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -90,6 +96,11 @@ export default function AnalysisCard({
     const rv = analysis.tradeSetup.realizedVolatility || analysis.realizedVolatility;
     const micro = analysis.tradeSetup.candleMicrostructure || analysis.candleMicrostructure;
     const shield = analysis.tradeSetup.correlationShield || analysis.correlationShield;
+    const fvg = analysis.tradeSetup.fvgMitigation || analysis.fvgMitigation;
+    const mss = analysis.tradeSetup.marketStructureShift || analysis.marketStructureShift;
+    const pd = analysis.tradeSetup.premiumDiscount || analysis.premiumDiscount;
+    const key = analysis.tradeSetup.keyLevelTargets || analysis.keyLevelTargets;
+    const flow = analysis.tradeSetup.orderFlowVelocity || analysis.orderFlowVelocity;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
       `• Signal: ${analysis.signal} (Grade: ${analysis.setupGrade || "A"}, Confluence: ${mc?.totalScore || analysis.confidence}%)\n` +
@@ -97,6 +108,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (fvg && fvg.recommendedEntryLimit ? `• FVG C.E. 50%: ${fvg.recommendedEntryLimit} (${fvg.bias} | Unmitigated: ${fvg.unmitigatedCount})\n` : "") +
+      (mss && mss.detected ? `• Market Structure Shift: ${mss.type} (Displacement: ${mss.displacementMultiplier}x ATR - ${mss.displacementVelocity})\n` : "") +
+      (pd ? `• Premium/Discount: ${pd.percentile}% (${pd.zone} | Equilibrium: ${pd.equilibrium})\n` : "") +
+      (key ? `• Key Liquidity Target: ${key.nearestLiquidityTarget.name} (${key.nearestLiquidityTarget.price} - ${key.nearestLiquidityTarget.distancePips} pips)\n` : "") +
+      (flow ? `• Order Flow Velocity: Score ${flow.velocityScore} (${flow.momentumState})\n` : "") +
       (vp ? `• Volume Profile Value Area: ${vp.val} - ${vp.vah} (POC: ${vp.poc})\n` : "") +
       (vwap ? `• Anchored VWAP: ${vwap.vwap} (Pos: ${vwap.pricePosition} | ±2σ: ${vwap.lowerBand2}-${vwap.upperBand2})\n` : "") +
       (cvd ? `• CVD Flow: ${cvd.cvdTrend} (${cvd.divergence !== "NONE" ? cvd.divergence : `Buyer ${cvd.buyerVolumeRatio}%`})\n` : "") +
@@ -116,6 +132,7 @@ export default function AnalysisCard({
       (sp ? `• Broker Spread Impact: ~${sp.estimatedSpreadPips} pips (Net R:R: ${sp.effectiveRiskReward})\n` : "") +
       (td && td.isExhausted ? `• Exhaustion Warning: ${td.note}\n` : "") +
       (vd ? `• Volume Delta: ซื้อ ${vd.buyerVolumePct}% vs ขาย ${vd.sellerVolumePct}% (${vd.dominantSide})\n` : "") +
+      (iq ? `• 🧠 5-Layer Quant: ML ${iq.layer3Brain.mlDirection} (${iq.layer3Brain.probabilities.buy}% Buy / ${iq.layer3Brain.probabilities.sell}% Sell) | Strategy: ${iq.layer3Brain.adaptiveStrategy.strategyMode} | WFE: ${iq.layer5Validation.walkForwardEfficiency}%\n` : "") +
       `• Invalidation: ${analysis.tradeSetup.invalidationNote}`;
     copyToClipboard(text, "full_plan");
   };
@@ -200,6 +217,7 @@ export default function AnalysisCard({
   const reg = analysis.regimeInfo;
   const sess = analysis.sessionStatus;
   const cal = analysis.calendarSafety;
+  const iq = analysis.institutionalQuant;
 
   return (
     <div className="bg-surface-100 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-5">
@@ -731,6 +749,431 @@ export default function AnalysisCard({
                     ? `เบรกหลุดกรอบล่าง (${analysis.sessionStatus.orb.low}) ยืนยันทิศทางลง ▼`
                     : `กำลังสะสมในกรอบ (${analysis.sessionStatus.orb.low} - ${analysis.sessionStatus.orb.high})`}
                 </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── 🏛️ 5-LAYER INSTITUTIONAL QUANT ENGINE (ระดับสถาบันสากล) ─── */}
+      {iq && (
+        <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-surface-100 to-indigo-950/40 border border-indigo-500/40 shadow-xl space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-500/20">
+                <Brain className="w-5 h-5" />
+              </div>
+              <div>
+                <h5 className="text-sm font-black text-white flex items-center gap-2">
+                  <span>🏛️ 5-Layer Institutional Quant Engine</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    AI/ML Hybrid Pipeline
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  สถาปัตยกรรม 5 ชั้นระดับสถาบัน: Data Hygiene • 24-D Features • ML Brain & Regime • Dynamic Risk • Walk-Forward WFE
+                </p>
+              </div>
+            </div>
+
+            {/* Layer Selection Tabs (1 to 5) */}
+            <div className="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs font-bold">
+              {[
+                { id: 1, label: "L1: Data", icon: Database },
+                { id: 2, label: "L2: Features", icon: Layers },
+                { id: 3, label: "L3: Brain & ML", icon: Brain },
+                { id: 4, label: "L4: Risk", icon: Scale },
+                { id: 5, label: "L5: Walk-Forward", icon: Activity },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeQuantLayer === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveQuantLayer(tab.id as 1 | 2 | 3 | 4 | 5)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+                      isActive
+                        ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/30"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Layer 1 Content: Data Hygiene & Macro Pipeline */}
+          {activeQuantLayer === 1 && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ความสมบูรณ์ของแท่งเทียน (Data Hygiene):</span>
+                    <span className="font-mono font-bold text-emerald-400">{iq.layer1Data.dataIntegrityScore}%</span>
+                  </div>
+                  <div className="text-xs font-mono font-bold text-white">
+                    {iq.layer1Data.cleanCandlesCount} แท่ง (กรองจุดลวง {iq.layer1Data.outliersFiltered} จุด)
+                  </div>
+                  <p className="text-[10px] text-slate-400">Zero Bad Ticks • ปราศจากสัญญาณไส้หลอก</p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">การกระจายตัว (Rolling Z-Score):</span>
+                    <span className="font-mono font-bold text-cyan-300">Z = {iq.layer1Data.rollingZScoreRange.current}</span>
+                  </div>
+                  <div className="text-xs font-mono text-slate-200">
+                    กรอบ 30 แท่ง: [{iq.layer1Data.rollingZScoreRange.min} ถึง {iq.layer1Data.rollingZScoreRange.max}]
+                  </div>
+                  <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded border ${
+                    iq.layer1Data.stationarityStatus === "STATIONARY"
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                      : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                  }`}>
+                    {iq.layer1Data.stationarityStatus === "STATIONARY" ? "✅ ข้อมูลมีความนิ่ง (Stationary)" : "⚡ ข้อมูลมีแนวโน้ม (Trend Drift)"}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ความสัมพันธ์มหภาค ({iq.layer1Data.correlation.benchmarkSymbol}):</span>
+                    <span className="font-mono font-bold text-indigo-300">r = {iq.layer1Data.correlation.correlationR}</span>
+                  </div>
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-500/30 text-indigo-200">
+                      {iq.layer1Data.correlation.correlationRegime}
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded border ${
+                      iq.layer1Data.correlation.shieldAction === "PROCEED"
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                        : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                    }`}>
+                      {iq.layer1Data.correlation.shieldAction}
+                    </span>
+                  </div>
+                  {iq.layer1Data.correlation.divergenceWarning ? (
+                    <p className="text-[10px] text-amber-300">{iq.layer1Data.correlation.divergenceWarning}</p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400">แรงส่งความสัมพันธ์มหภาคเป็นไปตามทิศทางปกติ</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Layer 2 Content: 24-D Feature Engineering Vector */}
+          {activeQuantLayer === 2 && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-surface-50/80 border border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="text-xs">
+                    <span className="text-slate-400 block text-[10px]">Bullish Weight:</span>
+                    <strong className="text-emerald-400 font-mono text-sm">{iq.layer2Features.aggregateBullScore}%</strong>
+                  </div>
+                  <div className="text-xs">
+                    <span className="text-slate-400 block text-[10px]">Bearish Weight:</span>
+                    <strong className="text-rose-400 font-mono text-sm">{iq.layer2Features.aggregateBearScore}%</strong>
+                  </div>
+                  <div className="text-xs border-l border-slate-800 pl-3">
+                    <span className="text-slate-400 block text-[10px]">หมวดเด่นที่มีอิทธิพลสูงสุด:</span>
+                    <strong className="text-indigo-300 font-mono text-xs">{iq.layer2Features.dominantCategory}</strong>
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-300 italic">
+                  {iq.layer2Features.summary}
+                </div>
+              </div>
+
+              {/* 24 Features Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                {iq.layer2Features.features.map((f, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2 rounded-lg bg-surface-50/60 border border-slate-800 space-y-1 hover:border-indigo-500/40 transition-colors"
+                  >
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-slate-400 truncate max-w-[100px]">{f.name}</span>
+                      <span className={`font-bold font-mono px-1 rounded ${
+                        f.signal === "BULLISH"
+                          ? "text-emerald-400 bg-emerald-500/10"
+                          : f.signal === "BEARISH"
+                          ? "text-rose-400 bg-rose-500/10"
+                          : "text-slate-400 bg-slate-800"
+                      }`}>
+                        {f.value > 0 ? `+${f.value}` : f.value}
+                      </span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 truncate" title={f.description}>
+                      {f.description}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Layer 3 Content: ML Brain & Dynamic Strategy Switching */}
+          {activeQuantLayer === 3 && (
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* ML Inference Probabilities */}
+                <div className="p-3.5 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-indigo-400" />
+                      <span className="text-xs font-bold text-white">Random Forest Ensemble Inference</span>
+                    </div>
+                    <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${
+                      iq.layer3Brain.mlDirection === "BUY"
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                        : iq.layer3Brain.mlDirection === "SELL"
+                        ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                        : "bg-surface-100 text-slate-300 border-slate-700"
+                    }`}>
+                      {iq.layer3Brain.mlDirection} ({iq.layer3Brain.confidence}% Conf)
+                    </span>
+                  </div>
+
+                  {/* 3-Part Probability Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-mono">
+                      <span className="text-emerald-400">BUY: {iq.layer3Brain.probabilities.buy}%</span>
+                      <span className="text-slate-400">WAIT/CHOP: {iq.layer3Brain.probabilities.neutral}%</span>
+                      <span className="text-rose-400">SELL: {iq.layer3Brain.probabilities.sell}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-slate-900 flex overflow-hidden border border-slate-800">
+                      <div className="bg-emerald-500 transition-all duration-500" style={{ width: `${iq.layer3Brain.probabilities.buy}%` }} />
+                      <div className="bg-slate-700 transition-all duration-500" style={{ width: `${iq.layer3Brain.probabilities.neutral}%` }} />
+                      <div className="bg-rose-500 transition-all duration-500" style={{ width: `${iq.layer3Brain.probabilities.sell}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Feature Importance Leaderboard */}
+                  <div className="space-y-1.5 pt-1 border-t border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 block">
+                      Top 5 Feature Importance (SHAP-like Contribution Weights):
+                    </span>
+                    <div className="space-y-1">
+                      {iq.layer3Brain.featureImportance.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-300 flex items-center gap-1.5">
+                            <span className="text-indigo-400 font-mono font-bold">#{idx + 1}</span>
+                            <span>{item.featureName}</span>
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${Math.min(100, item.weight * 3.5)}%` }} />
+                            </div>
+                            <span className="font-mono text-[10px] font-bold text-indigo-300">
+                              {item.weight}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Regime-Adaptive Strategy Switching */}
+                <div className="p-3.5 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2.5 flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-amber-400" />
+                        <span className="text-xs font-bold text-white">Dynamic Regime Strategy Switching</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                        {iq.layer3Brain.adaptiveStrategy.strategyMode}
+                      </span>
+                    </div>
+
+                    <div className="text-xs font-bold text-indigo-300">
+                      กลยุทธ์ที่เปิดใช้งาน: {iq.layer3Brain.adaptiveStrategy.strategyName}
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                      {iq.layer3Brain.adaptiveStrategy.tacticalExecution}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-800">
+                    <div className="p-2 rounded bg-surface-100 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Risk Multiplier:</span>
+                      <strong className="text-emerald-400 font-mono">{iq.layer3Brain.adaptiveStrategy.riskMultiplier}x Normal</strong>
+                    </div>
+                    <div className="p-2 rounded bg-surface-100 border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Target R:R:</span>
+                      <strong className="text-indigo-300 font-mono">{iq.layer3Brain.adaptiveStrategy.targetRR}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Layer 4 Content: Risk Management & Dynamic Bracket */}
+          {activeQuantLayer === 4 && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <span className="text-[11px] text-slate-400 block">ATR Volatility Lot Size:</span>
+                  <div className="text-base font-mono font-black text-emerald-400">
+                    {iq.layer4Risk.calculatedLotSize} Lots
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    คุมความเสี่ยง {iq.layer4Risk.riskPct}% (${iq.layer4Risk.dollarRisk}) บนระยะ SL {iq.layer4Risk.slPips} pips
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <span className="text-[11px] text-slate-400 block">Fractional Kelly Criterion:</span>
+                  <div className="text-base font-mono font-black text-indigo-300">
+                    {iq.layer4Risk.fractionalKellyLot} Lots (f* = {iq.layer4Risk.kellyFraction})
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Half-Kelly ป้องกัน Over-leverage ตามสถิติ Win Rate & Profit Factor
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <span className="text-[11px] text-slate-400 block">Institutional Confidence Gate:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded border ${
+                      iq.layer4Risk.confidenceGateStatus === "APPROVED"
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                        : iq.layer4Risk.confidenceGateStatus === "CAUTION_HALF_RISK"
+                        ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                        : "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                    }`}>
+                      {iq.layer4Risk.confidenceGateStatus}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 leading-tight">
+                    {iq.layer4Risk.gateReason}
+                  </p>
+                </div>
+              </div>
+
+              {/* Dynamic 3-Stage Bracket Diagram */}
+              <div className="p-3 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2">
+                <span className="text-[11px] font-bold text-white block">
+                  🎯 Dynamic Multi-Stage Bracket Execution:
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs font-mono">
+                  <div className="p-2 rounded bg-surface-100 border border-slate-800">
+                    <span className="text-[9px] text-slate-400 block">1. Entry Zone</span>
+                    <strong className="text-amber-300 text-xs">
+                      {iq.layer4Risk.executionBracket.entryZone.min} - {iq.layer4Risk.executionBracket.entryZone.max}
+                    </strong>
+                  </div>
+                  <div className="p-2 rounded bg-surface-100 border border-rose-500/30">
+                    <span className="text-[9px] text-rose-400 block">2. Structural SL</span>
+                    <strong className="text-rose-300 text-xs">
+                      {iq.layer4Risk.executionBracket.structuralSL}
+                    </strong>
+                  </div>
+                  <div className="p-2 rounded bg-surface-100 border border-cyan-500/30">
+                    <span className="text-[9px] text-cyan-400 block">3. BE Shield Trigger (+1.0R)</span>
+                    <strong className="text-cyan-300 text-xs">
+                      {iq.layer4Risk.executionBracket.beTriggerPrice}
+                    </strong>
+                  </div>
+                  <div className="p-2 rounded bg-surface-100 border border-emerald-500/30">
+                    <span className="text-[9px] text-emerald-400 block">4. TP1 (+1.2R / 50% Close)</span>
+                    <strong className="text-emerald-300 text-xs">
+                      {iq.layer4Risk.executionBracket.tp1Price}
+                    </strong>
+                  </div>
+                  <div className="p-2 rounded bg-surface-100 border border-indigo-500/30">
+                    <span className="text-[9px] text-indigo-400 block">5. TP2 (+2.5R Trailing)</span>
+                    <strong className="text-indigo-300 text-xs">
+                      {iq.layer4Risk.executionBracket.tp2Price}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Layer 5 Content: Walk-Forward Validation & Feedback */}
+          {activeQuantLayer === 5 && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <span className="text-[11px] text-slate-400 block">Walk-Forward Efficiency (WFE):</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-mono font-black text-emerald-400">
+                      {iq.layer5Validation.walkForwardEfficiency}%
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      {iq.layer5Validation.robustnessGrade}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    WFE &gt; 70% พิสูจน์ว่าระบบไม่เกิด Curve-Fitting
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <span className="text-[11px] text-slate-400 block">In-Sample vs Out-of-Sample (OOS):</span>
+                  <div className="text-xs font-mono font-bold space-y-0.5">
+                    <div className="text-slate-300">In-Sample Win Rate: <span className="text-indigo-300">{iq.layer5Validation.avgISWinRate}%</span></div>
+                    <div className="text-slate-300">Out-of-Sample Win Rate: <span className="text-emerald-400">{iq.layer5Validation.avgOOSWinRate}%</span></div>
+                  </div>
+                  <p className="text-[10px] text-slate-400">ทดสอบบนข้อมูลช่วงเวลาอนาคตที่โมเดลไม่เคยเห็น</p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface-50/80 border border-slate-800 space-y-1">
+                  <span className="text-[11px] text-slate-400 block">Triple Barrier Event Distribution:</span>
+                  <div className="text-xs font-mono space-y-0.5">
+                    <span className="text-emerald-400 block">Upper TP Hit: {iq.layer5Validation.tripleBarrierStats.hitUpperTP} ไม้</span>
+                    <span className="text-rose-400 block">Lower SL Hit: {iq.layer5Validation.tripleBarrierStats.hitLowerSL} ไม้</span>
+                    <span className="text-slate-400 block">Vertical Timeouts: {iq.layer5Validation.tripleBarrierStats.hitVerticalTimeout} ไม้</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rolling 5-Fold Walk-Forward Table */}
+              <div className="p-3 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2">
+                <span className="text-[11px] font-bold text-white block">
+                  📊 Rolling K-Fold Walk-Forward Matrix (5 Folds):
+                </span>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-[10px] text-slate-400">
+                        <th className="pb-1.5">Fold #</th>
+                        <th className="pb-1.5">In-Sample (IS) Win %</th>
+                        <th className="pb-1.5">Out-of-Sample (OOS) Win %</th>
+                        <th className="pb-1.5">OOS Profit Factor</th>
+                        <th className="pb-1.5 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-[11px]">
+                      {iq.layer5Validation.folds.map((f) => (
+                        <tr key={f.foldIndex} className="hover:bg-slate-800/30">
+                          <td className="py-1.5 font-bold text-indigo-300">Fold {f.foldIndex}</td>
+                          <td className="py-1.5 text-slate-300">{f.isWinRate}% (PF: {f.isProfitFactor})</td>
+                          <td className="py-1.5 text-emerald-400 font-bold">{f.oosWinRate}%</td>
+                          <td className="py-1.5 text-cyan-300">{f.oosProfitFactor}x</td>
+                          <td className="py-1.5 text-right">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              f.passed ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"
+                            }`}>
+                              {f.passed ? "PASS" : "FAIL"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[10px] text-slate-400 pt-1 italic">
+                  {iq.layer5Validation.summary}
+                </p>
               </div>
             </div>
           )}
@@ -1297,6 +1740,211 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.correlationShield.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5g. 🏛️ Institutional Price Action, FVG & Premium/Discount Matrix (Plans 31-35) */}
+      {(analysis.fvgMitigation || analysis.marketStructureShift || analysis.premiumDiscount || analysis.keyLevelTargets || analysis.orderFlowVelocity) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                <Gauge className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Institutional FVG, Market Structure & Premium/Discount Matrix (แผน 31-35)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Smart Money Price Action
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  สแกน FVG Consequent Encroachment (50%), การเปลี่ยนโครงสร้างแท้จริง (MSS Displacement), กรอบ Dealing Range 0-100% (Safety Lock 10) และเป้าหมายสภาพคล่องภายนอก
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* 1. Institutional FVG & C.E. 50% Tracker */}
+            {analysis.fvgMitigation && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🕳️ FVG Imbalance Tracker</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.fvgMitigation.bias === "BULLISH_IMBALANCE"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.fvgMitigation.bias === "BEARISH_IMBALANCE"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.fvgMitigation.bias}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Unmitigated FVGs:</span>
+                    <span className="font-mono text-amber-300 font-bold">{analysis.fvgMitigation.unmitigatedCount} ช่องว่าง</span>
+                  </div>
+                  {analysis.fvgMitigation.recommendedEntryLimit && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">C.E. 50% Limit Entry:</span>
+                      <span className="font-mono font-bold text-emerald-400">
+                        {analysis.fvgMitigation.recommendedEntryLimit}
+                      </span>
+                    </div>
+                  )}
+                  {analysis.fvgMitigation.nearestFVG && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">สถานะ FVG ใกล้สุด:</span>
+                      <span className="font-mono text-[10px] text-slate-300">
+                        {analysis.fvgMitigation.nearestFVG.mitigationStatus}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.fvgMitigation.description}
+                </p>
+              </div>
+            )}
+
+            {/* 2. Market Structure Shift (MSS) */}
+            {analysis.marketStructureShift && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚡ MSS Displacement Engine</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.marketStructureShift.type === "BULLISH_MSS"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold"
+                      : analysis.marketStructureShift.type === "BEARISH_MSS"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.marketStructureShift.type !== "NONE" ? analysis.marketStructureShift.type : "Structure Intact"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Displacement:</span>
+                    <span className="font-mono font-bold text-slate-200">
+                      {analysis.marketStructureShift.displacementMultiplier}x ATR ({analysis.marketStructureShift.displacementVelocity})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ความถูกต้องโครงสร้าง:</span>
+                    <span className={`font-mono text-[10px] ${analysis.marketStructureShift.isTrueDisplacement ? "text-emerald-400 font-bold" : "text-amber-400"}`}>
+                      {analysis.marketStructureShift.isTrueDisplacement ? "⚡ True Displacement" : "Normal / Wick"}
+                    </span>
+                  </div>
+                  {analysis.marketStructureShift.breakPrice > 0 && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">จุดเบรกโครงสร้าง:</span>
+                      <span className="font-mono text-indigo-300 font-bold">
+                        {analysis.marketStructureShift.breakPrice}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.marketStructureShift.description}
+                </p>
+              </div>
+            )}
+
+            {/* 3. Premium vs Discount Dealing Range Matrix */}
+            {analysis.premiumDiscount && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📊 Dealing Range (P/D Matrix)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.premiumDiscount.zone === "EXTREME_PREMIUM"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold animate-pulse"
+                      : analysis.premiumDiscount.zone === "DEEP_DISCOUNT"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold animate-pulse"
+                      : analysis.premiumDiscount.zone === "PREMIUM"
+                      ? "bg-rose-500/10 text-rose-300 border border-rose-500/20"
+                      : analysis.premiumDiscount.zone === "DISCOUNT"
+                      ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.premiumDiscount.zone} ({analysis.premiumDiscount.percentile}%)
+                  </span>
+                </div>
+
+                {/* Visual Dealing Range Percentile Bar */}
+                <div className="space-y-1">
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden relative">
+                    <div className="absolute left-0 top-0 bottom-0 bg-emerald-500/30" style={{ width: "20%" }}></div>
+                    <div className="absolute left-[20%] top-0 bottom-0 bg-emerald-500/15" style={{ width: "25%" }}></div>
+                    <div className="absolute left-[45%] top-0 bottom-0 bg-slate-600/30" style={{ width: "10%" }}></div>
+                    <div className="absolute left-[55%] top-0 bottom-0 bg-rose-500/15" style={{ width: "25%" }}></div>
+                    <div className="absolute left-[80%] top-0 bottom-0 bg-rose-500/30" style={{ width: "20%" }}></div>
+                    <div
+                      className="absolute top-0 bottom-0 w-1.5 bg-amber-400 shadow-md shadow-amber-400/50 rounded-full -ml-0.5"
+                      style={{ left: `${analysis.premiumDiscount.percentile}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex items-center justify-between text-[9px] text-slate-500 font-mono">
+                    <span>0% Deep Disc</span>
+                    <span className="text-slate-400">50% Eq: {analysis.premiumDiscount.equilibrium}</span>
+                    <span>100% Ext Prem</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Safety Lock 10:</span>
+                    <span className={`font-mono text-[10px] font-bold ${analysis.premiumDiscount.tradeAllowed ? "text-emerald-400" : "text-rose-400 animate-pulse"}`}>
+                      {analysis.premiumDiscount.tradeAllowed ? "✅ ปลดล็อคเทรดได้" : "⛔ ห้ามเปิดออเดอร์ตามโซน"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.premiumDiscount.description}
+                </p>
+              </div>
+            )}
+
+            {/* 4. Liquidity Targets & Order Flow Velocity */}
+            {(analysis.keyLevelTargets || analysis.orderFlowVelocity) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🎯 Liquidity & Flow Velocity</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.orderFlowVelocity?.isClimaxExhaustion
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold animate-pulse"
+                      : (analysis.orderFlowVelocity?.velocityScore ?? 0) > 0
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                  }`}>
+                    {analysis.orderFlowVelocity?.isClimaxExhaustion ? "🔥 Climax Alert" : `Vel: ${analysis.orderFlowVelocity?.velocityScore ?? 0}`}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.keyLevelTargets && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">เป้าสภาพคล่องใกล้สุด:</span>
+                      <span className="font-mono font-bold text-amber-300">
+                        {analysis.keyLevelTargets.nearestLiquidityTarget.name} ({analysis.keyLevelTargets.nearestLiquidityTarget.distancePips} pips)
+                      </span>
+                    </div>
+                  )}
+                  {analysis.orderFlowVelocity && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">สภาวะโมเมนตัม:</span>
+                      <span className="font-mono text-slate-200 text-[10px]">
+                        {analysis.orderFlowVelocity.momentumState}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.keyLevelTargets?.description || analysis.orderFlowVelocity?.description}
                 </p>
               </div>
             )}

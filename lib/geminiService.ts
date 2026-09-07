@@ -25,6 +25,11 @@ import {
   RealizedVolatilityInfo,
   CandleMicrostructureInfo,
   CorrelationShieldInfo,
+  FVGMitigationInfo,
+  MarketStructureShiftInfo,
+  PremiumDiscountInfo,
+  KeyLevelTargetsInfo,
+  OrderFlowVelocityInfo,
 } from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
@@ -52,6 +57,11 @@ import {
   calculateRealizedVolatility,
   calculateCandleMicrostructure,
   calculateCorrelationHedgeShield,
+  calculateFVGMitigation,
+  calculateMarketStructureShift,
+  calculatePremiumDiscount,
+  calculateKeyLevelTargets,
+  calculateOrderFlowVelocity,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -252,6 +262,13 @@ export function generateRuleBasedAnalysis(
   const candleMicrostructure = indicators.candleMicrostructure || calculateCandleMicrostructure(candles);
   const correlationShield = indicators.correlationShield || calculateCorrelationHedgeShield(symbol, currentPrice, candles);
 
+  // ─── BATCH 7 PRE-COMPUTATIONS (PLANS 31-35) ───
+  const fvgMitigation = indicators.fvgMitigation || calculateFVGMitigation(candles, precision);
+  const marketStructureShift = indicators.marketStructureShift || calculateMarketStructureShift(candles, precision);
+  const premiumDiscount = indicators.premiumDiscount || calculatePremiumDiscount(candles, precision);
+  const keyLevelTargets = indicators.keyLevelTargets || calculateKeyLevelTargets(candles, precision, symbol);
+  const orderFlowVelocity = indicators.orderFlowVelocity || calculateOrderFlowVelocity(candles);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -323,6 +340,20 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 45);
   }
+  // SAFETY LOCK 10: Institutional Dealing Range Extreme & Climax Exhaustion [แผน 33 & แผน 35]
+  else if (tier1Bias === "BULLISH" && premiumDiscount.zone === "EXTREME_PREMIUM") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  } else if (tier1Bias === "BEARISH" && premiumDiscount.zone === "DEEP_DISCOUNT") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  } else if (orderFlowVelocity.isClimaxExhaustion) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -332,6 +363,7 @@ export function generateRuleBasedAnalysis(
     if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
     if (isOrbBullBreak) confidence = Math.min(95, confidence + 5);
     if (sessionSweep.sweepType === "BULLISH_SWEEP") confidence = Math.min(98, confidence + 6);
+    if (marketStructureShift.isTrueDisplacement && marketStructureShift.type === "BULLISH_MSS") confidence = Math.min(98, confidence + 5);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -341,6 +373,7 @@ export function generateRuleBasedAnalysis(
     if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
     if (isOrbBearBreak) confidence = Math.min(95, confidence + 5);
     if (sessionSweep.sweepType === "BEARISH_SWEEP") confidence = Math.min(98, confidence + 6);
+    if (marketStructureShift.isTrueDisplacement && marketStructureShift.type === "BEARISH_MSS") confidence = Math.min(98, confidence + 5);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -385,6 +418,11 @@ export function generateRuleBasedAnalysis(
     pendingPrice = oteZone.sweetSpot || Number(Math.min(currentPrice, lastEMA20 * 1.002).toFixed(precision));
     entryZone = { min: oteZone.oteMin, max: oteZone.oteMax };
 
+    // [แผน 31] FVG Consequent Encroachment (50%) Limit Refinement
+    if (fvgMitigation.recommendedEntryLimit && fvgMitigation.recommendedEntryLimit < currentPrice && fvgMitigation.recommendedEntryLimit >= stopLoss) {
+      pendingPrice = fvgMitigation.recommendedEntryLimit;
+    }
+
     // [แผน 14] Dynamic Multi-Stage Take Profit
     const risk = Math.max(pendingPrice - stopLoss, currentATR * 0.8);
     takeProfit1 = Number((pendingPrice + risk * 1.0).toFixed(precision));
@@ -400,6 +438,11 @@ export function generateRuleBasedAnalysis(
     // [แผน 11] OTE Zone Entry & Sweet Spot 70.5%
     pendingPrice = oteZone.sweetSpot || Number(Math.max(currentPrice, lastEMA20 * 0.998).toFixed(precision));
     entryZone = { min: oteZone.oteMin, max: oteZone.oteMax };
+
+    // [แผน 31] FVG Consequent Encroachment (50%) Limit Refinement
+    if (fvgMitigation.recommendedEntryLimit && fvgMitigation.recommendedEntryLimit > currentPrice && fvgMitigation.recommendedEntryLimit <= stopLoss) {
+      pendingPrice = fvgMitigation.recommendedEntryLimit;
+    }
 
     // [แผน 14] Dynamic Multi-Stage Take Profit
     const risk = Math.max(stopLoss - pendingPrice, currentATR * 0.8);
@@ -496,6 +539,13 @@ export function generateRuleBasedAnalysis(
               sessionSweep.sweepType === "NONE",
       note: `${sessionSweep.description} • ${fibonacciCluster.description}`,
     },
+    {
+      name: `Pillar 10: FVG & Premium/Discount Matrix (${premiumDiscount.zone})`,
+      passed: (tradeAction === "BUY" && (premiumDiscount.zone === "DISCOUNT" || premiumDiscount.zone === "EQUILIBRIUM" || fvgMitigation.bias === "BULLISH_IMBALANCE")) ||
+              (tradeAction === "SELL" && (premiumDiscount.zone === "PREMIUM" || premiumDiscount.zone === "EQUILIBRIUM" || fvgMitigation.bias === "BEARISH_IMBALANCE")) ||
+              marketStructureShift.isTrueDisplacement,
+      note: `${premiumDiscount.description} • MSS: ${marketStructureShift.type} (${marketStructureShift.displacementVelocity})`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -536,6 +586,11 @@ export function generateRuleBasedAnalysis(
     realizedVolatility,
     candleMicrostructure,
     correlationShield,
+    fvgMitigation,
+    marketStructureShift,
+    premiumDiscount,
+    keyLevelTargets,
+    orderFlowVelocity,
     kellySizing,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
@@ -565,6 +620,11 @@ export function generateRuleBasedAnalysis(
         `Candle Microstructure: ${candleMicrostructure.rejectionStrength} (Wick: ${candleMicrostructure.wickRatio}%)`,
         `Correlation Hedge Shield: ${correlationShield.macroRegime} (${correlationShield.shieldStatus} | DXY: ${correlationShield.dxyTrend})`,
         `Kelly Sizing: Half-Kelly ${kellySizing.halfKellyPct}% -> Vol-Safe ${kellySizing.volatilityAdjustedPct}%`,
+        `FVG Mitigation: ${fvgMitigation.bias} (${fvgMitigation.unmitigatedCount} Unmitigated, Nearest C.E.: ${fvgMitigation.recommendedEntryLimit ?? "None"})`,
+        `Market Structure Shift: ${marketStructureShift.type} (Displacement: ${marketStructureShift.displacementMultiplier}x ATR - ${marketStructureShift.displacementVelocity})`,
+        `Dealing Range P/D: ${premiumDiscount.percentile}% (${premiumDiscount.zone}) - Eq: ${premiumDiscount.equilibrium}`,
+        `Key Liquidity Targets: Nearest ${keyLevelTargets.nearestLiquidityTarget.name} (${keyLevelTargets.nearestLiquidityTarget.price} - ${keyLevelTargets.nearestLiquidityTarget.distancePips} pips)`,
+        `Order Flow Velocity: Score ${orderFlowVelocity.velocityScore} (${orderFlowVelocity.momentumState})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -613,6 +673,11 @@ export function generateRuleBasedAnalysis(
       realizedVolatility,
       candleMicrostructure,
       correlationShield,
+      fvgMitigation,
+      marketStructureShift,
+      premiumDiscount,
+      keyLevelTargets,
+      orderFlowVelocity,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -937,6 +1002,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.realizedVolatility = ruleAnalysis.realizedVolatility;
     parsed.candleMicrostructure = ruleAnalysis.candleMicrostructure;
     parsed.correlationShield = ruleAnalysis.correlationShield;
+    parsed.fvgMitigation = ruleAnalysis.fvgMitigation;
+    parsed.marketStructureShift = ruleAnalysis.marketStructureShift;
+    parsed.premiumDiscount = ruleAnalysis.premiumDiscount;
+    parsed.keyLevelTargets = ruleAnalysis.keyLevelTargets;
+    parsed.orderFlowVelocity = ruleAnalysis.orderFlowVelocity;
     parsed.kellySizing = ruleAnalysis.kellySizing;
 
     if (parsed.tradeSetup) {
@@ -956,6 +1026,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.realizedVolatility = ruleAnalysis.tradeSetup.realizedVolatility;
       parsed.tradeSetup.candleMicrostructure = ruleAnalysis.tradeSetup.candleMicrostructure;
       parsed.tradeSetup.correlationShield = ruleAnalysis.tradeSetup.correlationShield;
+      parsed.tradeSetup.fvgMitigation = ruleAnalysis.tradeSetup.fvgMitigation;
+      parsed.tradeSetup.marketStructureShift = ruleAnalysis.tradeSetup.marketStructureShift;
+      parsed.tradeSetup.premiumDiscount = ruleAnalysis.tradeSetup.premiumDiscount;
+      parsed.tradeSetup.keyLevelTargets = ruleAnalysis.tradeSetup.keyLevelTargets;
+      parsed.tradeSetup.orderFlowVelocity = ruleAnalysis.tradeSetup.orderFlowVelocity;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

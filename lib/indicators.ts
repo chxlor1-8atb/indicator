@@ -30,6 +30,12 @@ import {
   RealizedVolatilityInfo,
   CandleMicrostructureInfo,
   CorrelationShieldInfo,
+  FVGDetailItem,
+  FVGMitigationInfo,
+  MarketStructureShiftInfo,
+  PremiumDiscountInfo,
+  KeyLevelTargetsInfo,
+  OrderFlowVelocityInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -2088,6 +2094,533 @@ export function calculateCorrelationHedgeShield(
   };
 }
 
+/**
+ * [แผน 31] Institutional Imbalance & FVG Mitigation Tracker
+ * Detects 3-bar Fair Value Gaps and tracks Consequent Encroachment (C.E. 50% Midpoint) mitigation status.
+ */
+export function calculateFVGMitigation(
+  candles: Candle[],
+  precision = 2
+): FVGMitigationInfo {
+  if (candles.length < 3) {
+    return {
+      activeFVGs: [],
+      unmitigatedCount: 0,
+      nearestFVG: null,
+      recommendedEntryLimit: null,
+      bias: "BALANCED",
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการวิเคราะห์ FVG Mitigation",
+    };
+  }
+
+  const currentPrice = candles[candles.length - 1].close;
+  const pipMultiplier = precision >= 4 ? 0.0001 : (precision === 3 ? 0.001 : 0.1);
+  const fvgs: FVGDetailItem[] = [];
+
+  // Check 3-bar patterns up to the latest candles (last 60 bars for efficiency and relevance)
+  const startIndex = Math.max(2, candles.length - 60);
+
+  for (let i = startIndex; i < candles.length - 1; i++) {
+    const prev = candles[i - 2];
+    const curr = candles[i - 1];
+    const next = candles[i];
+
+    // Bullish FVG: prev.high < next.low
+    if (next.low > prev.high) {
+      const top = Number(next.low.toFixed(precision));
+      const bottom = Number(prev.high.toFixed(precision));
+      const ce = Number(((top + bottom) / 2).toFixed(precision));
+      const sizePips = Number(((top - bottom) / pipMultiplier).toFixed(1));
+
+      // Check mitigation in bars after next
+      let status: FVGDetailItem["mitigationStatus"] = "UNMITIGATED";
+      for (let k = i + 1; k < candles.length; k++) {
+        const c = candles[k];
+        if (c.low <= bottom) {
+          status = "FULLY_MITIGATED";
+          break;
+        } else if (c.low <= ce) {
+          status = "PARTIALLY_MITIGATED";
+        }
+      }
+
+      if (status !== "FULLY_MITIGATED") {
+        fvgs.push({
+          id: `bull-fvg-${i}`,
+          type: "BULLISH_FVG",
+          top,
+          bottom,
+          consequentEncroachment: ce,
+          sizePips,
+          mitigationStatus: status,
+          candleIndex: i,
+          timeStr: typeof next.time === "string" ? next.time : undefined,
+        });
+      }
+    }
+
+    // Bearish FVG: prev.low > next.high
+    if (prev.low > next.high) {
+      const top = Number(prev.low.toFixed(precision));
+      const bottom = Number(next.high.toFixed(precision));
+      const ce = Number(((top + bottom) / 2).toFixed(precision));
+      const sizePips = Number(((top - bottom) / pipMultiplier).toFixed(1));
+
+      let status: FVGDetailItem["mitigationStatus"] = "UNMITIGATED";
+      for (let k = i + 1; k < candles.length; k++) {
+        const c = candles[k];
+        if (c.high >= top) {
+          status = "FULLY_MITIGATED";
+          break;
+        } else if (c.high >= ce) {
+          status = "PARTIALLY_MITIGATED";
+        }
+      }
+
+      if (status !== "FULLY_MITIGATED") {
+        fvgs.push({
+          id: `bear-fvg-${i}`,
+          type: "BEARISH_FVG",
+          top,
+          bottom,
+          consequentEncroachment: ce,
+          sizePips,
+          mitigationStatus: status,
+          candleIndex: i,
+          timeStr: typeof next.time === "string" ? next.time : undefined,
+        });
+      }
+    }
+  }
+
+  const unmitigated = fvgs.filter((f) => f.mitigationStatus === "UNMITIGATED");
+  const unmitigatedCount = unmitigated.length;
+
+  let nearestFVG: FVGDetailItem | null = null;
+  let minDistance = Infinity;
+
+  for (const fvg of fvgs) {
+    const dist = Math.abs(currentPrice - fvg.consequentEncroachment);
+    if (dist < minDistance) {
+      minDistance = dist;
+      nearestFVG = fvg;
+    }
+  }
+
+  const bullishUnmitigated = unmitigated.filter((f) => f.type === "BULLISH_FVG").length;
+  const bearishUnmitigated = unmitigated.filter((f) => f.type === "BEARISH_FVG").length;
+
+  let bias: FVGMitigationInfo["bias"] = "BALANCED";
+  if (bullishUnmitigated > bearishUnmitigated) bias = "BULLISH_IMBALANCE";
+  else if (bearishUnmitigated > bullishUnmitigated) bias = "BEARISH_IMBALANCE";
+
+  const recommendedEntryLimit = nearestFVG ? nearestFVG.consequentEncroachment : null;
+
+  const desc = nearestFVG
+    ? `พบ ${fvgs.length} FVG ที่ยังค้างในตลาด (Unmitigated: ${unmitigatedCount}) โซนที่ใกล้ที่สุดคือ ${nearestFVG.type === "BULLISH_FVG" ? "Bullish FVG" : "Bearish FVG"} ที่ C.E. 50% = ${nearestFVG.consequentEncroachment} (${nearestFVG.mitigationStatus}) ขนาด ${nearestFVG.sizePips} pips`
+    : "ไม่มีช่องว่างราคา Institutional FVG ที่ยังไม่ได้รับการชดเชย (Mitigated ครบถ้วนแล้ว)";
+
+  return {
+    activeFVGs: fvgs.slice(-8),
+    unmitigatedCount,
+    nearestFVG,
+    recommendedEntryLimit,
+    bias,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 32] Market Structure Shift (MSS) with Displacement Velocity
+ * Distinguishes true structural displacement from false wicks/fakeouts.
+ */
+export function calculateMarketStructureShift(
+  candles: Candle[],
+  precision = 2
+): MarketStructureShiftInfo {
+  if (candles.length < 15) {
+    return {
+      detected: false,
+      type: "NONE",
+      breakPrice: 0,
+      displacementMultiplier: 0,
+      isTrueDisplacement: false,
+      displacementVelocity: "WEAK",
+      mssCandleIndex: -1,
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการวิเคราะห์ Market Structure Shift",
+    };
+  }
+
+  const atr14 = calculateATR(candles, 14);
+  const latestATR = atr14.filter((v): v is number => v !== null && !isNaN(v)).pop() || 1.0;
+
+  // Scan for swing highs and swing lows in lookback (last 40 candles)
+  const lookback = Math.min(candles.length - 2, 40);
+  const startIdx = candles.length - lookback;
+
+  let recentSwingHigh = -Infinity;
+  let recentSwingLow = Infinity;
+
+  for (let i = startIdx; i < candles.length - 3; i++) {
+    const c = candles[i];
+    // 3-bar swing high
+    if (c.high > candles[i - 1].high && c.high > candles[i + 1].high && c.high > (candles[i - 2]?.high || 0)) {
+      if (c.high > recentSwingHigh) {
+        recentSwingHigh = c.high;
+      }
+    }
+    // 3-bar swing low
+    if (c.low < candles[i - 1].low && c.low < candles[i + 1].low && c.low < (candles[i - 2]?.low || Infinity)) {
+      if (c.low < recentSwingLow) {
+        recentSwingLow = c.low;
+      }
+    }
+  }
+
+  // Check recent candles (last 5) for break with displacement
+  const recentSlice = candles.slice(-5);
+  let bestMSS: MarketStructureShiftInfo = {
+    detected: false,
+    type: "NONE",
+    breakPrice: 0,
+    displacementMultiplier: 0,
+    isTrueDisplacement: false,
+    displacementVelocity: "WEAK",
+    mssCandleIndex: -1,
+    description: "โครงสร้างตลาดยังคงดำเนินตามกรอบเดิม ไม่พบ Market Structure Shift ล่าสุด",
+  };
+
+  for (let idx = 0; idx < recentSlice.length; idx++) {
+    const c = recentSlice[idx];
+    const globalIdx = candles.length - 5 + idx;
+    const body = Math.abs(c.close - c.open);
+    const multiplier = Number((body / Math.max(latestATR, 0.0001)).toFixed(2));
+
+    // Bullish MSS: closes decisively above recent swing high
+    if (recentSwingHigh !== -Infinity && c.close > recentSwingHigh && c.close > c.open) {
+      const isTrue = multiplier >= 1.5;
+      const velocity: MarketStructureShiftInfo["displacementVelocity"] =
+        multiplier >= 2.2 ? "EXPLOSIVE" : multiplier >= 1.5 ? "MODERATE" : "WEAK";
+
+      bestMSS = {
+        detected: true,
+        type: "BULLISH_MSS",
+        breakPrice: Number(recentSwingHigh.toFixed(precision)),
+        displacementMultiplier: multiplier,
+        isTrueDisplacement: isTrue,
+        displacementVelocity: velocity,
+        mssCandleIndex: globalIdx,
+        description: isTrue
+          ? `⚡ ตรวจพบ Bullish Market Structure Shift (MSS) พร้อมแท่งเทียนขับเคลื่อนแรงสถาบัน (Displacement ${multiplier}x ATR - ${velocity}) ทะลุ Swing High ${recentSwingHigh.toFixed(precision)}`
+          : `⚠️ ทะลุ Swing High ${recentSwingHigh.toFixed(precision)} แต่ขาด Displacement (${multiplier}x ATR) เสี่ยงเป็น False Breakout/Liquidity Sweep`,
+      };
+      break;
+    }
+
+    // Bearish MSS: closes decisively below recent swing low
+    if (recentSwingLow !== Infinity && c.close < recentSwingLow && c.close < c.open) {
+      const isTrue = multiplier >= 1.5;
+      const velocity: MarketStructureShiftInfo["displacementVelocity"] =
+        multiplier >= 2.2 ? "EXPLOSIVE" : multiplier >= 1.5 ? "MODERATE" : "WEAK";
+
+      bestMSS = {
+        detected: true,
+        type: "BEARISH_MSS",
+        breakPrice: Number(recentSwingLow.toFixed(precision)),
+        displacementMultiplier: multiplier,
+        isTrueDisplacement: isTrue,
+        displacementVelocity: velocity,
+        mssCandleIndex: globalIdx,
+        description: isTrue
+          ? `⚡ ตรวจพบ Bearish Market Structure Shift (MSS) พร้อมแท่งเทียนทิ้งตัวแรงสถาบัน (Displacement ${multiplier}x ATR - ${velocity}) หลุด Swing Low ${recentSwingLow.toFixed(precision)}`
+          : `⚠️ หลุด Swing Low ${recentSwingLow.toFixed(precision)} แต่ขาด Displacement (${multiplier}x ATR) เสี่ยงเป็น False Breakdown/Liquidity Grab`,
+      };
+      break;
+    }
+  }
+
+  return bestMSS;
+}
+
+/**
+ * [แผน 33] Premium vs Discount Array Matrix & Dealing Range
+ * Quantifies price location inside the institutional dealing range (0% - 100%).
+ * Enforces Safety Lock 10: Never buy in Extreme Premium (>80%), never sell in Deep Discount (<20%).
+ */
+export function calculatePremiumDiscount(
+  candles: Candle[],
+  precision = 2
+): PremiumDiscountInfo {
+  if (candles.length < 10) {
+    return {
+      rangeHigh: 0,
+      rangeLow: 0,
+      equilibrium: 0,
+      currentPrice: 0,
+      percentile: 50,
+      zone: "EQUILIBRIUM",
+      tradeAllowed: true,
+      actionWarning: "ข้อมูลไม่เพียงพอ",
+      description: "ข้อมูลไม่เพียงพอสำหรับคำนวณ Premium/Discount Matrix",
+    };
+  }
+
+  const sample = candles.slice(-Math.min(candles.length, 64));
+  const rangeHigh = Number(Math.max(...sample.map((c) => c.high)).toFixed(precision));
+  const rangeLow = Number(Math.min(...sample.map((c) => c.low)).toFixed(precision));
+  const equilibrium = Number(((rangeHigh + rangeLow) / 2).toFixed(precision));
+  const currentPrice = candles[candles.length - 1].close;
+
+  const rangeSpan = rangeHigh - rangeLow;
+  let percentile = 50;
+  if (rangeSpan > 0) {
+    percentile = Number((((currentPrice - rangeLow) / rangeSpan) * 100).toFixed(1));
+    percentile = Math.max(0, Math.min(100, percentile));
+  }
+
+  let zone: PremiumDiscountInfo["zone"] = "EQUILIBRIUM";
+  let actionWarning = "";
+  let tradeAllowed = true;
+
+  if (percentile >= 80) {
+    zone = "EXTREME_PREMIUM";
+    actionWarning = "⚠️ อยู่ในโซน Extreme Premium (>80%) - ห้าม Buy ทุกกรณี เสี่ยงติดดอยยอดคลื่น";
+    tradeAllowed = false;
+  } else if (percentile >= 55) {
+    zone = "PREMIUM";
+    actionWarning = "อยู่ในโซนพรีเมียม (Premium Zone) เหมาะกับการหาจังหวะดัก Sell ตามโครงสร้าง";
+    tradeAllowed = true;
+  } else if (percentile <= 20) {
+    zone = "DEEP_DISCOUNT";
+    actionWarning = "⚠️ อยู่ในโซน Deep Discount (<20%) - ห้าม Sell ทุกกรณี เสี่ยงขายหมูก้นเหว";
+    tradeAllowed = false;
+  } else if (percentile <= 45) {
+    zone = "DISCOUNT";
+    actionWarning = "อยู่ในโซนส่วนลด (Discount Zone) เหมาะกับการหาจังหวะช้อน Buy ในราคาถูก";
+    tradeAllowed = true;
+  } else {
+    zone = "EQUILIBRIUM";
+    actionWarning = "ราคาอยู่ที่เส้นกึ่งกลางสมดุล (Equilibrium 50%) รอการฟอร์มทิศทาง";
+    tradeAllowed = true;
+  }
+
+  const description = `กรอบ Dealing Range: [${rangeLow} - ${rangeHigh}], เส้น Equilibrium 50%: ${equilibrium} | ปัจจุบันราคาอยู่ที่ระดับ ${percentile}% (${zone}) -> ${actionWarning}`;
+
+  return {
+    rangeHigh,
+    rangeLow,
+    equilibrium,
+    currentPrice: Number(currentPrice.toFixed(precision)),
+    percentile,
+    zone,
+    tradeAllowed,
+    actionWarning,
+    description,
+  };
+}
+
+/**
+ * [แผน 34] Daily & Weekly Key High/Low (PDH, PDL, PWH, PWL) Liquidity Targets
+ * Identifies major external liquidity draw targets and pip distance.
+ */
+export function calculateKeyLevelTargets(
+  candles: Candle[],
+  precision = 2,
+  symbol = "XAUUSD"
+): KeyLevelTargetsInfo {
+  if (candles.length < 10) {
+    return {
+      pdh: 0,
+      pdl: 0,
+      pwh: 0,
+      pwl: 0,
+      nearestLiquidityTarget: {
+        name: "NONE",
+        price: 0,
+        distancePips: 0,
+        type: "BUY_SIDE_LIQUIDITY",
+      },
+      description: "ข้อมูลไม่เพียงพอสำหรับคำนวณ Key Level Liquidity Targets",
+    };
+  }
+
+  const currentPrice = candles[candles.length - 1].close;
+  const isForex = precision >= 4;
+  const isJPY = symbol.toUpperCase().includes("JPY") || (precision === 2 && !symbol.toUpperCase().includes("XAU"));
+  const pipMultiplier = isForex ? 0.0001 : (isJPY ? 0.01 : 0.1);
+
+  let pdh = 0;
+  let pdl = 0;
+  let pwh = 0;
+  let pwl = 0;
+
+  const hasValidDates = candles.length > 20 && !isNaN(new Date(candles[candles.length - 1].time).getTime());
+
+  if (hasValidDates) {
+    const dayMap = new Map<string, { high: number; low: number }>();
+    for (const c of candles) {
+      const dateStr = new Date(c.time).toISOString().slice(0, 10);
+      const existing = dayMap.get(dateStr);
+      if (!existing) {
+        dayMap.set(dateStr, { high: c.high, low: c.low });
+      } else {
+        existing.high = Math.max(existing.high, c.high);
+        existing.low = Math.min(existing.low, c.low);
+      }
+    }
+    const days = Array.from(dayMap.keys()).sort();
+    if (days.length >= 2) {
+      const prevDayKey = days[days.length - 2];
+      const prevDay = dayMap.get(prevDayKey)!;
+      pdh = prevDay.high;
+      pdl = prevDay.low;
+    }
+    if (days.length >= 6) {
+      const weekDays = days.slice(Math.max(0, days.length - 7), days.length - 1);
+      pwh = Math.max(...weekDays.map((d) => dayMap.get(d)!.high));
+      pwl = Math.min(...weekDays.map((d) => dayMap.get(d)!.low));
+    }
+  }
+
+  if (pdh === 0 || pdl === 0) {
+    const dayBars = Math.min(96, Math.floor(candles.length / 2));
+    const prevDaySlice = candles.slice(-Math.min(candles.length, dayBars * 2), -Math.min(candles.length, dayBars));
+    if (prevDaySlice.length > 0) {
+      pdh = Math.max(...prevDaySlice.map((c) => c.high));
+      pdl = Math.min(...prevDaySlice.map((c) => c.low));
+    } else {
+      pdh = Math.max(...candles.map((c) => c.high));
+      pdl = Math.min(...candles.map((c) => c.low));
+    }
+  }
+
+  if (pwh === 0 || pwl === 0) {
+    const weekBars = Math.min(candles.length, 480);
+    const weekSlice = candles.slice(-weekBars);
+    pwh = Math.max(...weekSlice.map((c) => c.high));
+    pwl = Math.min(...weekSlice.map((c) => c.low));
+  }
+
+  pdh = Number(pdh.toFixed(precision));
+  pdl = Number(pdl.toFixed(precision));
+  pwh = Number(pwh.toFixed(precision));
+  pwl = Number(pwl.toFixed(precision));
+
+  const targets: Array<{ name: "PDH" | "PDL" | "PWH" | "PWL"; price: number }> = [
+    { name: "PDH", price: pdh },
+    { name: "PDL", price: pdl },
+    { name: "PWH", price: pwh },
+    { name: "PWL", price: pwl },
+  ];
+
+  let nearestTarget = targets[0];
+  let minDistancePips = Infinity;
+
+  for (const t of targets) {
+    const distPips = Math.abs(currentPrice - t.price) / pipMultiplier;
+    if (distPips < minDistancePips) {
+      minDistancePips = distPips;
+      nearestTarget = t;
+    }
+  }
+
+  const targetType: "BUY_SIDE_LIQUIDITY" | "SELL_SIDE_LIQUIDITY" =
+    nearestTarget.price >= currentPrice ? "BUY_SIDE_LIQUIDITY" : "SELL_SIDE_LIQUIDITY";
+
+  const description = `เป้าหมายสภาพคล่องหลัก (Liquidity Pools): PDH = ${pdh}, PDL = ${pdl}, PWH = ${pwh}, PWL = ${pwl} | เป้าหมายที่ใกล้ที่สุดคือ ${nearestTarget.name} (${nearestTarget.price}) ห่าง ${Number(minDistancePips.toFixed(1))} pips (${targetType === "BUY_SIDE_LIQUIDITY" ? "BSL - ฝั่งดึงสภาพคล่องด้านบน" : "SSL - ฝั่งดึงสภาพคล่องด้านล่าง"})`;
+
+  return {
+    pdh,
+    pdl,
+    pwh,
+    pwl,
+    nearestLiquidityTarget: {
+      name: nearestTarget.name,
+      price: nearestTarget.price,
+      distancePips: Number(minDistancePips.toFixed(1)),
+      type: targetType,
+    },
+    description,
+  };
+}
+
+/**
+ * [แผน 35] Algorithmic Order Flow Velocity & Momentum Acceleration Index
+ * Calculates instantaneous momentum velocity and detects Climax Exhaustion spikes.
+ */
+export function calculateOrderFlowVelocity(
+  candles: Candle[]
+): OrderFlowVelocityInfo {
+  if (candles.length < 8) {
+    return {
+      velocityScore: 0,
+      momentumState: "NEUTRAL",
+      isClimaxExhaustion: false,
+      acceleration3Bar: 0,
+      flowVolumeRatio: 1.0,
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการวิเคราะห์ Order Flow Velocity",
+    };
+  }
+
+  const atr14 = calculateATR(candles, 14);
+  const latestATR = atr14.filter((v): v is number => v !== null && !isNaN(v)).pop() || 1.0;
+
+  const recent3 = candles.slice(-3);
+  const prev3 = candles.slice(-6, -3);
+
+  const vel3 = recent3.reduce((acc, c) => acc + (c.close - c.open), 0) / (Math.max(latestATR, 0.0001) * 3);
+  const velPrev = prev3.reduce((acc, c) => acc + (c.close - c.open), 0) / (Math.max(latestATR, 0.0001) * 3);
+  const acceleration = Number((vel3 - velPrev).toFixed(2));
+
+  const velocityScore = Math.round(Math.max(-100, Math.min(100, vel3 * 40)));
+
+  const volSlice = candles.slice(-20);
+  const avgVol = volSlice.reduce((acc, c) => acc + (c.volume || 1), 0) / volSlice.length;
+  const lastCandle = candles[candles.length - 1];
+  const flowVolumeRatio = Number(((lastCandle.volume || 1) / Math.max(avgVol, 1)).toFixed(2));
+
+  const lastRange = lastCandle.high - lastCandle.low;
+  const upperWick = lastCandle.high - Math.max(lastCandle.open, lastCandle.close);
+  const lowerWick = Math.min(lastCandle.open, lastCandle.close) - lastCandle.low;
+  const maxWick = Math.max(upperWick, lowerWick);
+
+  const isHugeSpike = lastRange >= 2.0 * latestATR && flowVolumeRatio >= 1.7;
+  const hasRejectionWick = lastRange > 0 && (maxWick / lastRange) >= 0.45;
+  const isClimaxExhaustion = isHugeSpike && hasRejectionWick;
+
+  let momentumState: OrderFlowVelocityInfo["momentumState"] = "NEUTRAL";
+  if (isClimaxExhaustion) {
+    momentumState = "CLIMAX_EXHAUSTION";
+  } else if (velocityScore >= 40 && acceleration > 0) {
+    momentumState = "ACCELERATING_BULLISH";
+  } else if (velocityScore <= -40 && acceleration < 0) {
+    momentumState = "ACCELERATING_BEARISH";
+  } else if (Math.abs(velocityScore) >= 30 && (velocityScore * acceleration) < 0) {
+    momentumState = "DECELERATING";
+  } else {
+    momentumState = "NEUTRAL";
+  }
+
+  const desc = isClimaxExhaustion
+    ? `🔥 ตรวจพบ Climax Exhaustion! แท่งเทียนพุ่งแรงผิดปกติ (${flowVolumeRatio}x วอลุ่มเฉลี่ย) แต่มีไส้เทียนปฏิเสธราคาแรง (${Math.round((maxWick / (lastRange || 1)) * 100)}%) บ่งชี้การหมดแรงของคลื่นและเสี่ยง Reversal ฉับพลัน`
+    : momentumState === "ACCELERATING_BULLISH"
+    ? `🚀 โมเมนตัมกำลังเร่งตัวขึ้นอย่างรวดเร็ว (Bullish Velocity Score: +${velocityScore}, Acceleration: +${acceleration}) แรงซื้อหนุนต่อเนื่อง`
+    : momentumState === "ACCELERATING_BEARISH"
+    ? `🔻 โมเมนตัมกำลังเร่งตัวลงอย่างหนัก (Bearish Velocity Score: ${velocityScore}, Acceleration: ${acceleration}) แรงขายสถาบันกดดัน`
+    : momentumState === "DECELERATING"
+    ? `⏳ โมเมนตัมกำลังชะลอตัวลง (Decelerating - Velocity Score: ${velocityScore}) สปีดราคาเริ่มผ่อนแรงลงก่อนเข้าสู่จุดสมดุล`
+    : `โมเมนตัมความเร็วของกระแสคำสั่งซื้อขายอยู่ในเกณฑ์ปกติ (Velocity Score: ${velocityScore}, Vol Ratio: ${flowVolumeRatio}x)`;
+
+  return {
+    velocityScore,
+    momentumState,
+    isClimaxExhaustion,
+    acceleration3Bar: acceleration,
+    flowVolumeRatio,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -2170,8 +2703,16 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const candleMicrostructure = calculateCandleMicrostructure(cleanCandles);
   const correlationShield = calculateCorrelationHedgeShield(symbol, currentPrice, cleanCandles);
 
+  // Batch 7: Plans 31, 32, 33, 34, 35
+  const fvgMitigation = calculateFVGMitigation(cleanCandles, precision);
+  const marketStructureShift = calculateMarketStructureShift(cleanCandles, precision);
+  const premiumDiscount = calculatePremiumDiscount(cleanCandles, precision);
+  const keyLevelTargets = calculateKeyLevelTargets(cleanCandles, precision, symbol);
+  const orderFlowVelocity = calculateOrderFlowVelocity(cleanCandles);
+
   return {
     rsi14,
+    atr14,
     ema20,
     ema50,
     ema200,
@@ -2206,5 +2747,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     realizedVolatility,
     candleMicrostructure,
     correlationShield,
+    fvgMitigation,
+    marketStructureShift,
+    premiumDiscount,
+    keyLevelTargets,
+    orderFlowVelocity,
   };
 }
