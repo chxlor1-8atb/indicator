@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSignalsAndStats, saveAiSignal } from "@/lib/db";
+import { AVAILABLE_ASSETS } from "@/lib/marketService";
 
 export const dynamic = "force-dynamic";
 
@@ -10,15 +11,26 @@ export async function GET(request: NextRequest) {
     const limit = Number(searchParams.get("limit")) || 20;
 
     const data = await getSignalsAndStats(limit, symbol);
+
+    // Enrich perSymbolStats with human-readable name and asset category
+    const enrichedPerSymbolStats = (data.perSymbolStats || []).map((ps) => {
+      const asset = AVAILABLE_ASSETS.find((a) => a.symbol === ps.symbol);
+      return {
+        ...ps,
+        name: asset?.name || ps.symbol,
+        category: asset?.category || (ps.symbol.endsWith("USDT") ? "crypto" : "forex"),
+      };
+    });
+
     return NextResponse.json(
       {
         success: true,
         ...data,
+        perSymbolStats: enrichedPerSymbolStats,
       },
       {
         headers: {
-          // Bandwidth-saving: Cache at Vercel Edge for 30 seconds
-          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
         },
       }
     );
