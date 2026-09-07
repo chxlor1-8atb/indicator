@@ -1,5 +1,6 @@
 import { AssetInfo, Candle } from "./types";
-import { saveCandlesRollingBuffer, getCachedCandles } from "./db";
+import { saveCandlesRollingBuffer, getCachedCandles, BacktestTrade } from "./db";
+import { calculateEMA, calculateRSI } from "./indicators";
 
 export const AVAILABLE_ASSETS: AssetInfo[] = [
   // ─── Commodities & Metals ───
@@ -192,7 +193,7 @@ export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKe
   return [];
 }
 
-export async function fetchCryptoCandles(symbol: string, interval = "1h", limit = 200): Promise<Candle[]> {
+export async function fetchCryptoCandles(symbol: string, interval = "1h", limit = 500): Promise<Candle[]> {
   const binanceIntervalMap: Record<string, string> = {
     "15m": "15m",
     "1h": "1h",
@@ -347,7 +348,7 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
     "1D": "1d",
   };
   const yInterval = yahooIntervalMap[interval] || "60m";
-  const yRange = interval === "15m" ? "5d" : interval === "4h" ? "3mo" : interval === "1D" ? "1y" : "1mo";
+  const yRange = interval === "15m" ? "5d" : interval === "4h" ? "3mo" : interval === "1D" ? "2y" : "3mo";
 
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySymbol)}?interval=${yInterval}&range=${yRange}&_t=${Date.now()}`;
   
@@ -478,7 +479,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
   if (symbol.toUpperCase() === "XAUUSD" || symbol.toUpperCase() === "GOLD") {
     try {
       const [rawCandles, tvQuote] = await Promise.all([
-        fetchCryptoCandles("PAXGUSDT", interval, 200).catch(() => []),
+        fetchCryptoCandles("PAXGUSDT", interval, 500).catch(() => []),
         fetchTradingViewSpotQuote("XAUUSD").catch(() => null)
       ]);
 
@@ -506,10 +507,10 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     }
   }
 
-  // 2. If Crypto, use Binance API (Real-time & Fast 200 candles)
+  // 2. If Crypto, use Binance API (Real-time & Fast 500 candles)
   if (asset?.category === "crypto" || symbol.endsWith("USDT")) {
     try {
-      const candles = await fetchCryptoCandles(symbol, interval, 200);
+      const candles = await fetchCryptoCandles(symbol, interval, 500);
       if (candles.length >= 20) {
         return cacheAndPersist(symbol, interval, candles);
       }
@@ -633,4 +634,171 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
   const basePrice = fallbackPrices[symbol] || 100;
   return generateRealisticCandles(symbol, basePrice, 120);
+}
+
+/**
+  * Simulates the institutional trend-pullback strategy over a sequence of candles (up to 500).
+  * Returns an array of resolved backtest trades with R-multiples and accurate pips.
+  */
+export function simulateInstitutionalBacktest(
+  symbol: string,
+  candles: Candle[]
+): BacktestTrade[] {
+  if (!candles || candles.length < 50) return [];
+
+  const ema20 = calculateEMA(candles, 20);
+  const ema50 = calculateEMA(candles, 50);
+  const ema200 = calculateEMA(candles, 200);
+  const rsi = calculateRSI(candles, 14);
+
+  const sym = symbol.toUpperCase();
+  const isGold = sym.includes("XAU") || sym === "GOLD";
+  const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some(
+    (c) => sym.includes(c)
+  );
+  const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
+
+  const trades: BacktestTrade[] = [];
+  let active: {
+    type: "BUY" | "SELL";
+    entryPrice: number;
+    entryTime: number;
+    sl: number;
+    tp1: number;
+    tp2: number;
+    tp1Hit: boolean;
+  } | null = null;
+
+  for (let i = 30; i < candles.length; i++) {
+    const c = candles[i];
+    if (active) {
+      if (active.type === "BUY") {
+        if (!active.tp1Hit && c.high >= active.tp1) {
+          active.tp1Hit = true;
+          active.sl = active.entryPrice; // Move SL to Breakeven
+        }
+        if (c.high >= active.tp2) {
+          trades.push({
+            type: "BUY",
+            entryPrice: active.entryPrice,
+            exitPrice: active.tp2,
+            sl: active.sl,
+            tp1: active.tp1,
+            tp2: active.tp2,
+            result: "WIN",
+            pnlR: 2.2,
+            pnlPips: Number((Math.abs(active.tp2 - active.entryPrice) * pipMultiplier).toFixed(1)),
+            entryTime: active.entryTime,
+            exitTime: c.time,
+          });
+          active = null;
+        } else if (c.low <= active.sl) {
+          const isBE = active.tp1Hit;
+          trades.push({
+            type: "BUY",
+            entryPrice: active.entryPrice,
+            exitPrice: active.sl,
+            sl: active.sl,
+            tp1: active.tp1,
+            tp2: active.tp2,
+            result: isBE ? "BE" : "LOSS",
+            pnlR: isBE ? 0.5 : -1.0,
+            pnlPips: Number((Math.abs(active.sl - active.entryPrice) * pipMultiplier * (isBE ? 0.5 : -1)).toFixed(1)),
+            entryTime: active.entryTime,
+            exitTime: c.time,
+          });
+          active = null;
+        }
+      } else {
+        if (!active.tp1Hit && c.low <= active.tp1) {
+          active.tp1Hit = true;
+          active.sl = active.entryPrice;
+        }
+        if (c.low <= active.tp2) {
+          trades.push({
+            type: "SELL",
+            entryPrice: active.entryPrice,
+            exitPrice: active.tp2,
+            sl: active.sl,
+            tp1: active.tp1,
+            tp2: active.tp2,
+            result: "WIN",
+            pnlR: 2.2,
+            pnlPips: Number((Math.abs(active.entryPrice - active.tp2) * pipMultiplier).toFixed(1)),
+            entryTime: active.entryTime,
+            exitTime: c.time,
+          });
+          active = null;
+        } else if (c.high >= active.sl) {
+          const isBE = active.tp1Hit;
+          trades.push({
+            type: "SELL",
+            entryPrice: active.entryPrice,
+            exitPrice: active.sl,
+            sl: active.sl,
+            tp1: active.tp1,
+            tp2: active.tp2,
+            result: isBE ? "BE" : "LOSS",
+            pnlR: isBE ? 0.5 : -1.0,
+            pnlPips: Number((Math.abs(active.entryPrice - active.sl) * pipMultiplier * (isBE ? 0.5 : -1)).toFixed(1)),
+            entryTime: active.entryTime,
+            exitTime: c.time,
+          });
+          active = null;
+        }
+      }
+    }
+
+    if (!active) {
+      const e20 = ema20[i] ?? c.close;
+      const e50 = ema50[i] ?? c.close;
+      const e200 = ema200[i] ?? c.close;
+      const rVal = rsi[i] ?? 50;
+      const atr = Math.max(c.high - c.low, c.close * 0.005);
+
+      if (
+        c.close > e50 &&
+        e20 > e50 &&
+        c.close > e200 &&
+        c.low <= e20 * 1.002 &&
+        c.close > e20 &&
+        rVal >= 45 &&
+        rVal <= 65 &&
+        c.close > c.open
+      ) {
+        const risk = Math.max(atr * 1.2, c.close - e50);
+        active = {
+          type: "BUY",
+          entryPrice: c.close,
+          entryTime: c.time,
+          sl: Number((c.close - risk).toFixed(4)),
+          tp1: Number((c.close + risk).toFixed(4)),
+          tp2: Number((c.close + risk * 2.2).toFixed(4)),
+          tp1Hit: false,
+        };
+      } else if (
+        c.close < e50 &&
+        e20 < e50 &&
+        c.close < e200 &&
+        c.high >= e20 * 0.998 &&
+        c.close < e20 &&
+        rVal <= 55 &&
+        rVal >= 35 &&
+        c.close < c.open
+      ) {
+        const risk = Math.max(atr * 1.2, e50 - c.close);
+        active = {
+          type: "SELL",
+          entryPrice: c.close,
+          entryTime: c.time,
+          sl: Number((c.close + risk).toFixed(4)),
+          tp1: Number((c.close - risk).toFixed(4)),
+          tp2: Number((c.close - risk * 2.2).toFixed(4)),
+          tp1Hit: false,
+        };
+      }
+    }
+  }
+
+  return trades;
 }
