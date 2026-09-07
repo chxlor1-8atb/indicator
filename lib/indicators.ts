@@ -52,7 +52,6 @@ import {
   RejectionBlockInfo,
   MCPIConvictionInfo,
 } from "./types";
-import { calculateMasterIndicatorSuite } from "./indicatorModules";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
   if (candles.length === 0) return [];
@@ -3699,36 +3698,5 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     dynamicRiskBracket,
     rejectionBlock,
     mcpiConviction,
-    masterSuite: calculateMasterIndicatorSuite(candles),
   };
 }
-
-// ─── RE-EXPORT MODULAR MULTI-FAMILY INDICATORS ───
-export {
-  calculateSMA,
-  calculateWMA,
-  calculateHMA,
-  calculateKAMA,
-  calculateParabolicSAR,
-  calculateAroon,
-  calculateVortex,
-  calculateStochastic,
-  calculateFisherTransform,
-  calculateConnorsRSI,
-  calculateAwesomeOscillator,
-  calculateTSI,
-  calculateKeltnerChannels,
-  calculateDonchianChannels,
-  calculateTTMSqueeze,
-  calculateAdvancedVolatilitySuite,
-  calculateCMF,
-  calculateMFI,
-  calculateHurstExponent,
-  calculateKalmanFilter,
-  calculateShannonEntropy,
-  calculateHalfLife,
-  calculateEhlersMESA,
-  detectHarmonicPatterns,
-  scanCandlestickPatterns,
-  calculateMasterIndicatorSuite,
-} from "./indicatorModules";
