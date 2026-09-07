@@ -30,6 +30,11 @@ import {
   PremiumDiscountInfo,
   KeyLevelTargetsInfo,
   OrderFlowVelocityInfo,
+  BreakevenLadderInfo,
+  LiquidityVoidInfo,
+  FibonacciExtensionInfo,
+  FootprintAbsorptionInfo,
+  MTFStructureMatrixInfo,
 } from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
@@ -62,6 +67,11 @@ import {
   calculatePremiumDiscount,
   calculateKeyLevelTargets,
   calculateOrderFlowVelocity,
+  calculateBreakevenLadder,
+  calculateLiquidityVoid,
+  calculateFibonacciExtension,
+  calculateFootprintAbsorption,
+  calculateMTFStructureMatrix,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -269,6 +279,12 @@ export function generateRuleBasedAnalysis(
   const keyLevelTargets = indicators.keyLevelTargets || calculateKeyLevelTargets(candles, precision, symbol);
   const orderFlowVelocity = indicators.orderFlowVelocity || calculateOrderFlowVelocity(candles);
 
+  // ─── BATCH 8 PRE-COMPUTATIONS (PLANS 37-40) ───
+  const liquidityVoid = indicators.liquidityVoid || calculateLiquidityVoid(candles, precision);
+  const fibonacciExtension = indicators.fibonacciExtension || calculateFibonacciExtension(candles, tier1Bias === "BEARISH" ? "SELL" : "BUY", precision);
+  const footprintAbsorption = indicators.footprintAbsorption || calculateFootprintAbsorption(candles);
+  const mtfStructureMatrix = indicators.mtfStructureMatrix || calculateMTFStructureMatrix(candles, precision, symbol);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -354,6 +370,20 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 40);
   }
+  // SAFETY LOCK 11: Multi-Timeframe Structure Conflict (LTF fighting H4/D1 Trend) & Footprint Exhaustion [แผน 39 & แผน 40]
+  else if (mtfStructureMatrix.isHTFConflict) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  } else if (tier1Bias === "BULLISH" && footprintAbsorption.vsaSignal === "NO_DEMAND") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  } else if (tier1Bias === "BEARISH" && footprintAbsorption.vsaSignal === "NO_SUPPLY") {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -364,6 +394,8 @@ export function generateRuleBasedAnalysis(
     if (isOrbBullBreak) confidence = Math.min(95, confidence + 5);
     if (sessionSweep.sweepType === "BULLISH_SWEEP") confidence = Math.min(98, confidence + 6);
     if (marketStructureShift.isTrueDisplacement && marketStructureShift.type === "BULLISH_MSS") confidence = Math.min(98, confidence + 5);
+    if (footprintAbsorption.isInstitutionalAbsorption && footprintAbsorption.bias === "BULLISH") confidence = Math.min(98, confidence + 5);
+    if (mtfStructureMatrix.overallAlignment === "FULL_BULLISH_CONFLUENCE") confidence = Math.min(98, confidence + 5);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -374,6 +406,8 @@ export function generateRuleBasedAnalysis(
     if (isOrbBearBreak) confidence = Math.min(95, confidence + 5);
     if (sessionSweep.sweepType === "BEARISH_SWEEP") confidence = Math.min(98, confidence + 6);
     if (marketStructureShift.isTrueDisplacement && marketStructureShift.type === "BEARISH_MSS") confidence = Math.min(98, confidence + 5);
+    if (footprintAbsorption.isInstitutionalAbsorption && footprintAbsorption.bias === "BEARISH") confidence = Math.min(98, confidence + 5);
+    if (mtfStructureMatrix.overallAlignment === "FULL_BEARISH_CONFLUENCE") confidence = Math.min(98, confidence + 5);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -427,7 +461,12 @@ export function generateRuleBasedAnalysis(
     const risk = Math.max(pendingPrice - stopLoss, currentATR * 0.8);
     takeProfit1 = Number((pendingPrice + risk * 1.0).toFixed(precision));
     takeProfit2 = Number((pendingPrice + risk * effectiveTPMultiplier).toFixed(precision));
-    riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
+
+    // [แผน 38] MTF Fibonacci Extension Golden Target Refinement
+    if (fibonacciExtension.bestTakeProfitTarget?.price && fibonacciExtension.bestTakeProfitTarget.price > takeProfit1) {
+      takeProfit2 = fibonacciExtension.bestTakeProfitTarget.price;
+    }
+    riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / risk).toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
     // [แผน 12 & แผน 28] Liquidity Hunt Protection Stop Loss + Realized Volatility Buffer
@@ -448,7 +487,12 @@ export function generateRuleBasedAnalysis(
     const risk = Math.max(stopLoss - pendingPrice, currentATR * 0.8);
     takeProfit1 = Number((pendingPrice - risk * 1.0).toFixed(precision));
     takeProfit2 = Number((pendingPrice - risk * effectiveTPMultiplier).toFixed(precision));
-    riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
+
+    // [แผน 38] MTF Fibonacci Extension Golden Target Refinement
+    if (fibonacciExtension.bestTakeProfitTarget?.price && fibonacciExtension.bestTakeProfitTarget.price < takeProfit1) {
+      takeProfit2 = fibonacciExtension.bestTakeProfitTarget.price;
+    }
+    riskRewardRatio = `1:${((pendingPrice - takeProfit2) / risk).toFixed(1)}`;
   }
 
   // [แผน 14] Automated Risk-Free Breakeven Shield
@@ -460,6 +504,16 @@ export function generateRuleBasedAnalysis(
     currentPrice,
     symbol,
     precision
+  );
+
+  // [แผน 36] Dynamic Multi-Stage Breakeven & Partial TP Laddering Engine
+  const breakevenLadder = indicators.breakevenLadder || calculateBreakevenLadder(
+    tradeAction !== "NO_TRADE" ? pendingPrice : currentPrice,
+    stopLoss,
+    currentPrice,
+    tradeAction === "SELL" ? "SELL" : "BUY",
+    precision,
+    symbol
   );
 
   const pipMultiplier = symbol.includes("JPY") ? 100 : symbol.includes("XAU") ? 10 : 10000;
@@ -546,6 +600,11 @@ export function generateRuleBasedAnalysis(
               marketStructureShift.isTrueDisplacement,
       note: `${premiumDiscount.description} • MSS: ${marketStructureShift.type} (${marketStructureShift.displacementVelocity})`,
     },
+    {
+      name: `Pillar 11: MTF Structure Alignment & VSA Absorption (${mtfStructureMatrix.htfTrend})`,
+      passed: !mtfStructureMatrix.isHTFConflict && (mtfStructureMatrix.alignmentScorePct >= 50 || footprintAbsorption.isInstitutionalAbsorption),
+      note: `${mtfStructureMatrix.description} • VSA: ${footprintAbsorption.vsaSignal} (${footprintAbsorption.effortVsResult})`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -591,6 +650,11 @@ export function generateRuleBasedAnalysis(
     premiumDiscount,
     keyLevelTargets,
     orderFlowVelocity,
+    breakevenLadder,
+    liquidityVoid,
+    fibonacciExtension,
+    footprintAbsorption,
+    mtfStructureMatrix,
     kellySizing,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
@@ -625,6 +689,11 @@ export function generateRuleBasedAnalysis(
         `Dealing Range P/D: ${premiumDiscount.percentile}% (${premiumDiscount.zone}) - Eq: ${premiumDiscount.equilibrium}`,
         `Key Liquidity Targets: Nearest ${keyLevelTargets.nearestLiquidityTarget.name} (${keyLevelTargets.nearestLiquidityTarget.price} - ${keyLevelTargets.nearestLiquidityTarget.distancePips} pips)`,
         `Order Flow Velocity: Score ${orderFlowVelocity.velocityScore} (${orderFlowVelocity.momentumState})`,
+        `Multi-Stage BE Ladder: ขั้นที่ ${breakevenLadder.currentStage}/3 (กำไร ${breakevenLadder.currentRMultiple}R | Rec SL: ${breakevenLadder.recommendedSL})`,
+        `Liquidity Void Vacuum: ${liquidityVoid.vacuumDirection} (${liquidityVoid.activeVoidCount} โซน, Fast-fill prob: ${liquidityVoid.fastFillProbabilityPct}%)`,
+        `Fibonacci Extension Mesh: 1.618 Golden Target ที่ ${fibonacciExtension.bestTakeProfitTarget.price} (${fibonacciExtension.bestTakeProfitTarget.label})`,
+        `VSA Footprint Absorption: ${footprintAbsorption.vsaSignal} (Effort/Result: ${footprintAbsorption.effortVsResult}, Vol: ${footprintAbsorption.relativeVolume}x)`,
+        `MTF Structure Matrix: ${mtfStructureMatrix.overallAlignment} (คะแนนสอดคล้อง: ${mtfStructureMatrix.alignmentScorePct}%, HTF: ${mtfStructureMatrix.htfTrend})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -678,6 +747,11 @@ export function generateRuleBasedAnalysis(
       premiumDiscount,
       keyLevelTargets,
       orderFlowVelocity,
+      breakevenLadder,
+      liquidityVoid,
+      fibonacciExtension,
+      footprintAbsorption,
+      mtfStructureMatrix,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1007,6 +1081,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.premiumDiscount = ruleAnalysis.premiumDiscount;
     parsed.keyLevelTargets = ruleAnalysis.keyLevelTargets;
     parsed.orderFlowVelocity = ruleAnalysis.orderFlowVelocity;
+    parsed.breakevenLadder = ruleAnalysis.breakevenLadder;
+    parsed.liquidityVoid = ruleAnalysis.liquidityVoid;
+    parsed.fibonacciExtension = ruleAnalysis.fibonacciExtension;
+    parsed.footprintAbsorption = ruleAnalysis.footprintAbsorption;
+    parsed.mtfStructureMatrix = ruleAnalysis.mtfStructureMatrix;
     parsed.kellySizing = ruleAnalysis.kellySizing;
 
     if (parsed.tradeSetup) {
@@ -1031,6 +1110,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.premiumDiscount = ruleAnalysis.tradeSetup.premiumDiscount;
       parsed.tradeSetup.keyLevelTargets = ruleAnalysis.tradeSetup.keyLevelTargets;
       parsed.tradeSetup.orderFlowVelocity = ruleAnalysis.tradeSetup.orderFlowVelocity;
+      parsed.tradeSetup.breakevenLadder = ruleAnalysis.tradeSetup.breakevenLadder;
+      parsed.tradeSetup.liquidityVoid = ruleAnalysis.tradeSetup.liquidityVoid;
+      parsed.tradeSetup.fibonacciExtension = ruleAnalysis.tradeSetup.fibonacciExtension;
+      parsed.tradeSetup.footprintAbsorption = ruleAnalysis.tradeSetup.footprintAbsorption;
+      parsed.tradeSetup.mtfStructureMatrix = ruleAnalysis.tradeSetup.mtfStructureMatrix;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

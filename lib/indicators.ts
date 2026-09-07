@@ -36,6 +36,15 @@ import {
   PremiumDiscountInfo,
   KeyLevelTargetsInfo,
   OrderFlowVelocityInfo,
+  BreakevenLadderStage,
+  BreakevenLadderInfo,
+  LiquidityVoidItem,
+  LiquidityVoidInfo,
+  FibExtensionLevel,
+  FibonacciExtensionInfo,
+  FootprintAbsorptionInfo,
+  TimeframeStructureDetail,
+  MTFStructureMatrixInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -2621,6 +2630,506 @@ export function calculateOrderFlowVelocity(
   };
 }
 
+/**
+ * [แผน 36] Dynamic Multi-Stage Breakeven & Partial TP Laddering Engine
+ * Stages:
+ *  - Stage 1 at 0.8R: Move SL to Breakeven + 1 pip (risk-free)
+ *  - Stage 2 at 1.5R: Close 50% partial profit, lock SL to +0.5R
+ *  - Stage 3 at 2.5R: Close 80% partial profit, trail SL to +1.2R
+ */
+export function calculateBreakevenLadder(
+  entryPrice: number,
+  stopLoss: number,
+  currentPrice: number,
+  direction: "BUY" | "SELL" = "BUY",
+  precision = 2,
+  symbol = "XAUUSD"
+): BreakevenLadderInfo {
+  const isForex = precision >= 4;
+  const isJPY = symbol.toUpperCase().includes("JPY") || (precision === 2 && !symbol.toUpperCase().includes("XAU"));
+  const pipMultiplier = isForex ? 0.0001 : (isJPY ? 0.01 : 0.1);
+
+  const risk = Math.max(Math.abs(entryPrice - stopLoss), pipMultiplier * 10);
+  const currentGain = direction === "BUY" ? currentPrice - entryPrice : entryPrice - currentPrice;
+  const currentRMultiple = Number((currentGain / risk).toFixed(2));
+
+  const stages: BreakevenLadderStage[] = [
+    {
+      stage: 1,
+      triggerGainR: 0.8,
+      action: "MOVE_TO_BE_PLUS_1",
+      targetPrice: Number((direction === "BUY" ? entryPrice + 0.8 * risk : entryPrice - 0.8 * risk).toFixed(precision)),
+      slMovePrice: Number((direction === "BUY" ? entryPrice + pipMultiplier : entryPrice - pipMultiplier).toFixed(precision)),
+      isTriggered: currentRMultiple >= 0.8,
+      statusText: currentRMultiple >= 0.8 ? "✅ ขั้นที่ 1 ทำงาน: ขยับ SL บังหน้าทุน +1 pip" : "⏳ รอราคาแตะ +0.8R",
+    },
+    {
+      stage: 2,
+      triggerGainR: 1.5,
+      action: "LOCK_HALF_AND_TRAIL_0_5R",
+      targetPrice: Number((direction === "BUY" ? entryPrice + 1.5 * risk : entryPrice - 1.5 * risk).toFixed(precision)),
+      slMovePrice: Number((direction === "BUY" ? entryPrice + 0.5 * risk : entryPrice - 0.5 * risk).toFixed(precision)),
+      isTriggered: currentRMultiple >= 1.5,
+      statusText: currentRMultiple >= 1.5 ? "✅ ขั้นที่ 2 ทำงาน: แบ่งปิด 50% ล็อคกำไรที่ +0.5R" : "⏳ รอราคาแตะ +1.5R (TP1)",
+    },
+    {
+      stage: 3,
+      triggerGainR: 2.5,
+      action: "TRAIL_RUNNER",
+      targetPrice: Number((direction === "BUY" ? entryPrice + 2.5 * risk : entryPrice - 2.5 * risk).toFixed(precision)),
+      slMovePrice: Number((direction === "BUY" ? entryPrice + 1.2 * risk : entryPrice - 1.2 * risk).toFixed(precision)),
+      isTriggered: currentRMultiple >= 2.5,
+      statusText: currentRMultiple >= 2.5 ? "✅ ขั้นที่ 3 ทำงาน: รันเทรนด์ ล็อคกำไรที่ +1.2R" : "⏳ รอราคาแตะ +2.5R (TP2)",
+    },
+  ];
+
+  let currentStage = 0;
+  let recommendedSL = stopLoss;
+  let partialCloseRecommendedPct = 0;
+  let actionAdvice = "ถือสถานะตามแผนเดิม Stop Loss ปกติ";
+
+  if (currentRMultiple >= 2.5) {
+    currentStage = 3;
+    recommendedSL = stages[2].slMovePrice;
+    partialCloseRecommendedPct = 80;
+    actionAdvice = `🎉 กำไรทะลุ +2.5R! แนะนำแบ่งปิด 80% และยก SL ล็อคกำไรที่ ${recommendedSL}`;
+  } else if (currentRMultiple >= 1.5) {
+    currentStage = 2;
+    recommendedSL = stages[1].slMovePrice;
+    partialCloseRecommendedPct = 50;
+    actionAdvice = `🎯 แตะ TP1 (+1.5R)! แนะนำปิดทำกำไร 50% และดึง SL มาล็อคที่ ${recommendedSL}`;
+  } else if (currentRMultiple >= 0.8) {
+    currentStage = 1;
+    recommendedSL = stages[0].slMovePrice;
+    partialCloseRecommendedPct = 0;
+    actionAdvice = `🛡️ กำไรถึง +0.8R เข้าเงื่อนไขไร้ความเสี่ยง! ขยับ SL บังหน้าทุนที่ ${recommendedSL}`;
+  }
+
+  const description = `ระบบบันไดกันทุนไดนามิก (Multi-Stage BE Ladder): กำไรปัจจุบัน ${currentRMultiple > 0 ? `+${currentRMultiple}` : currentRMultiple}R (ขั้นที่ ${currentStage}/3) | ${actionAdvice}`;
+
+  return {
+    currentRMultiple,
+    currentStage,
+    recommendedSL,
+    partialCloseRecommendedPct,
+    stages,
+    actionAdvice,
+    description,
+  };
+}
+
+/**
+ * [แผน 37] Liquidity Void & Volume Imbalance Fast-Fill Predictor
+ * Detects large void gaps created by impulse thrusts with high vacuum fill probability (>80%).
+ */
+export function calculateLiquidityVoid(
+  candles: Candle[],
+  precision = 2
+): LiquidityVoidInfo {
+  if (candles.length < 5) {
+    return {
+      voids: [],
+      activeVoidCount: 0,
+      nearestVoid: null,
+      vacuumDirection: "NONE",
+      fastFillProbabilityPct: 0,
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการวิเคราะห์ Liquidity Void",
+    };
+  }
+
+  const atr14 = calculateATR(candles, 14);
+  const latestATR = atr14.filter((v): v is number => v !== null && !isNaN(v)).pop() || 1.0;
+  const currentPrice = candles[candles.length - 1].close;
+  const voids: LiquidityVoidItem[] = [];
+
+  const sampleStart = Math.max(1, candles.length - 40);
+
+  for (let i = sampleStart; i < candles.length - 1; i++) {
+    const prev = candles[i - 1];
+    const c = candles[i];
+    const body = Math.abs(c.close - c.open);
+
+    // Bullish Liquidity Void: long upward thrust with gap or huge body
+    if (c.close > c.open && (body >= 1.8 * latestATR || c.low > prev.high)) {
+      const bottom = Number(Math.max(c.open, prev.high).toFixed(precision));
+      const top = Number(c.close.toFixed(precision));
+      if (top > bottom) {
+        const fillTarget50 = Number(((top + bottom) / 2).toFixed(precision));
+        const fillTarget100 = bottom;
+
+        // Check how much subsequent candles retraced into the void
+        let deepestRetrace = top;
+        for (let k = i + 1; k < candles.length; k++) {
+          if (candles[k].low < deepestRetrace) {
+            deepestRetrace = candles[k].low;
+          }
+        }
+        const span = top - bottom;
+        const penetration = Math.max(0, top - deepestRetrace);
+        const fillPct = Math.min(100, Number(((penetration / span) * 100).toFixed(1)));
+        const isFilled = fillPct >= 95;
+
+        if (!isFilled) {
+          voids.push({
+            id: `void-bull-${i}`,
+            type: "BULLISH_VOID",
+            top,
+            bottom,
+            fillTarget50,
+            fillTarget100,
+            fillPercentage: fillPct,
+            candleIndex: i,
+            isFilled: false,
+          });
+        }
+      }
+    }
+
+    // Bearish Liquidity Void: long downward thrust with gap or huge body
+    if (c.open > c.close && (body >= 1.8 * latestATR || c.high < prev.low)) {
+      const top = Number(Math.min(c.open, prev.low).toFixed(precision));
+      const bottom = Number(c.close.toFixed(precision));
+      if (top > bottom) {
+        const fillTarget50 = Number(((top + bottom) / 2).toFixed(precision));
+        const fillTarget100 = top;
+
+        let highestRetrace = bottom;
+        for (let k = i + 1; k < candles.length; k++) {
+          if (candles[k].high > highestRetrace) {
+            highestRetrace = candles[k].high;
+          }
+        }
+        const span = top - bottom;
+        const penetration = Math.max(0, highestRetrace - bottom);
+        const fillPct = Math.min(100, Number(((penetration / span) * 100).toFixed(1)));
+        const isFilled = fillPct >= 95;
+
+        if (!isFilled) {
+          voids.push({
+            id: `void-bear-${i}`,
+            type: "BEARISH_VOID",
+            top,
+            bottom,
+            fillTarget50,
+            fillTarget100,
+            fillPercentage: fillPct,
+            candleIndex: i,
+            isFilled: false,
+          });
+        }
+      }
+    }
+  }
+
+  let nearestVoid: LiquidityVoidItem | null = null;
+  let minDistance = Infinity;
+
+  for (const v of voids) {
+    const dist = Math.abs(currentPrice - v.fillTarget50);
+    if (dist < minDistance) {
+      minDistance = dist;
+      nearestVoid = v;
+    }
+  }
+
+  let vacuumDirection: LiquidityVoidInfo["vacuumDirection"] = "NONE";
+  let fastFillProbabilityPct = 0;
+
+  if (nearestVoid) {
+    if (nearestVoid.type === "BULLISH_VOID" && currentPrice >= nearestVoid.top) {
+      vacuumDirection = "DOWNWARD_VACUUM";
+      fastFillProbabilityPct = 82;
+    } else if (nearestVoid.type === "BEARISH_VOID" && currentPrice <= nearestVoid.bottom) {
+      vacuumDirection = "UPWARD_VACUUM";
+      fastFillProbabilityPct = 82;
+    } else {
+      vacuumDirection = nearestVoid.type === "BULLISH_VOID" ? "DOWNWARD_VACUUM" : "UPWARD_VACUUM";
+      fastFillProbabilityPct = 65;
+    }
+  }
+
+  const desc = nearestVoid
+    ? `ตรวจพบ Liquidity Void ค้างในตลาด ${voids.length} จุด (ใกล้ที่สุด: [${nearestVoid.bottom} - ${nearestVoid.top}], เติมไปแล้ว ${nearestVoid.fillPercentage}%) มีแรงดูดสุญญากาศ ${vacuumDirection} สู่เป้า 50% ที่ ${nearestVoid.fillTarget50} (ความน่าจะเป็น ${fastFillProbabilityPct}%)`
+    : "โครงสร้างสภาพคล่องสมบูรณ์ ไม่พบ Liquidity Void ขนาดใหญ่ค้างในตลาด";
+
+  return {
+    voids: voids.slice(-6),
+    activeVoidCount: voids.length,
+    nearestVoid,
+    vacuumDirection,
+    fastFillProbabilityPct,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 38] Multi-Timeframe Fibonacci Extension & Projection Mesh
+ * Calculates standard projection targets: 1.272, 1.414, 1.618 (Golden Extension), 2.000.
+ */
+export function calculateFibonacciExtension(
+  candles: Candle[],
+  direction: "BUY" | "SELL" = "BUY",
+  precision = 2
+): FibonacciExtensionInfo {
+  if (candles.length < 15) {
+    return {
+      anchorLow: 0,
+      anchorHigh: 0,
+      anchorRetrace: 0,
+      extensionLevels: [],
+      bestTakeProfitTarget: { ratio: 1.618, price: 0, label: "1.618 Golden Extension", isConfluentWithKeyLevel: false },
+      description: "ข้อมูลไม่เพียงพอสำหรับคำนวณ Fibonacci Extension",
+    };
+  }
+
+  const sample = candles.slice(-Math.min(candles.length, 45));
+  const highs = sample.map((c) => c.high);
+  const lows = sample.map((c) => c.low);
+
+  const anchorHigh = Number(Math.max(...highs).toFixed(precision));
+  const anchorLow = Number(Math.min(...lows).toFixed(precision));
+
+  const impulse = Math.max(anchorHigh - anchorLow, 0.01);
+  const anchorRetrace = Number((direction === "BUY" ? Math.min(...lows.slice(-10)) : Math.max(...highs.slice(-10))).toFixed(precision));
+
+  const ratios = [
+    { ratio: 1.272, label: "1.272 Extension (Conservative TP)" },
+    { ratio: 1.414, label: "1.414 Extension (Harmonic Target)" },
+    { ratio: 1.618, label: "1.618 Golden Ratio (Major Institutional TP)" },
+    { ratio: 2.000, label: "2.000 Trend Expansion (Runner Target)" },
+  ];
+
+  const extensionLevels: FibExtensionLevel[] = ratios.map((r) => {
+    const price = Number((direction === "BUY"
+      ? anchorRetrace + r.ratio * impulse
+      : anchorRetrace - r.ratio * impulse
+    ).toFixed(precision));
+    return {
+      ratio: r.ratio,
+      price,
+      label: r.label,
+      isConfluentWithKeyLevel: r.ratio === 1.618,
+    };
+  });
+
+  const bestTarget = extensionLevels.find((e) => e.ratio === 1.618) || extensionLevels[2];
+
+  const description = `ตาข่าย Fibonacci Projection Mesh: ขาคลื่น Impulse [${anchorLow} - ${anchorHigh}], จุดถอย Anchor [${anchorRetrace}] -> เป้าหมายกำไรสูงสุดระดับสถาบัน 1.618 Golden Target อยู่ที่ ${bestTarget.price} (${direction === "BUY" ? "เป้าหมายขี่คลื่นขาขึ้น" : "เป้าหมายทำกำไรขาลง"})`;
+
+  return {
+    anchorLow,
+    anchorHigh,
+    anchorRetrace,
+    extensionLevels,
+    bestTakeProfitTarget: bestTarget,
+    description,
+  };
+}
+
+/**
+ * [แผน 39] Institutional Footprint Absorption & VSA (Volume Spread Analysis) Climax
+ * Quantifies Effort vs Result and detects institutional order absorption.
+ */
+export function calculateFootprintAbsorption(
+  candles: Candle[]
+): FootprintAbsorptionInfo {
+  if (candles.length < 15) {
+    return {
+      vsaSignal: "NORMAL",
+      effortVsResult: "BALANCED",
+      relativeVolume: 1.0,
+      spreadRatio: 1.0,
+      isInstitutionalAbsorption: false,
+      bias: "NEUTRAL",
+      description: "ข้อมูลไม่เพียงพอสำหรับคำนวณ VSA Footprint Absorption",
+    };
+  }
+
+  const atr14 = calculateATR(candles, 14);
+  const latestATR = atr14.filter((v): v is number => v !== null && !isNaN(v)).pop() || 1.0;
+
+  const volSlice = candles.slice(-20);
+  const avgVol = volSlice.reduce((acc, c) => acc + (c.volume || 1), 0) / volSlice.length;
+  const last = candles[candles.length - 1];
+
+  const relativeVolume = Number(((last.volume || 1) / Math.max(avgVol, 1)).toFixed(2));
+  const spread = last.high - last.low;
+  const spreadRatio = Number((spread / Math.max(latestATR, 0.0001)).toFixed(2));
+
+  let effortVsResult: FootprintAbsorptionInfo["effortVsResult"] = "BALANCED";
+  if (relativeVolume >= 1.7 && spreadRatio <= 0.85) {
+    effortVsResult = "HIGH_EFFORT_LOW_RESULT";
+  } else if (relativeVolume <= 0.6 && spreadRatio >= 1.4) {
+    effortVsResult = "LOW_EFFORT_HIGH_RESULT";
+  }
+
+  let vsaSignal: FootprintAbsorptionInfo["vsaSignal"] = "NORMAL";
+  let isInstitutionalAbsorption = false;
+  let bias: FootprintAbsorptionInfo["bias"] = "NEUTRAL";
+
+  const upperWick = last.high - Math.max(last.open, last.close);
+  const lowerWick = Math.min(last.open, last.close) - last.low;
+
+  if (effortVsResult === "HIGH_EFFORT_LOW_RESULT") {
+    isInstitutionalAbsorption = true;
+    if (lowerWick >= upperWick) {
+      vsaSignal = "ABSORPTION_BUY";
+      bias = "BULLISH";
+    } else {
+      vsaSignal = "ABSORPTION_SELL";
+      bias = "BEARISH";
+    }
+  } else if (relativeVolume >= 2.0 && lowerWick >= 0.5 * (spread || 1) && last.close > last.open) {
+    vsaSignal = "STOPPING_VOLUME";
+    bias = "BULLISH";
+  } else if (relativeVolume <= 0.6 && last.close > last.open && spreadRatio < 0.8) {
+    vsaSignal = "NO_DEMAND";
+    bias = "BEARISH";
+  } else if (relativeVolume <= 0.6 && last.open > last.close && spreadRatio < 0.8) {
+    vsaSignal = "NO_SUPPLY";
+    bias = "BULLISH";
+  }
+
+  const desc = isInstitutionalAbsorption
+    ? `🧱 ตรวจพบ Institutional Absorption (${vsaSignal})! วอลุ่มมหาศาล (${relativeVolume}x) แต่กรอบราคาแทบไม่ขยับ (Effort vs Result ผิดปกติ) สถาบันกำลังกวาดคำสั่งซื้อขายทั้งหมด`
+    : vsaSignal === "STOPPING_VOLUME"
+    ? `🛑 ตรวจพบ Stopping Volume! วอลุ่มแรงสถาบันเข้าแทรกแซงก้นคลื่น (${relativeVolume}x) ดีดตัวขึ้นด้วยแรงซื้อซับ`
+    : vsaSignal === "NO_DEMAND"
+    ? `⚠️ ตรวจพบ No Demand! ราคาขยับขึ้นแต่วอลุ่มแห้งผาก (${relativeVolume}x) สถาบันไม่หนุนการขึ้น เสี่ยงถูกทุบ`
+    : vsaSignal === "NO_SUPPLY"
+    ? `✨ ตรวจพบ No Supply! ราคาปรับลงแต่วอลุ่มขายแห้ง (${relativeVolume}x) ไม่มีแรงขายกดดัน พร้อมดีดตัว`
+    : `สัดส่วนปริมาณวอลุ่มและขนาดแท่งเทียนสัมพันธ์กันปกติ (Vol: ${relativeVolume}x, Spread: ${spreadRatio}x ATR)`;
+
+  return {
+    vsaSignal,
+    effortVsResult,
+    relativeVolume,
+    spreadRatio,
+    isInstitutionalAbsorption,
+    bias,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 40] Multi-Timeframe Structure Alignment Matrix (15m, 1h, 4h, 1D BOS/CHOCH Dashboard)
+ * Evaluates Break of Structure (BOS) vs Change of Character (CHOCH) across 4 timeframes.
+ * Enforces Safety Lock 11: Alert & block entries that fight against HTF H4/D1 trend.
+ */
+export function calculateMTFStructureMatrix(
+  candles: Candle[],
+  precision = 2,
+  symbol = "XAUUSD"
+): MTFStructureMatrixInfo {
+  const len = candles.length;
+  if (len < 30) {
+    const emptyTF = (tf: "15m" | "1h" | "4h" | "1D"): TimeframeStructureDetail => ({
+      timeframe: tf,
+      structure: "RANGING",
+      trendBias: "NEUTRAL",
+      keySwingHigh: 0,
+      keySwingLow: 0,
+    });
+    return {
+      overallAlignment: "PARTIAL_ALIGNMENT",
+      alignmentScorePct: 50,
+      htfTrend: "NEUTRAL",
+      isHTFConflict: false,
+      timeframes: {
+        m15: emptyTF("15m"),
+        h1: emptyTF("1h"),
+        h4: emptyTF("4h"),
+        d1: emptyTF("1D"),
+      },
+      description: "ข้อมูลไม่เพียงพอสำหรับสร้าง MTF Structure Matrix",
+    };
+  }
+
+  const evaluateSlice = (slice: Candle[], tfName: "15m" | "1h" | "4h" | "1D"): TimeframeStructureDetail => {
+    const highs = slice.map((c) => c.high);
+    const lows = slice.map((c) => c.low);
+    const swingHigh = Number(Math.max(...highs).toFixed(precision));
+    const swingLow = Number(Math.min(...lows).toFixed(precision));
+    const firstClose = slice[0].close;
+    const lastClose = slice[slice.length - 1].close;
+
+    let structure: TimeframeStructureDetail["structure"] = "RANGING";
+    let trendBias: TimeframeStructureDetail["trendBias"] = "NEUTRAL";
+
+    if (lastClose > (firstClose + swingHigh) / 2) {
+      trendBias = "BULLISH";
+      structure = lastClose >= swingHigh * 0.999 ? "BULLISH_BOS" : "BULLISH_CHOCH";
+    } else if (lastClose < (firstClose + swingLow) / 2) {
+      trendBias = "BEARISH";
+      structure = lastClose <= swingLow * 1.001 ? "BEARISH_BOS" : "BEARISH_CHOCH";
+    } else {
+      trendBias = "NEUTRAL";
+      structure = "RANGING";
+    }
+
+    return {
+      timeframe: tfName,
+      structure,
+      trendBias,
+      keySwingHigh: swingHigh,
+      keySwingLow: swingLow,
+    };
+  };
+
+  const m15 = evaluateSlice(candles.slice(-Math.min(len, 16)), "15m");
+  const h1 = evaluateSlice(candles.slice(-Math.min(len, 48)), "1h");
+  const h4 = evaluateSlice(candles.slice(-Math.min(len, 144)), "4h");
+  const d1 = evaluateSlice(candles.slice(-Math.min(len, 300)), "1D");
+
+  const bullCount = [m15, h1, h4, d1].filter((t) => t.trendBias === "BULLISH").length;
+  const bearCount = [m15, h1, h4, d1].filter((t) => t.trendBias === "BEARISH").length;
+
+  const htfTrend: MTFStructureMatrixInfo["htfTrend"] =
+    h4.trendBias === d1.trendBias ? h4.trendBias : h4.trendBias !== "NEUTRAL" ? h4.trendBias : d1.trendBias;
+
+  const isHTFConflict = (m15.trendBias === "BULLISH" && htfTrend === "BEARISH") ||
+                        (m15.trendBias === "BEARISH" && htfTrend === "BULLISH");
+
+  let overallAlignment: MTFStructureMatrixInfo["overallAlignment"] = "PARTIAL_ALIGNMENT";
+  let alignmentScorePct = 50;
+
+  if (bullCount === 4) {
+    overallAlignment = "FULL_BULLISH_CONFLUENCE";
+    alignmentScorePct = 100;
+  } else if (bearCount === 4) {
+    overallAlignment = "FULL_BEARISH_CONFLUENCE";
+    alignmentScorePct = 100;
+  } else if (isHTFConflict) {
+    overallAlignment = "HTF_CONFLICT_WARNING";
+    alignmentScorePct = 35;
+  } else {
+    overallAlignment = "PARTIAL_ALIGNMENT";
+    alignmentScorePct = Math.round((Math.max(bullCount, bearCount) / 4) * 80 + 20);
+  }
+
+  const desc = isHTFConflict
+    ? `⚠️ ตรวจพบความขัดแย้งโครงสร้างใหญ่ (HTF Conflict)! Timeframe ย่อย (${m15.trendBias}) วิ่งสวนเทรนด์หลัก H4/D1 (${htfTrend}) เสี่ยงติดกับดักสวนเทรนด์`
+    : overallAlignment === "FULL_BULLISH_CONFLUENCE"
+    ? "🚀 โครงสร้างตลาดสอดคล้องกันสมบูรณ์แบบทั้ง 4 Timeframes (15m, 1h, 4h, 1D เป็นขาขึ้น Bullish BOS) โมเมนตัมทรงพลังสูงสุด"
+    : overallAlignment === "FULL_BEARISH_CONFLUENCE"
+    ? "🔻 โครงสร้างตลาดสอดคล้องกันสมบูรณ์แบบทั้ง 4 Timeframes (15m, 1h, 4h, 1D เป็นขาลง Bearish BOS) แรงขายสถาบันคุมตลาดเบ็ดเสร็จ"
+    : `โครงสร้างสอดคล้องบางส่วน (คะแนน Alignment ${alignmentScorePct}%): 15m (${m15.structure}), 1h (${h1.structure}), 4h (${h4.structure}), 1D (${d1.structure})`;
+
+  return {
+    overallAlignment,
+    alignmentScorePct,
+    htfTrend,
+    isHTFConflict,
+    timeframes: {
+      m15,
+      h1,
+      h4,
+      d1,
+    },
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -2710,6 +3219,15 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const keyLevelTargets = calculateKeyLevelTargets(cleanCandles, precision, symbol);
   const orderFlowVelocity = calculateOrderFlowVelocity(cleanCandles);
 
+  // Batch 8: Plans 36, 37, 38, 39, 40
+  const defaultDirection: "BUY" | "SELL" = initialBias === "BULLISH" ? "BUY" : "SELL";
+  const defaultSL = defaultDirection === "BUY" ? currentPrice - 1.5 * latestATR : currentPrice + 1.5 * latestATR;
+  const breakevenLadder = calculateBreakevenLadder(currentPrice, Number(defaultSL.toFixed(precision)), currentPrice, defaultDirection, precision, symbol);
+  const liquidityVoid = calculateLiquidityVoid(cleanCandles, precision);
+  const fibonacciExtension = calculateFibonacciExtension(cleanCandles, defaultDirection, precision);
+  const footprintAbsorption = calculateFootprintAbsorption(cleanCandles);
+  const mtfStructureMatrix = calculateMTFStructureMatrix(cleanCandles, precision, symbol);
+
   return {
     rsi14,
     atr14,
@@ -2752,5 +3270,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     premiumDiscount,
     keyLevelTargets,
     orderFlowVelocity,
+    breakevenLadder,
+    liquidityVoid,
+    fibonacciExtension,
+    footprintAbsorption,
+    mtfStructureMatrix,
   };
 }

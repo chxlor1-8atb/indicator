@@ -363,6 +363,101 @@ export interface OrderFlowVelocityInfo {
   description: string;
 }
 
+// [แผน 36] Dynamic Multi-Stage Breakeven & Partial TP Laddering Engine
+export interface BreakevenLadderStage {
+  stage: number;
+  triggerGainR: number; // e.g. 0.8, 1.5, 2.5
+  action: "MOVE_TO_BE_PLUS_1" | "LOCK_HALF_AND_TRAIL_0_5R" | "TRAIL_RUNNER";
+  targetPrice: number;
+  slMovePrice: number;
+  isTriggered: boolean;
+  statusText: string;
+}
+
+export interface BreakevenLadderInfo {
+  currentRMultiple: number;
+  currentStage: number; // 0, 1, 2, 3
+  recommendedSL: number;
+  partialCloseRecommendedPct: number; // e.g. 0%, 50%, 80%
+  stages: BreakevenLadderStage[];
+  actionAdvice: string;
+  description: string;
+}
+
+// [แผน 37] Liquidity Void & Volume Imbalance Fast-Fill Predictor
+export interface LiquidityVoidItem {
+  id: string;
+  type: "BULLISH_VOID" | "BEARISH_VOID";
+  top: number;
+  bottom: number;
+  fillTarget50: number;
+  fillTarget100: number;
+  fillPercentage: number;
+  candleIndex: number;
+  isFilled: boolean;
+}
+
+export interface LiquidityVoidInfo {
+  voids: LiquidityVoidItem[];
+  activeVoidCount: number;
+  nearestVoid: LiquidityVoidItem | null;
+  vacuumDirection: "UPWARD_VACUUM" | "DOWNWARD_VACUUM" | "NONE";
+  fastFillProbabilityPct: number; // e.g. 85%
+  description: string;
+}
+
+// [แผน 38] Multi-Timeframe Fibonacci Extension & Projection Mesh
+export interface FibExtensionLevel {
+  ratio: number; // e.g. 1.272, 1.414, 1.618, 2.0
+  price: number;
+  label: string;
+  isConfluentWithKeyLevel: boolean;
+}
+
+export interface FibonacciExtensionInfo {
+  anchorLow: number;
+  anchorHigh: number;
+  anchorRetrace: number;
+  extensionLevels: FibExtensionLevel[];
+  bestTakeProfitTarget: FibExtensionLevel;
+  description: string;
+}
+
+// [แผน 39] Institutional Footprint Absorption & VSA Climax
+export interface FootprintAbsorptionInfo {
+  vsaSignal: "ABSORPTION_BUY" | "ABSORPTION_SELL" | "STOPPING_VOLUME" | "NO_DEMAND" | "NO_SUPPLY" | "NORMAL";
+  effortVsResult: "HIGH_EFFORT_LOW_RESULT" | "BALANCED" | "LOW_EFFORT_HIGH_RESULT";
+  relativeVolume: number; // e.g. 2.4x
+  spreadRatio: number; // candle spread / ATR
+  isInstitutionalAbsorption: boolean;
+  bias: "BULLISH" | "BEARISH" | "NEUTRAL";
+  description: string;
+}
+
+// [แผน 40] Multi-Timeframe Structure Alignment Matrix (15m, 1h, 4h, 1D BOS/CHOCH Dashboard)
+export interface TimeframeStructureDetail {
+  timeframe: "15m" | "1h" | "4h" | "1D";
+  structure: "BULLISH_BOS" | "BEARISH_BOS" | "BULLISH_CHOCH" | "BEARISH_CHOCH" | "RANGING";
+  trendBias: "BULLISH" | "BEARISH" | "NEUTRAL";
+  keySwingHigh: number;
+  keySwingLow: number;
+}
+
+export interface MTFStructureMatrixInfo {
+  overallAlignment: "FULL_BULLISH_CONFLUENCE" | "FULL_BEARISH_CONFLUENCE" | "PARTIAL_ALIGNMENT" | "HTF_CONFLICT_WARNING";
+  alignmentScorePct: number; // 0 - 100%
+  htfTrend: "BULLISH" | "BEARISH" | "NEUTRAL";
+  isHTFConflict: boolean;
+  timeframes: {
+    m15: TimeframeStructureDetail;
+    h1: TimeframeStructureDetail;
+    h4: TimeframeStructureDetail;
+    d1: TimeframeStructureDetail;
+  };
+  description: string;
+}
+
+
 
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
@@ -495,6 +590,11 @@ export interface IndicatorData {
   premiumDiscount?: PremiumDiscountInfo;
   keyLevelTargets?: KeyLevelTargetsInfo;
   orderFlowVelocity?: OrderFlowVelocityInfo;
+  breakevenLadder?: BreakevenLadderInfo;
+  liquidityVoid?: LiquidityVoidInfo;
+  fibonacciExtension?: FibonacciExtensionInfo;
+  footprintAbsorption?: FootprintAbsorptionInfo;
+  mtfStructureMatrix?: MTFStructureMatrixInfo;
 }
 
 export interface NewsItem {
@@ -610,6 +710,11 @@ export interface AnalysisResult {
   premiumDiscount?: PremiumDiscountInfo;
   keyLevelTargets?: KeyLevelTargetsInfo;
   orderFlowVelocity?: OrderFlowVelocityInfo;
+  breakevenLadder?: BreakevenLadderInfo;
+  liquidityVoid?: LiquidityVoidInfo;
+  fibonacciExtension?: FibonacciExtensionInfo;
+  footprintAbsorption?: FootprintAbsorptionInfo;
+  mtfStructureMatrix?: MTFStructureMatrixInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -668,6 +773,11 @@ export interface AnalysisResult {
     premiumDiscount?: PremiumDiscountInfo;
     keyLevelTargets?: KeyLevelTargetsInfo;
     orderFlowVelocity?: OrderFlowVelocityInfo;
+    breakevenLadder?: BreakevenLadderInfo;
+    liquidityVoid?: LiquidityVoidInfo;
+    fibonacciExtension?: FibonacciExtensionInfo;
+    footprintAbsorption?: FootprintAbsorptionInfo;
+    mtfStructureMatrix?: MTFStructureMatrixInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
