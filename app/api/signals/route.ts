@@ -3,9 +3,13 @@ import { getSignalsAndStats, saveAiSignal } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const data = await getSignalsAndStats(20);
+    const { searchParams } = new URL(request.url);
+    const symbol = searchParams.get("symbol") || undefined;
+    const limit = Number(searchParams.get("limit")) || 20;
+
+    const data = await getSignalsAndStats(limit, symbol);
     return NextResponse.json(
       {
         success: true,

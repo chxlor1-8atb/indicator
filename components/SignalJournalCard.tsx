@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { DbAiSignal, WinRateStats } from "@/lib/db";
-import { Award, TrendingUp, CheckCircle2, XCircle, Clock, RefreshCw, ChevronRight, ShieldCheck } from "lucide-react";
+import { DbAiSignal, WinRateStats, PerSymbolStat } from "@/lib/db";
+import { Award, TrendingUp, CheckCircle2, XCircle, Clock, RefreshCw, ChevronRight, ShieldCheck, BarChart3, Filter } from "lucide-react";
 
 export default function SignalJournalCard() {
   const [signals, setSignals] = useState<DbAiSignal[]>([]);
@@ -15,17 +15,21 @@ export default function SignalJournalCard() {
     winRatePct: 82.5,
     netPips: 0,
   });
+  const [perSymbolStats, setPerSymbolStats] = useState<PerSymbolStat[]>([]);
+  const [selectedSymbol, setSelectedSymbol] = useState<string>("ALL");
   const [isLoading, setIsLoading] = useState(false);
 
-  const fetchSignals = async () => {
+  const fetchSignals = async (symbol?: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/signals");
+      const url = symbol && symbol !== "ALL" ? `/api/signals?symbol=${symbol}` : "/api/signals";
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
           setSignals(data.signals || []);
           setStats(data.stats);
+          if (data.perSymbolStats) setPerSymbolStats(data.perSymbolStats);
         }
       }
     } catch (err) {
@@ -111,7 +115,7 @@ export default function SignalJournalCard() {
         </div>
 
         <button
-          onClick={fetchSignals}
+          onClick={() => fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined)}
           disabled={isLoading}
           className="p-1.5 rounded-lg bg-surface-50 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all text-xs flex items-center gap-1"
           title="รีเฟรชข้อมูลล่าสุด"
@@ -169,6 +173,108 @@ export default function SignalJournalCard() {
           </span>
         </div>
       </div>
+
+      {/* ─── Symbol Filter Tabs ─── */}
+      {perSymbolStats.length > 0 && (
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2">
+            <Filter className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-[11px] font-semibold text-slate-400">กรองตามคู่เงิน:</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => { setSelectedSymbol("ALL"); fetchSignals(); }}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold font-mono transition-all border ${
+                selectedSymbol === "ALL"
+                  ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                  : "bg-surface-50 text-slate-400 border-slate-700 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              ALL
+            </button>
+            {perSymbolStats.map((ps) => (
+              <button
+                key={ps.symbol}
+                onClick={() => { setSelectedSymbol(ps.symbol); fetchSignals(ps.symbol); }}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold font-mono transition-all border ${
+                  selectedSymbol === ps.symbol
+                    ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                    : "bg-surface-50 text-slate-400 border-slate-700 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                {ps.symbol}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Per-Symbol Win Rate Breakdown Table ─── */}
+      {perSymbolStats.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-[11px] font-semibold text-slate-400">
+              สถิติ Win Rate แยกตามคู่เงิน (Live + Backtest รวม):
+            </span>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-[10px] font-mono">
+              <thead>
+                <tr className="bg-surface-50 text-slate-400 border-b border-slate-800">
+                  <th className="px-2.5 py-2 text-left font-semibold">คู่เงิน</th>
+                  <th className="px-2 py-2 text-center font-semibold">ทั้งหมด</th>
+                  <th className="px-2 py-2 text-center font-semibold">ชนะ</th>
+                  <th className="px-2 py-2 text-center font-semibold">แพ้</th>
+                  <th className="px-2 py-2 text-center font-semibold">Win Rate</th>
+                  <th className="px-2 py-2 text-right font-semibold">กำไร (pips)</th>
+                  <th className="px-2 py-2 text-center font-semibold">Live</th>
+                  <th className="px-2 py-2 text-center font-semibold">BT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {perSymbolStats.map((ps, idx) => (
+                  <tr
+                    key={ps.symbol}
+                    className={`border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors cursor-pointer ${
+                      selectedSymbol === ps.symbol ? "bg-indigo-500/10" : ""
+                    }`}
+                    onClick={() => { setSelectedSymbol(ps.symbol); fetchSignals(ps.symbol); }}
+                  >
+                    <td className="px-2.5 py-2 text-white font-bold">
+                      {ps.symbol}
+                    </td>
+                    <td className="px-2 py-2 text-center text-slate-300">{ps.totalTrades}</td>
+                    <td className="px-2 py-2 text-center text-emerald-400 font-bold">{ps.wins}</td>
+                    <td className="px-2 py-2 text-center text-rose-400 font-bold">{ps.losses}</td>
+                    <td className="px-2 py-2 text-center">
+                      <span className={`font-black ${
+                        ps.winRatePct >= 75 ? "text-emerald-400" :
+                        ps.winRatePct >= 50 ? "text-amber-400" : "text-rose-400"
+                      }`}>
+                        {ps.winRatePct}%
+                      </span>
+                    </td>
+                    <td className={`px-2 py-2 text-right font-bold ${ps.netPips >= 0 ? "text-emerald-300" : "text-rose-400"}`}>
+                      {ps.netPips >= 0 ? `+${ps.netPips}` : ps.netPips}
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[9px]">
+                        {ps.liveTrades}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <span className="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-300 border border-violet-500/20 text-[9px]">
+                        {ps.backtestTrades}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Recent Recorded Signals List */}
       <div className="space-y-2">

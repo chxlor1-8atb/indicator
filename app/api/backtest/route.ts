@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMarketCandles } from "@/lib/marketService";
 import { calculateEMA, calculateRSI } from "@/lib/indicators";
+import { saveBacktestResults, BacktestTrade } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -186,6 +187,29 @@ export async function POST(request: NextRequest) {
     const netReturnR = Number(trades.reduce((acc, t) => acc + t.pnlR, 0).toFixed(2));
     const profitFactor = losses > 0 ? Number(((wins * 2.0 + beTrades * 0.5) / losses).toFixed(2)) : wins > 0 ? 99 : 0;
 
+    // ─── Save backtest results to Neon DB for historical win rate tracking ───
+    const isGold = symbol.toUpperCase().includes("XAU") || symbol.toUpperCase() === "GOLD";
+    const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some(
+      (c) => symbol.toUpperCase().includes(c)
+    );
+    const pipMultiplier = isGold ? 10 : isCrypto ? 1 : symbol.toUpperCase().includes("JPY") ? 100 : 10000;
+
+    const dbTrades: BacktestTrade[] = trades.map((t) => ({
+      type: t.type,
+      entryPrice: t.entryPrice,
+      exitPrice: t.exitPrice,
+      sl: t.sl,
+      tp1: t.tp1,
+      tp2: t.tp2,
+      result: t.result,
+      pnlR: t.pnlR,
+      pnlPips: Number((Math.abs(t.exitPrice - t.entryPrice) * pipMultiplier * (t.result === "LOSS" ? -1 : 1)).toFixed(1)),
+      entryTime: t.entryTime,
+      exitTime: t.exitTime,
+    }));
+
+    const dbResult = await saveBacktestResults(symbol, timeframe, dbTrades);
+
     return NextResponse.json({
       success: true,
       symbol,
@@ -200,6 +224,7 @@ export async function POST(request: NextRequest) {
         netReturnR,
         profitFactor,
       },
+      dbSaved: dbResult,
       tradeHistory: trades.slice(-8).map((t) => ({
         type: t.type,
         entry: t.entryPrice,

@@ -68,6 +68,11 @@ import {
   ParabolicSARPoint,
   AroonInfo,
   VortexInfo,
+  FisherTransformPoint,
+  ConnorsRSIInfo,
+  AwesomeOscillatorPoint,
+  TSIInfo,
+  AdvancedVolatilitySuite,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -92,6 +97,33 @@ export function calculateEMA(candles: Candle[], period: number): (number | null)
 
   for (let i = 0; i < effectivePeriod - 1; i++) {
     result[i] = result[effectivePeriod - 1];
+  }
+
+  return result;
+}
+
+export function calculateSMA(candles: Candle[], period: number): (number | null)[] {
+  if (candles.length === 0) return [];
+  const result: (number | null)[] = new Array(candles.length).fill(null);
+  const effectivePeriod = Math.max(1, Math.min(period, candles.length));
+
+  let sum = 0;
+  for (let i = 0; i < candles.length; i++) {
+    sum += candles[i].close;
+    if (i >= effectivePeriod) {
+      sum -= candles[i - effectivePeriod].close;
+    }
+    if (i >= effectivePeriod - 1) {
+      result[i] = Number((sum / effectivePeriod).toFixed(4));
+    }
+  }
+
+  // Backfill early values
+  const firstValid = result.findIndex((v) => v !== null);
+  if (firstValid > 0) {
+    for (let i = 0; i < firstValid; i++) {
+      result[i] = result[firstValid];
+    }
   }
 
   return result;
@@ -4771,6 +4803,351 @@ export function calculateVortex(candles: Candle[], period = 14): VortexInfo {
   };
 }
 
+/**
+ * [แผน 61] John Ehlers' Fisher Transform Normalizer & Gaussian Reversal Engine
+ * Converts price into a Gaussian probability distribution function with clear turning points.
+ */
+export function calculateFisherTransform(candles: Candle[], period = 10): FisherTransformPoint {
+  if (candles.length < period) {
+    return {
+      fisher: 0,
+      trigger: 0,
+      isExtremeOverbought: false,
+      isExtremeOversold: false,
+      crossSignal: "NONE",
+      description: "Fisher Transform: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const fishers: number[] = [];
+  let prevFisher = 0;
+  let prevValue = 0;
+
+  for (let i = period - 1; i < candles.length; i++) {
+    let minL = Infinity;
+    let maxH = -Infinity;
+    for (let j = 0; j < period; j++) {
+      const c = candles[i - j];
+      if (c.low < minL) minL = c.low;
+      if (c.high > maxH) maxH = c.high;
+    }
+
+    const price = (candles[i].high + candles[i].low) / 2;
+    const range = maxH - minL === 0 ? 0.0001 : maxH - minL;
+    let value = 0.33 * 2 * ((price - minL) / range - 0.5) + 0.67 * prevValue;
+    value = Math.max(-0.999, Math.min(0.999, value));
+    prevValue = value;
+
+    const fish = 0.5 * Math.log((1 + value) / (1 - value)) + 0.5 * prevFisher;
+    fishers.push(fish);
+    prevFisher = fish;
+  }
+
+  const len = fishers.length;
+  const currentFisher = len > 0 ? fishers[len - 1] : 0;
+  const trigger = len > 1 ? fishers[len - 2] : 0;
+  const prevTrigger = len > 2 ? fishers[len - 3] : 0;
+
+  const isExtremeOverbought = currentFisher > 2.0;
+  const isExtremeOversold = currentFisher < -2.0;
+
+  let crossSignal: "BULLISH_CROSS" | "BEARISH_CROSS" | "NONE" = "NONE";
+  if (trigger <= prevTrigger && currentFisher > trigger) {
+    crossSignal = "BULLISH_CROSS";
+  } else if (trigger >= prevTrigger && currentFisher < trigger) {
+    crossSignal = "BEARISH_CROSS";
+  }
+
+  const desc = isExtremeOversold
+    ? `🔮 Fisher Transform โซน Oversold สุดขีด (${currentFisher.toFixed(2)} < -2.0): โมเดลการแจกแจงแบบเกาส์บ่งชี้แรงขายอิ่มตัว เสี่ยงดีดกลับรุนแรง`
+    : isExtremeOverbought
+    ? `🔮 Fisher Transform โซน Overbought สุดขีด (${currentFisher.toFixed(2)} > +2.0): สัญญาณเกาส์เตือนการกระจายของยอดดอย`
+    : crossSignal === "BULLISH_CROSS"
+    ? `🔮 Fisher Transform ตัดเส้นทริกเกอร์ขึ้น (${currentFisher.toFixed(2)} > ${trigger.toFixed(2)}): สัญญาณกลับตัวฝั่งซื้อเฉียบพลัน`
+    : crossSignal === "BEARISH_CROSS"
+    ? `🔮 Fisher Transform ตัดเส้นทริกเกอร์ลง (${currentFisher.toFixed(2)} < ${trigger.toFixed(2)}): สัญญาณกลับตัวฝั่งขายเฉียบพลัน`
+    : `🔮 Fisher Transform อยู่ในกรอบสมดุล (${currentFisher.toFixed(2)} | Trigger: ${trigger.toFixed(2)})`;
+
+  return {
+    fisher: Number(currentFisher.toFixed(3)),
+    trigger: Number(trigger.toFixed(3)),
+    isExtremeOverbought,
+    isExtremeOversold,
+    crossSignal,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 62] Larry Connors' ConnorsRSI (CRSI) Triple-Momentum Pullback Engine
+ * Combines 3-period RSI, 2-period Streak RSI, and 100-period Percent Rank for mean-reversion pullbacks.
+ */
+export function calculateConnorsRSI(candles: Candle[]): ConnorsRSIInfo {
+  if (candles.length < 20) {
+    return {
+      crsi: 50,
+      rsiClose: 50,
+      streakRSI: 50,
+      percentRank: 50,
+      isExtremePullback: false,
+      isExtremeOverbought: false,
+      description: "ConnorsRSI: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const rsi3 = calculateRSI(candles, 3);
+  const currentRSI3 = rsi3.filter((v): v is number => v !== null && !isNaN(v)).pop() || 50;
+
+  // Streak calculation (consecutive up/down close days)
+  const streaks: number[] = [0];
+  let currentStreak = 0;
+  for (let i = 1; i < candles.length; i++) {
+    if (candles[i].close > candles[i - 1].close) {
+      currentStreak = currentStreak < 0 ? 1 : currentStreak + 1;
+    } else if (candles[i].close < candles[i - 1].close) {
+      currentStreak = currentStreak > 0 ? -1 : currentStreak - 1;
+    } else {
+      currentStreak = 0;
+    }
+    streaks.push(currentStreak);
+  }
+
+  const fakeCandles: Candle[] = streaks.map((s, idx) => ({
+    time: candles[idx].time,
+    open: s,
+    high: s,
+    low: s,
+    close: s,
+    volume: 1,
+  }));
+  const streakRSIList = calculateRSI(fakeCandles, 2);
+  const currentStreakRSI = streakRSIList.filter((v): v is number => v !== null && !isNaN(v)).pop() || 50;
+
+  const lookback = Math.min(100, candles.length - 1);
+  const currentReturn = (candles[candles.length - 1].close - candles[candles.length - 2].close) / candles[candles.length - 2].close;
+  let countBelow = 0;
+  for (let i = candles.length - lookback; i < candles.length - 1; i++) {
+    const ret = (candles[i].close - candles[i - 1].close) / candles[i - 1].close;
+    if (ret < currentReturn) countBelow++;
+  }
+  const percentRank = Number(((countBelow / lookback) * 100).toFixed(1));
+  const crsi = Number(((currentRSI3 + currentStreakRSI + percentRank) / 3).toFixed(1));
+
+  const isExtremePullback = crsi < 15;
+  const isExtremeOverbought = crsi > 85;
+
+  const desc = isExtremePullback
+    ? `🎯 ConnorsRSI บ่งชี้การย่อตัวสุดขีด (CRSI: ${crsi} < 15 | StreakRSI: ${currentStreakRSI}): จังหวะดัก Buy Dip แต้มต่อสูงมาก`
+    : isExtremeOverbought
+    ? `🎯 ConnorsRSI ส่งสัญญาณร้อนแรงเกินพิกัด (CRSI: ${crsi} > 85 | StreakRSI: ${currentStreakRSI}): ระวังแรงขาย Sell Reversal ทำกำไร`
+    : `🎯 ConnorsRSI อยู่ในระดับปกติ (CRSI: ${crsi} | RSI3: ${currentRSI3} | StreakRSI: ${currentStreakRSI} | Rank: ${percentRank}%)`;
+
+  return {
+    crsi,
+    rsiClose: currentRSI3,
+    streakRSI: currentStreakRSI,
+    percentRank,
+    isExtremePullback,
+    isExtremeOverbought,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 63] Bill Williams' Awesome Oscillator (AO) & Saucer Engine
+ * 34-period and 5-period Simple Moving Average of Median Prices ((High + Low) / 2)
+ */
+export function calculateAwesomeOscillator(candles: Candle[], precision = 2): AwesomeOscillatorPoint {
+  if (candles.length < 35) {
+    return {
+      ao: 0,
+      isGreen: true,
+      isZeroCross: false,
+      saucerSignal: "NONE",
+      description: "Awesome Oscillator: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const medianCandles = candles.map((c) => ({
+    ...c,
+    close: (c.high + c.low) / 2,
+  }));
+
+  const sma5 = calculateSMA(medianCandles, 5);
+  const sma34 = calculateSMA(medianCandles, 34);
+
+  const aoSeries: number[] = [];
+  for (let i = 33; i < candles.length; i++) {
+    const s5 = sma5[i] ?? 0;
+    const s34 = sma34[i] ?? 0;
+    aoSeries.push(s5 - s34);
+  }
+
+  const len = aoSeries.length;
+  const currentAO = len > 0 ? aoSeries[len - 1] : 0;
+  const prevAO = len > 1 ? aoSeries[len - 2] : 0;
+  const prev2AO = len > 2 ? aoSeries[len - 3] : 0;
+
+  const isGreen = currentAO > prevAO;
+  const isZeroCross = (prevAO <= 0 && currentAO > 0) || (prevAO >= 0 && currentAO < 0);
+
+  let saucerSignal: "BULLISH_SAUCER" | "BEARISH_SAUCER" | "NONE" = "NONE";
+  if (currentAO > 0 && prevAO > 0 && prev2AO > prevAO && currentAO > prevAO) {
+    saucerSignal = "BULLISH_SAUCER";
+  } else if (currentAO < 0 && prevAO < 0 && prev2AO < prevAO && currentAO < prevAO) {
+    saucerSignal = "BEARISH_SAUCER";
+  }
+
+  const desc = saucerSignal === "BULLISH_SAUCER"
+    ? `⚡ Awesome Oscillator ตรวจพบ Bullish Saucer (AO: ${currentAO.toFixed(precision)}): โมเมนตัมเร่งเครื่องขึ้นเหนือเส้นศูนย์ ช้อนซื้อต่อเนื่อง`
+    : saucerSignal === "BEARISH_SAUCER"
+    ? `⚡ Awesome Oscillator ตรวจพบ Bearish Saucer (AO: ${currentAO.toFixed(precision)}): โมเมนตัมเร่งเครื่องลงใต้เส้นศูนย์ กดยอดต่อเนื่อง`
+    : isZeroCross
+    ? `⚡ Awesome Oscillator ตัดผ่านเส้นศูนย์ (${currentAO > 0 ? "ข้ามขึ้นแดนบวก" : "มุดลงแดนลบ"}): โมเมนตัมหลักเปลี่ยนทิศทาง`
+    : `⚡ Awesome Oscillator ค่า ${currentAO.toFixed(precision)} (${isGreen ? "ฮิสโตแกรมแท่งเขียว ขาขึ้นหนุน" : "ฮิสโตแกรมแท่งแดง ขาลงกดดัน"})`;
+
+  return {
+    ao: Number(currentAO.toFixed(precision)),
+    isGreen,
+    isZeroCross,
+    saucerSignal,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 64] William Blau's True Strength Index (TSI) Double-Smoothed Momentum Engine
+ * Double-smoothed momentum ratio tracking trends without noise lag
+ */
+export function calculateTSI(candles: Candle[], longPeriod = 25, shortPeriod = 13): TSIInfo {
+  if (candles.length < longPeriod + shortPeriod) {
+    return {
+      tsi: 0,
+      signal: 0,
+      isBullish: true,
+      description: "TSI: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const diffs: number[] = [];
+  const absDiffs: number[] = [];
+  for (let i = 1; i < candles.length; i++) {
+    const diff = candles[i].close - candles[i - 1].close;
+    diffs.push(diff);
+    absDiffs.push(Math.abs(diff));
+  }
+
+  const ema1 = calculateEMA(diffs.map((d, idx) => ({ ...candles[idx], close: d })), longPeriod);
+  const ema2 = calculateEMA(ema1.map((d, idx) => ({ ...candles[idx], close: d ?? 0 })), shortPeriod);
+
+  const absEma1 = calculateEMA(absDiffs.map((d, idx) => ({ ...candles[idx], close: d })), longPeriod);
+  const absEma2 = calculateEMA(absEma1.map((d, idx) => ({ ...candles[idx], close: d ?? 0 })), shortPeriod);
+
+  const len = ema2.length;
+  const num = ema2[len - 1] ?? 0;
+  const den = absEma2[len - 1] ?? 1;
+
+  const tsi = den === 0 ? 0 : Number(((num / den) * 100).toFixed(2));
+  const signal = Number((tsi * 0.8).toFixed(2));
+  const isBullish = tsi >= signal;
+
+  const desc = isBullish
+    ? `🌊 True Strength Index ขาขึ้นแข็งแกร่ง (TSI: ${tsi} >= Signal: ${signal}): โมเมนตัมกรองสัญญาณรบกวน 2 ชั้นหนุนฝั่งซื้อ`
+    : `🌊 True Strength Index ขาลงกดดัน (TSI: ${tsi} < Signal: ${signal}): โมเมนตัมกรองสัญญาณรบกวน 2 ชั้นกดดันฝั่งขาย`;
+
+  return {
+    tsi,
+    signal,
+    isBullish,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 65] Extreme High-Frequency Microstructure & Advanced Volatility Suite (Safety Lock 16)
+ * Multi-estimator volatility engine (Garman-Klass, Yang-Zhang, Parkinson, Ulcer Index)
+ */
+export function calculateAdvancedVolatilitySuite(candles: Candle[], period = 20): AdvancedVolatilitySuite {
+  if (candles.length < period + 2) {
+    return {
+      garmanKlassVol: 0.01,
+      yangZhangVol: 0.01,
+      parkinsonVol: 0.01,
+      standardDevVol: 0.01,
+      ulcerIndex: 0,
+      volatilityRegime: "EXTREME_LOW",
+      safetyLock16Passed: true,
+      description: "Advanced Volatility: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const slice = candles.slice(-period);
+  let gkSum = 0;
+  let parkinsonSum = 0;
+
+  for (const bar of slice) {
+    const logHL = Math.log(bar.high / Math.max(0.0001, bar.low));
+    const logCO = Math.log(bar.close / Math.max(0.0001, bar.open));
+
+    const gk = 0.5 * Math.pow(logHL, 2) - (2 * Math.LN2 - 1) * Math.pow(logCO, 2);
+    gkSum += Math.max(0, gk);
+
+    const park = Math.pow(logHL, 2) / (4 * Math.LN2);
+    parkinsonSum += park;
+  }
+
+  const garmanKlassVol = Number(Math.sqrt((gkSum / period) * 252).toFixed(4));
+  const parkinsonVol = Number(Math.sqrt((parkinsonSum / period) * 252).toFixed(4));
+
+  const k = 0.34 / (1.34 + (period + 1) / (period - 1));
+  let overnightSum = 0;
+  let openCloseSum = 0;
+  for (let i = 1; i < slice.length; i++) {
+    const logOC = Math.log(slice[i].open / Math.max(0.0001, slice[i - 1].close));
+    const logCO = Math.log(slice[i].close / Math.max(0.0001, slice[i].open));
+    overnightSum += Math.pow(logOC, 2);
+    openCloseSum += Math.pow(logCO, 2);
+  }
+  const yangZhangVar = (overnightSum / period) + k * (openCloseSum / period) + (1 - k) * (gkSum / period);
+  const yangZhangVol = Number(Math.sqrt(Math.max(0, yangZhangVar) * 252).toFixed(4));
+
+  const returns = slice.slice(1).map((b, idx) => (b.close - slice[idx].close) / slice[idx].close);
+  const meanRet = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const stdVar = returns.reduce((a, b) => a + Math.pow(b - meanRet, 2), 0) / returns.length;
+  const standardDevVol = Number(Math.sqrt(stdVar * 252).toFixed(4));
+
+  let peak = -Infinity;
+  let sumSquaredDrawdowns = 0;
+  for (const bar of slice) {
+    if (bar.close > peak) peak = bar.close;
+    const ddPct = ((bar.close - peak) / peak) * 100;
+    sumSquaredDrawdowns += Math.pow(ddPct, 2);
+  }
+  const ulcerIndex = Number(Math.sqrt(sumSquaredDrawdowns / period).toFixed(2));
+
+  let volatilityRegime: "EXTREME_LOW" | "NORMAL_EXPANSION" | "HIGH_CLIMAX" = "NORMAL_EXPANSION";
+  if (yangZhangVol < 0.15) volatilityRegime = "EXTREME_LOW";
+  else if (yangZhangVol > 0.45) volatilityRegime = "HIGH_CLIMAX";
+
+  // Safety Lock 16: blocks if Yang-Zhang Vol >= 0.65 or Ulcer Index >= 18.0
+  const safetyLock16Passed = yangZhangVol < 0.65 && ulcerIndex < 18.0;
+
+  const desc = !safetyLock16Passed
+    ? `🛡️ Safety Lock 16 [ACTIVATED]: ความผันผวนคลั่งเกินพิกัด (Yang-Zhang: ${(yangZhangVol * 100).toFixed(1)}% | Ulcer Index: ${ulcerIndex}) ตลาดเข้าสู่ภาวะ Climax อันตราย ระงับคำสั่งเสี่ยง`
+    : `🌪️ Volatility Suite ปกติ (Yang-Zhang: ${(yangZhangVol * 100).toFixed(1)}% | GK: ${(garmanKlassVol * 100).toFixed(1)}% | Ulcer: ${ulcerIndex}): สภาวะ ${volatilityRegime} ปลอดภัยตาม Safety Lock 16`;
+
+  return {
+    garmanKlassVol,
+    yangZhangVol,
+    parkinsonVol,
+    standardDevVol,
+    ulcerIndex,
+    volatilityRegime,
+    safetyLock16Passed,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -4911,6 +5288,13 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const aroon = calculateAroon(cleanCandles, 25);
   const vortex = calculateVortex(cleanCandles, 14);
 
+  // Batch 13: Plans 61, 62, 63, 64, 65 (Fisher Transform, ConnorsRSI, AO, TSI & Volatility Climax Shield)
+  const fisher = calculateFisherTransform(cleanCandles, 10);
+  const connorsRSI = calculateConnorsRSI(cleanCandles);
+  const awesomeOsc = calculateAwesomeOscillator(cleanCandles, precision);
+  const tsi = calculateTSI(cleanCandles, 25, 13);
+  const advancedVol = calculateAdvancedVolatilitySuite(cleanCandles, 20);
+
   return {
     rsi14,
     atr14,
@@ -4978,5 +5362,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     parabolicSAR,
     aroon,
     vortex,
+    fisher,
+    connorsRSI,
+    awesomeOsc,
+    tsi,
+    advancedVol,
   };
 }

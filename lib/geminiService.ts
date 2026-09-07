@@ -55,6 +55,11 @@ import {
   ParabolicSARPoint,
   AroonInfo,
   VortexInfo,
+  FisherTransformPoint,
+  ConnorsRSIInfo,
+  AwesomeOscillatorPoint,
+  TSIInfo,
+  AdvancedVolatilitySuite,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -113,6 +118,11 @@ import {
   calculateParabolicSAR,
   calculateAroon,
   calculateVortex,
+  calculateFisherTransform,
+  calculateConnorsRSI,
+  calculateAwesomeOscillator,
+  calculateTSI,
+  calculateAdvancedVolatilitySuite,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -351,6 +361,13 @@ export function generateRuleBasedAnalysis(
   const aroon = indicators.aroon || calculateAroon(candles, 25);
   const vortex = indicators.vortex || calculateVortex(candles, 14);
 
+  // ─── BATCH 13 PRE-COMPUTATIONS (PLANS 61-65) ───
+  const fisher = indicators.fisher || calculateFisherTransform(candles, 10);
+  const connorsRSI = indicators.connorsRSI || calculateConnorsRSI(candles);
+  const awesomeOsc = indicators.awesomeOsc || calculateAwesomeOscillator(candles, precision);
+  const tsi = indicators.tsi || calculateTSI(candles, 25, 13);
+  const advancedVol = indicators.advancedVol || calculateAdvancedVolatilitySuite(candles, 20);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -484,6 +501,13 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 35);
     vortex.safetyLock15Passed = false;
   }
+  // SAFETY LOCK 16: Volatility Climax Shield (Yang-Zhang Extreme or Ulcer Index Panic) [แผน 65]
+  else if (!advancedVol.safetyLock16Passed || advancedVol.yangZhangVol >= 0.65 || advancedVol.ulcerIndex >= 18.0) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 30);
+    advancedVol.safetyLock16Passed = false;
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -509,6 +533,11 @@ export function generateRuleBasedAnalysis(
     if (aroon.trendState === "STRONG_UPTREND") confidence = Math.min(98, confidence + 4);
     if (vortex.trend === "BULLISH") confidence = Math.min(98, confidence + 4);
     if (kama.trendState === "BULLISH") confidence = Math.min(98, confidence + 3);
+    if (fisher.crossSignal === "BULLISH_CROSS" || fisher.isExtremeOversold) confidence = Math.min(98, confidence + 4);
+    if (connorsRSI.isExtremePullback) confidence = Math.min(98, confidence + 5);
+    if (awesomeOsc.saucerSignal === "BULLISH_SAUCER" || awesomeOsc.isZeroCross) confidence = Math.min(98, confidence + 4);
+    if (tsi.isBullish) confidence = Math.min(98, confidence + 3);
+    if (advancedVol.volatilityRegime !== "HIGH_CLIMAX") confidence = Math.min(98, confidence + 3);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -534,6 +563,11 @@ export function generateRuleBasedAnalysis(
     if (aroon.trendState === "STRONG_DOWNTREND") confidence = Math.min(98, confidence + 4);
     if (vortex.trend === "BEARISH") confidence = Math.min(98, confidence + 4);
     if (kama.trendState === "BEARISH") confidence = Math.min(98, confidence + 3);
+    if (fisher.crossSignal === "BEARISH_CROSS" || fisher.isExtremeOverbought) confidence = Math.min(98, confidence + 4);
+    if (connorsRSI.isExtremeOverbought) confidence = Math.min(98, confidence + 5);
+    if (awesomeOsc.saucerSignal === "BEARISH_SAUCER" || awesomeOsc.isZeroCross) confidence = Math.min(98, confidence + 4);
+    if (!tsi.isBullish) confidence = Math.min(98, confidence + 3);
+    if (advancedVol.volatilityRegime !== "HIGH_CLIMAX") confidence = Math.min(98, confidence + 3);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -808,6 +842,13 @@ export function generateRuleBasedAnalysis(
               aroon.trendState !== "CONSOLIDATION",
       note: `${kama.description} • ${hma.description} • ${parabolicSAR.description} • ${aroon.description} • ${vortex.description}`,
     },
+    {
+      name: `Pillar 16: Gaussian Momentum & Multi-Estimator Volatility Matrix (${fisher.crossSignal !== "NONE" ? fisher.crossSignal : "GAUSSIAN_BALANCED"} | AO: ${awesomeOsc.saucerSignal !== "NONE" ? awesomeOsc.saucerSignal : awesomeOsc.isGreen ? "BULL" : "BEAR"} | Vol: ${advancedVol.volatilityRegime})`,
+      passed: ((tradeAction === "BUY" && (fisher.crossSignal === "BULLISH_CROSS" || fisher.isExtremeOversold || connorsRSI.isExtremePullback || tsi.isBullish || awesomeOsc.isGreen)) ||
+              (tradeAction === "SELL" && (fisher.crossSignal === "BEARISH_CROSS" || fisher.isExtremeOverbought || connorsRSI.isExtremeOverbought || !tsi.isBullish || !awesomeOsc.isGreen)) ||
+              advancedVol.safetyLock16Passed) ?? false,
+      note: `${fisher.description} • ${connorsRSI.description} • ${awesomeOsc.description} • ${tsi.description} • ${advancedVol.description}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -879,6 +920,11 @@ export function generateRuleBasedAnalysis(
     parabolicSAR,
     aroon,
     vortex,
+    fisher,
+    connorsRSI,
+    awesomeOsc,
+    tsi,
+    advancedVol,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -937,6 +983,11 @@ export function generateRuleBasedAnalysis(
         `Parabolic SAR: ${parabolicSAR.sar} (${parabolicSAR.isBullish ? "BULLISH" : "BEARISH"} | Reversal: ${parabolicSAR.isReversal ? "YES" : "NO"})`,
         `Aroon Indicator: Up ${aroon.aroonUp}% / Down ${aroon.aroonDown}% (Osc: ${aroon.oscillator} - ${aroon.trendState})`,
         `Vortex Flow: VI+ ${vortex.viPlus} vs VI- ${vortex.viMinus} (${vortex.trend} | Lock 15: ${vortex.safetyLock15Passed ? "PASSED" : "BLOCKED"})`,
+        `Fisher Transform: ${fisher.fisher} (Trigger: ${fisher.trigger} | Cross: ${fisher.crossSignal})`,
+        `ConnorsRSI: CRSI ${connorsRSI.crsi} (RSI3: ${connorsRSI.rsiClose} | StreakRSI: ${connorsRSI.streakRSI} | Rank: ${connorsRSI.percentRank}%)`,
+        `Awesome Oscillator: AO ${awesomeOsc.ao} (${awesomeOsc.isGreen ? "GREEN" : "RED"} | Saucer: ${awesomeOsc.saucerSignal})`,
+        `True Strength Index: TSI ${tsi.tsi} (Signal: ${tsi.signal} | ${tsi.isBullish ? "BULLISH" : "BEARISH"})`,
+        `Advanced Volatility Suite: Yang-Zhang ${(advancedVol.yangZhangVol * 100).toFixed(1)}% | GK ${(advancedVol.garmanKlassVol * 100).toFixed(1)}% | Ulcer ${advancedVol.ulcerIndex} (Regime: ${advancedVol.volatilityRegime} | Lock 16: ${advancedVol.safetyLock16Passed ? "PASSED" : "BLOCKED"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -1015,6 +1066,11 @@ export function generateRuleBasedAnalysis(
       parabolicSAR,
       aroon,
       vortex,
+      fisher,
+      connorsRSI,
+      awesomeOsc,
+      tsi,
+      advancedVol,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),

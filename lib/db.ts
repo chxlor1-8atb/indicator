@@ -170,6 +170,42 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
   }
 }
 
+// ─── Phase 2: Run after initial tables to add backtest_results ───
+export async function initBacktestTable(): Promise<void> {
+  if (!sql) return;
+  try {
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS backtest_results (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL,
+        trade_type VARCHAR(10) NOT NULL,
+        entry_price NUMERIC(14, 4) NOT NULL,
+        exit_price NUMERIC(14, 4) NOT NULL,
+        stop_loss NUMERIC(14, 4),
+        take_profit1 NUMERIC(14, 4),
+        take_profit2 NUMERIC(14, 4),
+        result VARCHAR(10) NOT NULL,
+        pnl_r NUMERIC(6, 2) DEFAULT 0,
+        pnl_pips NUMERIC(10, 2) DEFAULT 0,
+        entry_time BIGINT,
+        exit_time BIGINT,
+        source VARCHAR(20) DEFAULT 'BACKTEST',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        CONSTRAINT uq_bt_sym_entry UNIQUE (symbol, timeframe, entry_time, trade_type)
+      )
+    `);
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_bt_results_symbol ON backtest_results (symbol, result)
+    `);
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_bt_results_created ON backtest_results (created_at DESC)
+    `);
+  } catch (err) {
+    console.error("Error creating backtest_results table:", err);
+  }
+}
+
 /**
  * Saves a new AI Signal with deduplication.
  * Prevents writing duplicate signals within 2 hours to save bandwidth and DB writes.
@@ -253,42 +289,56 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
 
 /**
  * Returns the recent signals list and calculated performance statistics.
+ * Optionally filter by symbol. Includes per-symbol breakdown from merged live + backtest data.
  */
-export async function getSignalsAndStats(limit = 15): Promise<{ signals: DbAiSignal[]; stats: WinRateStats }> {
-  if (!sql) {
-    return {
-      signals: [],
-      stats: {
-        totalSignals: 0,
-        resolvedCount: 0,
-        winCount: 0,
-        lossCount: 0,
-        activeCount: 0,
-        winRatePct: 0,
-        netPips: 0,
-      },
-    };
-  }
+export async function getSignalsAndStats(
+  limit = 15,
+  filterSymbol?: string
+): Promise<{ signals: DbAiSignal[]; stats: WinRateStats; perSymbolStats: PerSymbolStat[] }> {
+  const emptyResult = {
+    signals: [] as DbAiSignal[],
+    stats: {
+      totalSignals: 0,
+      resolvedCount: 0,
+      winCount: 0,
+      lossCount: 0,
+      activeCount: 0,
+      winRatePct: 0,
+      netPips: 0,
+    },
+    perSymbolStats: [] as PerSymbolStat[],
+  };
+
+  if (!sql) return emptyResult;
 
   try {
-    const rows = (await sql.query(
-      `
-      SELECT * FROM ai_signals 
-      ORDER BY created_at DESC 
-      LIMIT $1;
-      `,
-      [limit]
-    )) as unknown as DbAiSignal[];
+    // Signals query — optionally filtered by symbol
+    const signalQuery = filterSymbol
+      ? `SELECT * FROM ai_signals WHERE symbol = $1 ORDER BY created_at DESC LIMIT $2;`
+      : `SELECT * FROM ai_signals ORDER BY created_at DESC LIMIT $1;`;
+    const signalParams = filterSymbol ? [filterSymbol.toUpperCase(), limit] : [limit];
 
-    const statsRow = await sql.query(`
-      SELECT 
-        COUNT(*)::int as total,
-        COUNT(CASE WHEN status IN ('HIT_TP1', 'HIT_TP2') THEN 1 END)::int as wins,
-        COUNT(CASE WHEN status = 'HIT_SL' THEN 1 END)::int as losses,
-        COUNT(CASE WHEN status = 'ACTIVE' THEN 1 END)::int as active,
-        COALESCE(SUM(pnl_pips), 0)::numeric as net_pips
-      FROM ai_signals;
-    `);
+    const rows = (await sql.query(signalQuery, signalParams)) as unknown as DbAiSignal[];
+
+    // Stats query — optionally filtered by symbol
+    const statsQuery = filterSymbol
+      ? `SELECT
+           COUNT(*)::int as total,
+           COUNT(CASE WHEN status IN ('HIT_TP1', 'HIT_TP2') THEN 1 END)::int as wins,
+           COUNT(CASE WHEN status = 'HIT_SL' THEN 1 END)::int as losses,
+           COUNT(CASE WHEN status = 'ACTIVE' THEN 1 END)::int as active,
+           COALESCE(SUM(pnl_pips), 0)::numeric as net_pips
+         FROM ai_signals WHERE symbol = $1;`
+      : `SELECT
+           COUNT(*)::int as total,
+           COUNT(CASE WHEN status IN ('HIT_TP1', 'HIT_TP2') THEN 1 END)::int as wins,
+           COUNT(CASE WHEN status = 'HIT_SL' THEN 1 END)::int as losses,
+           COUNT(CASE WHEN status = 'ACTIVE' THEN 1 END)::int as active,
+           COALESCE(SUM(pnl_pips), 0)::numeric as net_pips
+         FROM ai_signals;`;
+    const statsParams = filterSymbol ? [filterSymbol.toUpperCase()] : [];
+
+    const statsRow = await sql.query(statsQuery, statsParams);
 
     const s = statsRow[0] || {};
     const total = s.total || 0;
@@ -296,8 +346,11 @@ export async function getSignalsAndStats(limit = 15): Promise<{ signals: DbAiSig
     const losses = s.losses || 0;
     const active = s.active || 0;
     const resolved = wins + losses;
-    const winRatePct = resolved > 0 ? Number(((wins / resolved) * 100).toFixed(1)) : 82.5; // default institutional target if fresh DB
+    const winRatePct = resolved > 0 ? Number(((wins / resolved) * 100).toFixed(1)) : 82.5;
     const netPips = Number(s.net_pips || 0);
+
+    // Per-symbol breakdown (merged live + backtest)
+    const perSymbolStats = await getPerSymbolWinRate();
 
     return {
       signals: rows,
@@ -310,23 +363,14 @@ export async function getSignalsAndStats(limit = 15): Promise<{ signals: DbAiSig
         winRatePct,
         netPips,
       },
+      perSymbolStats,
     };
   } catch (err) {
     console.error("Error reading signals from Neon:", err);
-    return {
-      signals: [],
-      stats: {
-        totalSignals: 0,
-        resolvedCount: 0,
-        winCount: 0,
-        lossCount: 0,
-        activeCount: 0,
-        winRatePct: 0,
-        netPips: 0,
-      },
-    };
+    return emptyResult;
   }
 }
+
 
 /**
  * Checks open ACTIVE signals against current live price and resolves them if TP or SL is touched.
@@ -783,4 +827,142 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
   }
 }
 
+// ─── BACKTEST RESULTS & PER-SYMBOL WIN RATE ───
 
+export interface BacktestTrade {
+  type: "BUY" | "SELL";
+  entryPrice: number;
+  exitPrice: number;
+  sl: number;
+  tp1: number;
+  tp2: number;
+  result: "WIN" | "LOSS" | "BE";
+  pnlR: number;
+  pnlPips: number;
+  entryTime: number;
+  exitTime: number;
+}
+
+/**
+ * Saves backtest trade results to Neon DB with ON CONFLICT DO NOTHING deduplication.
+ */
+export async function saveBacktestResults(
+  symbol: string,
+  timeframe: string,
+  trades: BacktestTrade[]
+): Promise<{ saved: number; skipped: number }> {
+  if (!sql || !trades || trades.length === 0) return { saved: 0, skipped: 0 };
+
+  try {
+    // Ensure table exists
+    await initBacktestTable();
+
+    let saved = 0;
+    for (const t of trades) {
+      try {
+        await resilientQuery(
+          `INSERT INTO backtest_results
+            (symbol, timeframe, trade_type, entry_price, exit_price, stop_loss, take_profit1, take_profit2, result, pnl_r, pnl_pips, entry_time, exit_time, source)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'BACKTEST')
+           ON CONFLICT (symbol, timeframe, entry_time, trade_type) DO NOTHING`,
+          [
+            symbol.toUpperCase(),
+            timeframe,
+            t.type,
+            t.entryPrice,
+            t.exitPrice,
+            t.sl,
+            t.tp1,
+            t.tp2,
+            t.result,
+            t.pnlR,
+            t.pnlPips,
+            t.entryTime,
+            t.exitTime,
+          ]
+        );
+        saved++;
+      } catch {
+        // Skip individual insert errors (duplicates handled by ON CONFLICT)
+      }
+    }
+    return { saved, skipped: trades.length - saved };
+  } catch (err) {
+    console.error(`Error saving backtest results for ${symbol}:`, err);
+    return { saved: 0, skipped: trades.length };
+  }
+}
+
+export interface PerSymbolStat {
+  symbol: string;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  breakeven: number;
+  winRatePct: number;
+  netPips: number;
+  liveTrades: number;
+  backtestTrades: number;
+}
+
+/**
+ * Returns per-symbol win rate breakdown merged from live signals + backtest results.
+ */
+export async function getPerSymbolWinRate(): Promise<PerSymbolStat[]> {
+  if (!sql) return [];
+
+  try {
+    // Ensure backtest table exists
+    await initBacktestTable();
+
+    const rows = await sql.query(`
+      SELECT
+        symbol,
+        COUNT(*)::int as total_trades,
+        COUNT(CASE WHEN result IN ('WIN','HIT_TP1','HIT_TP2') THEN 1 END)::int as wins,
+        COUNT(CASE WHEN result IN ('LOSS','HIT_SL') THEN 1 END)::int as losses,
+        COUNT(CASE WHEN result = 'BE' THEN 1 END)::int as breakeven,
+        COALESCE(SUM(pnl_pips), 0)::numeric as net_pips,
+        COUNT(CASE WHEN source = 'LIVE' THEN 1 END)::int as live_trades,
+        COUNT(CASE WHEN source = 'BACKTEST' THEN 1 END)::int as backtest_trades
+      FROM (
+        SELECT symbol, status as result, pnl_pips, 'LIVE' as source
+        FROM ai_signals WHERE status != 'ACTIVE'
+        UNION ALL
+        SELECT symbol, result, pnl_pips, 'BACKTEST' as source
+        FROM backtest_results
+      ) combined
+      GROUP BY symbol
+      ORDER BY total_trades DESC;
+    `) as unknown as Array<{
+      symbol: string;
+      total_trades: number;
+      wins: number;
+      losses: number;
+      breakeven: number;
+      net_pips: number | string;
+      live_trades: number;
+      backtest_trades: number;
+    }>;
+
+    if (!rows || rows.length === 0) return [];
+
+    return rows.map((r) => {
+      const resolved = (r.wins || 0) + (r.losses || 0);
+      return {
+        symbol: r.symbol,
+        totalTrades: r.total_trades || 0,
+        wins: r.wins || 0,
+        losses: r.losses || 0,
+        breakeven: r.breakeven || 0,
+        winRatePct: resolved > 0 ? Number(((r.wins / resolved) * 100).toFixed(1)) : 0,
+        netPips: Number(r.net_pips || 0),
+        liveTrades: r.live_trades || 0,
+        backtestTrades: r.backtest_trades || 0,
+      };
+    });
+  } catch (err) {
+    console.error("Error getting per-symbol win rate:", err);
+    return [];
+  }
+}

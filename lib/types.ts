@@ -671,6 +671,11 @@ export interface IndicatorData {
   parabolicSAR?: ParabolicSARPoint;
   aroon?: AroonInfo;
   vortex?: VortexInfo;
+  fisher?: FisherTransformPoint;
+  connorsRSI?: ConnorsRSIInfo;
+  awesomeOsc?: AwesomeOscillatorPoint;
+  tsi?: TSIInfo;
+  advancedVol?: AdvancedVolatilitySuite;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -812,6 +817,11 @@ export interface AnalysisResult {
   parabolicSAR?: ParabolicSARPoint;
   aroon?: AroonInfo;
   vortex?: VortexInfo;
+  fisher?: FisherTransformPoint;
+  connorsRSI?: ConnorsRSIInfo;
+  awesomeOsc?: AwesomeOscillatorPoint;
+  tsi?: TSIInfo;
+  advancedVol?: AdvancedVolatilitySuite;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -895,6 +905,11 @@ export interface AnalysisResult {
     parabolicSAR?: ParabolicSARPoint;
     aroon?: AroonInfo;
     vortex?: VortexInfo;
+    fisher?: FisherTransformPoint;
+    connorsRSI?: ConnorsRSIInfo;
+    awesomeOsc?: AwesomeOscillatorPoint;
+    tsi?: TSIInfo;
+    advancedVol?: AdvancedVolatilitySuite;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1093,6 +1108,7 @@ export interface FisherTransformPoint {
   isExtremeOverbought: boolean;
   isExtremeOversold: boolean;
   crossSignal: "BULLISH_CROSS" | "BEARISH_CROSS" | "NONE";
+  description?: string;
 }
 
 export interface ConnorsRSIInfo {
@@ -1102,12 +1118,14 @@ export interface ConnorsRSIInfo {
   percentRank: number;
   isExtremePullback: boolean;
   isExtremeOverbought: boolean;
+  description?: string;
 }
 
 export interface TSIInfo {
   tsi: number;
   signal: number;
   isBullish: boolean;
+  description?: string;
 }
 
 export interface AwesomeOscillatorPoint {
@@ -1115,6 +1133,7 @@ export interface AwesomeOscillatorPoint {
   isGreen: boolean;
   isZeroCross: boolean;
   saucerSignal: "BULLISH_SAUCER" | "BEARISH_SAUCER" | "NONE";
+  description?: string;
 }
 
 export interface TTMSqueezeInfo {
@@ -1145,6 +1164,8 @@ export interface AdvancedVolatilitySuite {
   standardDevVol: number;
   ulcerIndex: number;
   volatilityRegime: "EXTREME_LOW" | "NORMAL_EXPANSION" | "HIGH_CLIMAX";
+  safetyLock16Passed?: boolean;
+  description?: string;
 }
 
 export interface CMFInfo {
