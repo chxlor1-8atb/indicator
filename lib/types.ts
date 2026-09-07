@@ -859,6 +859,32 @@ export interface AnalysisResult {
     invalidationNote: string;
   };
   institutionalQuant?: Institutional5LayerHub;
+  orchestrator?: OrchestratorDecisionInfo;
+}
+
+// ─── ANTI-CLASH ORCHESTRATOR & STRATEGY PERSONA TYPES ───
+
+export type StrategyPresetType =
+  | "AUTO_REGIME"
+  | "SMC_PRICE_ACTION"
+  | "QUANT_TREND_SURFER"
+  | "SQUEEZE_BREAKOUT"
+  | "MEAN_REVERSION_SCALPER"
+  | "HARMONIC_REVERSAL";
+
+export interface OrchestratorDecisionInfo {
+  selectedPreset: StrategyPresetType;
+  effectivePreset: "SMC_PRICE_ACTION" | "QUANT_TREND_SURFER" | "SQUEEZE_BREAKOUT" | "MEAN_REVERSION_SCALPER" | "HARMONIC_REVERSAL";
+  regimeState: string;
+  activeIndicators: string[];
+  mutedIndicators: string[];
+  clashResolutionReason: string;
+  unifiedSignal: "BUY" | "SELL" | "HOLD_WAIT";
+  confidencePct: number;
+  primaryEngine: string;
+  vetoTriggered: boolean;
+  vetoReason?: string;
+  executionAdvice: string;
 }
 
 // ─── 5-LAYER INSTITUTIONAL QUANT INTERFACES ───

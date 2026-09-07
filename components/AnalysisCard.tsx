@@ -44,6 +44,7 @@ import {
   Activity,
   Scale
 } from "lucide-react";
+import { StrategyPersonaSelector } from "./StrategyPersonaSelector";
 
 interface AnalysisCardProps {
   analysis: AnalysisResult | null;
@@ -308,6 +309,11 @@ export default function AnalysisCard({
           </button>
         </div>
       </div>
+
+      {/* 🛡️ ANTI-CLASH STRATEGY ORCHESTRATOR & PERSONA SELECTOR */}
+      {analysis.orchestrator && (
+        <StrategyPersonaSelector orchestrator={analysis.orchestrator} />
+      )}
 
       {/* 2. 📅 ECONOMIC CALENDAR & RED FOLDER SHIELD (กล่องแดง เหลือง เทา) */}
       {cal && (

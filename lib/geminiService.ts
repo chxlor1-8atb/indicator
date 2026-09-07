@@ -41,6 +41,7 @@ import {
   RejectionBlockInfo,
   MCPIConvictionInfo,
 } from "./types";
+import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
 import {
@@ -833,6 +834,11 @@ export function generateRuleBasedAnalysis(
         ? `หากราคาหลุดแนวรับสวิง ${structuralSL.swingRefPrice} (Stop Loss: ${stopLoss}) ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`
         : `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`,
     },
+    orchestrator: orchestrateStrategyDecision({
+      candles,
+      indicators,
+      regimeInfo,
+    }),
   };
 }
 
