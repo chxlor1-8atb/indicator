@@ -106,6 +106,11 @@ export default function AnalysisCard({
     const fibExt = analysis.tradeSetup.fibonacciExtension || analysis.fibonacciExtension;
     const vsa = analysis.tradeSetup.footprintAbsorption || analysis.footprintAbsorption;
     const mtf = analysis.tradeSetup.mtfStructureMatrix || analysis.mtfStructureMatrix;
+    const idm = analysis.tradeSetup.liquidityInducement || analysis.liquidityInducement;
+    const chos = analysis.tradeSetup.institutionalChoS || analysis.institutionalChoS;
+    const drb = analysis.tradeSetup.dynamicRiskBracket || analysis.dynamicRiskBracket;
+    const rej = analysis.tradeSetup.rejectionBlock || analysis.rejectionBlock;
+    const mcpi = analysis.tradeSetup.mcpiConviction || analysis.mcpiConviction;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -124,6 +129,11 @@ export default function AnalysisCard({
       (fibExt && fibExt.bestTakeProfitTarget ? `• Fib Extension Mesh: 1.618 Golden Target ${fibExt.bestTakeProfitTarget.price} (${fibExt.bestTakeProfitTarget.label})\n` : "") +
       (vsa ? `• VSA Footprint: ${vsa.vsaSignal} (Effort/Result: ${vsa.effortVsResult} | Vol: ${vsa.relativeVolume}x)\n` : "") +
       (mtf ? `• MTF Structure Matrix: ${mtf.overallAlignment} (สอดคล้อง ${mtf.alignmentScorePct}% | HTF: ${mtf.htfTrend})\n` : "") +
+      (idm && idm.isInducementTrap ? `• 🪤 Inducement Trap Alert: ${idm.trapType} (${idm.inducementDirection} - ห่าง ${idm.distanceToTrapPips} pips)\n` : "") +
+      (chos ? `• 🚀 ChoS Delivery: ${chos.deliveryState} (${chos.dominantParticipant} | Score: ${chos.deliveryScore}/100)\n` : "") +
+      (drb ? `• 🛡️ Dynamic Risk Bracket: [${drb.currentRiskBracket}] แนะนำเสี่ยง ${drb.recommendedRiskPct}% (Throttle: ${drb.drawdownThrottleMultiplier}x)\n` : "") +
+      (rej && rej.blocks.length > 0 ? `• 🧱 Rejection Blocks: พบ ${rej.blocks.length} บล็อค (Wick Ratio: ${rej.rejectionWickRatioPct}% | Exhaustion: ${rej.wickExhaustionScore}/100)\n` : "") +
+      (mcpi ? `• ⚡ Unified MCPI Conviction: ${mcpi.score}/100 [เกรด ${mcpi.convictionTier}] (${mcpi.isApprovedForExecution ? "APPROVED" : "BLOCKED"})\n` : "") +
       (vp ? `• Volume Profile Value Area: ${vp.val} - ${vp.vah} (POC: ${vp.poc})\n` : "") +
       (vwap ? `• Anchored VWAP: ${vwap.vwap} (Pos: ${vwap.pricePosition} | ±2σ: ${vwap.lowerBand2}-${vwap.upperBand2})\n` : "") +
       (cvd ? `• CVD Flow: ${cvd.cvdTrend} (${cvd.divergence !== "NONE" ? cvd.divergence : `Buyer ${cvd.buyerVolumeRatio}%`})\n` : "") +
@@ -2179,6 +2189,248 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.mtfStructureMatrix.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5i. 🎯 Liquidity Inducement, ChoS Delivery, Risk Bracket & MCPI Conviction Matrix (Plans 41-45) */}
+      {(analysis.liquidityInducement || analysis.institutionalChoS || analysis.dynamicRiskBracket || analysis.rejectionBlock || analysis.mcpiConviction) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-slate-700/60 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                <Target className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Liquidity Inducement, ChoS Delivery, Risk Bracket & MCPI Matrix (แผน 41-45)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    Institutional Precision & Safety Lock 12
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  ระบบตรวจจับกับดักสภาพคล่อง IDM/EQH/EQL, การส่งมอบคำสั่ง ChoS สถาบัน, พิกัดความเสี่ยง Adaptive Risk Bracket, บล็อคปฏิเสธราคา Rejection Block และคะแนนรวมเอกภาพ MCPI 0-100
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Liquidity Inducement & Engineering (Plan 41 & Safety Lock 12) */}
+            {analysis.liquidityInducement && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🪤 Liquidity Inducement</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.liquidityInducement.isInducementTrap
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold animate-pulse"
+                      : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                  }`}>
+                    {analysis.liquidityInducement.isInducementTrap ? "⛔ TRAP DETECTED" : "✅ CLEAR ZONE"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Trap Type:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {analysis.liquidityInducement.trapType}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ทิศทางกับดัก:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.liquidityInducement.inducementDirection}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ระดับดักสภาพคล่อง (IDM):</span>
+                    <span className="font-mono text-slate-200">
+                      {analysis.liquidityInducement.idmLevel ?? "None"} ({analysis.liquidityInducement.distanceToTrapPips} pips)
+                    </span>
+                  </div>
+                  {(analysis.liquidityInducement.eqhPrice || analysis.liquidityInducement.eqlPrice) && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">EQH / EQL Pool:</span>
+                      <span className="font-mono text-amber-400 font-bold">
+                        {analysis.liquidityInducement.eqhPrice ? `EQH: ${analysis.liquidityInducement.eqhPrice}` : `EQL: ${analysis.liquidityInducement.eqlPrice}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.liquidityInducement.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Institutional ChoS Delivery Matrix (Plan 42) */}
+            {analysis.institutionalChoS && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🚀 ChoS Delivery Matrix</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                    analysis.institutionalChoS.deliveryState === "EXPANSION_DELIVERY"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                      : analysis.institutionalChoS.deliveryState === "ACCUMULATION"
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold"
+                      : analysis.institutionalChoS.deliveryState === "MANIPULATION"
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold"
+                      : "bg-surface-50 text-slate-400 border border-slate-800"
+                  }`}>
+                    {analysis.institutionalChoS.deliveryState}
+                  </span>
+                </div>
+                {/* Score Progress Bar */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Delivery Score:</span>
+                    <span className="font-mono font-bold text-indigo-300">{analysis.institutionalChoS.deliveryScore} / 100</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full"
+                      style={{ width: `${Math.min(100, Math.max(0, analysis.institutionalChoS.deliveryScore))}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ผู้เล่นหลักในตลาด:</span>
+                    <span className="font-mono text-[10px] font-bold text-slate-200">
+                      {analysis.institutionalChoS.dominantParticipant}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Expansion Bars:</span>
+                    <span className="font-mono text-cyan-300 font-bold">
+                      {analysis.institutionalChoS.consecutiveExpansionBars} แท่งขยายตัวต่อเนื่อง
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.institutionalChoS.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Dynamic Risk Bracket & Rejection Block (Plan 43 & 44) */}
+            {(analysis.dynamicRiskBracket || analysis.rejectionBlock) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🛡️ Risk Bracket & Rejection</span>
+                  {analysis.dynamicRiskBracket && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                      analysis.dynamicRiskBracket.currentRiskBracket === "DEFENSIVE_HALT"
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold"
+                        : analysis.dynamicRiskBracket.currentRiskBracket === "CONSERVATIVE"
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                        : analysis.dynamicRiskBracket.currentRiskBracket === "AGGRESSIVE"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                        : "bg-surface-50 text-slate-300 border border-slate-700"
+                    }`}>
+                      {analysis.dynamicRiskBracket.currentRiskBracket}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.dynamicRiskBracket && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">ความเสี่ยงแนะนำ:</span>
+                        <span className="font-mono font-bold text-emerald-300">
+                          {analysis.dynamicRiskBracket.recommendedRiskPct}% (Scale: {analysis.dynamicRiskBracket.drawdownThrottleMultiplier}x)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">โควต้าเทรดเหลือวันนี้:</span>
+                        <span className="font-mono text-slate-300">
+                          {analysis.dynamicRiskBracket.maxDailyTradesRemaining} ไม้ (เสียติดกัน: {analysis.dynamicRiskBracket.consecutiveLossCount})
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {analysis.rejectionBlock && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Rejection Blocks:</span>
+                        <span className="font-mono text-cyan-300 font-bold">
+                          {analysis.rejectionBlock.blocks.length} โซน (Wick: {analysis.rejectionBlock.rejectionWickRatioPct}%)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Wick Exhaustion:</span>
+                        <span className="font-mono text-[10px] font-bold text-amber-300">
+                          {analysis.rejectionBlock.wickExhaustionScore} / 100
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.dynamicRiskBracket?.description || analysis.rejectionBlock?.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Unified MCPI Conviction Matrix (Plan 45 & Safety Lock 12) */}
+            {analysis.mcpiConviction && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚡ Unified MCPI Conviction</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.mcpiConviction.convictionTier === "TITANIUM"
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 glow-purple"
+                      : analysis.mcpiConviction.convictionTier === "PLATINUM"
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      : analysis.mcpiConviction.convictionTier === "GOLD"
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                      : analysis.mcpiConviction.convictionTier === "SILVER"
+                      ? "bg-slate-500/20 text-slate-300 border border-slate-500/40"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse"
+                  }`}>
+                    {analysis.mcpiConviction.convictionTier}
+                  </span>
+                </div>
+
+                {/* Big Score Display */}
+                <div className="flex items-center justify-between p-2 rounded-lg bg-surface-50 border border-slate-800">
+                  <div className="text-center flex-1">
+                    <span className="text-[10px] text-slate-400 block">MCPI Score</span>
+                    <span className="text-lg font-black font-mono text-white">
+                      {analysis.mcpiConviction.score} <span className="text-xs font-normal text-slate-400">/ 100</span>
+                    </span>
+                  </div>
+                  <div className="text-center flex-1 border-l border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Safety Lock 12</span>
+                    <span className={`text-[11px] font-bold font-mono ${
+                      analysis.mcpiConviction.isApprovedForExecution ? "text-emerald-400" : "text-rose-400"
+                    }`}>
+                      {analysis.mcpiConviction.isApprovedForExecution ? "✅ APPROVED" : "⛔ BLOCKED"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 12-Pillar Metrics */}
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">ผ่านเสาหลัก Confluence:</span>
+                    <span className="font-mono text-emerald-400 font-bold">
+                      {analysis.mcpiConviction.pillarsPassedCount} / 12 เสาหลัก
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Institutional Backing:</span>
+                    <span className="font-mono text-indigo-300 font-bold">
+                      {analysis.mcpiConviction.institutionalBackingRatioPct}% สถาบันหนุน
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.mcpiConviction.description}
                 </p>
               </div>
             )}

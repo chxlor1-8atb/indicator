@@ -35,6 +35,11 @@ import {
   FibonacciExtensionInfo,
   FootprintAbsorptionInfo,
   MTFStructureMatrixInfo,
+  LiquidityInducementInfo,
+  InstitutionalChoSInfo,
+  DynamicRiskBracketInfo,
+  RejectionBlockInfo,
+  MCPIConvictionInfo,
 } from "./types";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
@@ -72,6 +77,11 @@ import {
   calculateFibonacciExtension,
   calculateFootprintAbsorption,
   calculateMTFStructureMatrix,
+  calculateLiquidityInducement,
+  calculateInstitutionalChoS,
+  calculateDynamicRiskBracket,
+  calculateRejectionBlocks,
+  calculateUnifiedMCPI,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -285,6 +295,11 @@ export function generateRuleBasedAnalysis(
   const footprintAbsorption = indicators.footprintAbsorption || calculateFootprintAbsorption(candles);
   const mtfStructureMatrix = indicators.mtfStructureMatrix || calculateMTFStructureMatrix(candles, precision, symbol);
 
+  // ─── BATCH 9 PRE-COMPUTATIONS (PLANS 41-45) ───
+  const liquidityInducement = indicators.liquidityInducement || calculateLiquidityInducement(candles, precision, symbol);
+  const institutionalChoS = indicators.institutionalChoS || calculateInstitutionalChoS(candles);
+  const rejectionBlock = indicators.rejectionBlock || calculateRejectionBlocks(candles, precision);
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = adaptiveConfig?.minScoreThreshold ?? 70;
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -384,6 +399,12 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 40);
   }
+  // SAFETY LOCK 12: Liquidity Inducement Trap (EQH/EQL Bait) [แผน 41]
+  else if (liquidityInducement.isInducementTrap) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
   else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 55) {
     signal = "WAIT";
@@ -396,6 +417,7 @@ export function generateRuleBasedAnalysis(
     if (marketStructureShift.isTrueDisplacement && marketStructureShift.type === "BULLISH_MSS") confidence = Math.min(98, confidence + 5);
     if (footprintAbsorption.isInstitutionalAbsorption && footprintAbsorption.bias === "BULLISH") confidence = Math.min(98, confidence + 5);
     if (mtfStructureMatrix.overallAlignment === "FULL_BULLISH_CONFLUENCE") confidence = Math.min(98, confidence + 5);
+    if (institutionalChoS.deliveryState === "EXPANSION_DELIVERY") confidence = Math.min(98, confidence + 5);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -408,6 +430,7 @@ export function generateRuleBasedAnalysis(
     if (marketStructureShift.isTrueDisplacement && marketStructureShift.type === "BEARISH_MSS") confidence = Math.min(98, confidence + 5);
     if (footprintAbsorption.isInstitutionalAbsorption && footprintAbsorption.bias === "BEARISH") confidence = Math.min(98, confidence + 5);
     if (mtfStructureMatrix.overallAlignment === "FULL_BEARISH_CONFLUENCE") confidence = Math.min(98, confidence + 5);
+    if (institutionalChoS.deliveryState === "EXPANSION_DELIVERY") confidence = Math.min(98, confidence + 5);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -466,6 +489,10 @@ export function generateRuleBasedAnalysis(
     if (fibonacciExtension.bestTakeProfitTarget?.price && fibonacciExtension.bestTakeProfitTarget.price > takeProfit1) {
       takeProfit2 = fibonacciExtension.bestTakeProfitTarget.price;
     }
+    // [แผน 44] Rejection Block Low Protection
+    if (rejectionBlock.nearestBlock && rejectionBlock.nearestBlock.type === "BULLISH_REJECTION_BLOCK" && rejectionBlock.nearestBlock.low < pendingPrice) {
+      stopLoss = Number(Math.min(stopLoss, rejectionBlock.nearestBlock.low - currentATR * 0.1).toFixed(precision));
+    }
     riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / risk).toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
@@ -491,6 +518,10 @@ export function generateRuleBasedAnalysis(
     // [แผน 38] MTF Fibonacci Extension Golden Target Refinement
     if (fibonacciExtension.bestTakeProfitTarget?.price && fibonacciExtension.bestTakeProfitTarget.price < takeProfit1) {
       takeProfit2 = fibonacciExtension.bestTakeProfitTarget.price;
+    }
+    // [แผน 44] Rejection Block High Protection
+    if (rejectionBlock.nearestBlock && rejectionBlock.nearestBlock.type === "BEARISH_REJECTION_BLOCK" && rejectionBlock.nearestBlock.high > pendingPrice) {
+      stopLoss = Number(Math.max(stopLoss, rejectionBlock.nearestBlock.high + currentATR * 0.1).toFixed(precision));
     }
     riskRewardRatio = `1:${((pendingPrice - takeProfit2) / risk).toFixed(1)}`;
   }
@@ -539,6 +570,26 @@ export function generateRuleBasedAnalysis(
     precision,
     symbol
   );
+
+  // [แผน 43] Adaptive Dynamic Risk Bracket & Portfolio Drawdown Limiter
+  const dynamicRiskBracket = indicators.dynamicRiskBracket || calculateDynamicRiskBracket(winRate, realizedVolatility.realizedVol, 0);
+
+  // [แผน 45] Algorithmic Multi-Confluence Power Index (MCPI - 0 to 100 Unified Execution Score)
+  const mcpiConviction = indicators.mcpiConviction || calculateUnifiedMCPI(
+    masterConfluence.totalScore,
+    mtfStructureMatrix.alignmentScorePct,
+    marketStructureShift.isTrueDisplacement,
+    footprintAbsorption.isInstitutionalAbsorption,
+    liquidityInducement.isInducementTrap,
+    institutionalChoS.deliveryScore
+  );
+
+  // SAFETY LOCK 12 (part b): MCPI Conviction Gating (Block if MCPI < 70 or Inducement Trap active)
+  if (!mcpiConviction.isApprovedForExecution && (signal === "BUY" || signal === "SELL" || signal === "STRONG_BUY" || signal === "STRONG_SELL")) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 50);
+  }
 
   // 8-Point Confluence Checklist with News Shield, Order Flow, Volume Profile & Anchored VWAP
   const confluenceChecklist: ConfluenceCheckItem[] = [
@@ -605,6 +656,11 @@ export function generateRuleBasedAnalysis(
       passed: !mtfStructureMatrix.isHTFConflict && (mtfStructureMatrix.alignmentScorePct >= 50 || footprintAbsorption.isInstitutionalAbsorption),
       note: `${mtfStructureMatrix.description} • VSA: ${footprintAbsorption.vsaSignal} (${footprintAbsorption.effortVsResult})`,
     },
+    {
+      name: `Pillar 12: Liquidity Inducement & MCPI (${mcpiConviction.convictionTier})`,
+      passed: mcpiConviction.isApprovedForExecution && !liquidityInducement.isInducementTrap,
+      note: `${mcpiConviction.description} • Inducement: ${liquidityInducement.trapType}`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -655,6 +711,11 @@ export function generateRuleBasedAnalysis(
     fibonacciExtension,
     footprintAbsorption,
     mtfStructureMatrix,
+    liquidityInducement,
+    institutionalChoS,
+    dynamicRiskBracket,
+    rejectionBlock,
+    mcpiConviction,
     kellySizing,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
@@ -694,6 +755,11 @@ export function generateRuleBasedAnalysis(
         `Fibonacci Extension Mesh: 1.618 Golden Target ที่ ${fibonacciExtension.bestTakeProfitTarget.price} (${fibonacciExtension.bestTakeProfitTarget.label})`,
         `VSA Footprint Absorption: ${footprintAbsorption.vsaSignal} (Effort/Result: ${footprintAbsorption.effortVsResult}, Vol: ${footprintAbsorption.relativeVolume}x)`,
         `MTF Structure Matrix: ${mtfStructureMatrix.overallAlignment} (คะแนนสอดคล้อง: ${mtfStructureMatrix.alignmentScorePct}%, HTF: ${mtfStructureMatrix.htfTrend})`,
+        `Liquidity Inducement: ${liquidityInducement.trapType} (${liquidityInducement.inducementDirection} - ห่าง ${liquidityInducement.distanceToTrapPips} pips)`,
+        `Institutional ChoS Delivery: ${institutionalChoS.deliveryState} (${institutionalChoS.dominantParticipant} | Score: ${institutionalChoS.deliveryScore}/100)`,
+        `Dynamic Risk Bracket: [${dynamicRiskBracket.currentRiskBracket}] แนะนำเสี่ยง ${dynamicRiskBracket.recommendedRiskPct}% (Scale ${dynamicRiskBracket.drawdownThrottleMultiplier}x)`,
+        `Rejection Blocks: พบ ${rejectionBlock.blocks.length} บล็อค (Wick Ratio: ${rejectionBlock.rejectionWickRatioPct}% | Exhaustion: ${rejectionBlock.wickExhaustionScore}/100)`,
+        `Unified MCPI Conviction: ${mcpiConviction.score}/100 [เกรด ${mcpiConviction.convictionTier}] (สถานะอนุมัติ: ${mcpiConviction.isApprovedForExecution ? "APPROVED" : "BLOCKED"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -752,6 +818,11 @@ export function generateRuleBasedAnalysis(
       fibonacciExtension,
       footprintAbsorption,
       mtfStructureMatrix,
+      liquidityInducement,
+      institutionalChoS,
+      dynamicRiskBracket,
+      rejectionBlock,
+      mcpiConviction,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1086,6 +1157,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.fibonacciExtension = ruleAnalysis.fibonacciExtension;
     parsed.footprintAbsorption = ruleAnalysis.footprintAbsorption;
     parsed.mtfStructureMatrix = ruleAnalysis.mtfStructureMatrix;
+    parsed.liquidityInducement = ruleAnalysis.liquidityInducement;
+    parsed.institutionalChoS = ruleAnalysis.institutionalChoS;
+    parsed.dynamicRiskBracket = ruleAnalysis.dynamicRiskBracket;
+    parsed.rejectionBlock = ruleAnalysis.rejectionBlock;
+    parsed.mcpiConviction = ruleAnalysis.mcpiConviction;
     parsed.kellySizing = ruleAnalysis.kellySizing;
 
     if (parsed.tradeSetup) {
@@ -1115,6 +1191,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.fibonacciExtension = ruleAnalysis.tradeSetup.fibonacciExtension;
       parsed.tradeSetup.footprintAbsorption = ruleAnalysis.tradeSetup.footprintAbsorption;
       parsed.tradeSetup.mtfStructureMatrix = ruleAnalysis.tradeSetup.mtfStructureMatrix;
+      parsed.tradeSetup.liquidityInducement = ruleAnalysis.tradeSetup.liquidityInducement;
+      parsed.tradeSetup.institutionalChoS = ruleAnalysis.tradeSetup.institutionalChoS;
+      parsed.tradeSetup.dynamicRiskBracket = ruleAnalysis.tradeSetup.dynamicRiskBracket;
+      parsed.tradeSetup.rejectionBlock = ruleAnalysis.tradeSetup.rejectionBlock;
+      parsed.tradeSetup.mcpiConviction = ruleAnalysis.tradeSetup.mcpiConviction;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

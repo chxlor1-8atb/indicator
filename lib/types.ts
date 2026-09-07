@@ -457,7 +457,63 @@ export interface MTFStructureMatrixInfo {
   description: string;
 }
 
+// ─── BATCH 9: PLANS 41-45 INTERFACES ───
 
+export interface LiquidityInducementInfo {
+  eqhPrice: number | null;
+  eqlPrice: number | null;
+  idmLevel: number | null;
+  isInducementTrap: boolean;
+  trapType: "EQUAL_HIGHS_BAIT" | "EQUAL_LOWS_BAIT" | "MINOR_PULLBACK_IDM" | "NONE";
+  inducementDirection: "BULL_TRAP_INDUCEMENT" | "BEAR_TRAP_INDUCEMENT" | "CLEAN_STRUCTURE";
+  distanceToTrapPips: number;
+  description: string;
+}
+
+export interface InstitutionalChoSInfo {
+  deliveryState: "ACCUMULATION" | "MANIPULATION" | "DISTRIBUTION" | "EXPANSION_DELIVERY";
+  chosDetected: boolean;
+  consecutiveExpansionBars: number;
+  deliveryScore: number; // 0 to 100
+  dominantParticipant: "INSTITUTIONAL_ALGO" | "RETAIL_CHURN" | "SMART_MONEY_ABSORPTION";
+  description: string;
+}
+
+export interface DynamicRiskBracketInfo {
+  currentRiskBracket: "CONSERVATIVE" | "BALANCED" | "AGGRESSIVE" | "DEFENSIVE_HALT";
+  recommendedRiskPct: number; // e.g. 0.75%, 1.25%, 2.00%
+  drawdownThrottleMultiplier: number; // 0.5 to 1.2
+  consecutiveLossCount: number;
+  maxDailyTradesRemaining: number;
+  description: string;
+}
+
+export interface RejectionBlockItem {
+  type: "BULLISH_REJECTION_BLOCK" | "BEARISH_REJECTION_BLOCK";
+  high: number;
+  low: number;
+  wickSize: number;
+  bodySize: number;
+  isMitigated: boolean;
+  candleIndex: number;
+}
+
+export interface RejectionBlockInfo {
+  blocks: RejectionBlockItem[];
+  nearestBlock: RejectionBlockItem | null;
+  wickExhaustionScore: number; // 0 to 100
+  rejectionWickRatioPct: number;
+  description: string;
+}
+
+export interface MCPIConvictionInfo {
+  score: number; // 0 to 100
+  convictionTier: "TITANIUM" | "PLATINUM" | "GOLD" | "SILVER" | "BRONZE";
+  pillarsPassedCount: number; // out of 12
+  isApprovedForExecution: boolean;
+  institutionalBackingRatioPct: number;
+  description: string;
+}
 
 export interface MasterConfluenceScore {
   totalScore: number; // 0 - 100
@@ -595,6 +651,12 @@ export interface IndicatorData {
   fibonacciExtension?: FibonacciExtensionInfo;
   footprintAbsorption?: FootprintAbsorptionInfo;
   mtfStructureMatrix?: MTFStructureMatrixInfo;
+  liquidityInducement?: LiquidityInducementInfo;
+  institutionalChoS?: InstitutionalChoSInfo;
+  dynamicRiskBracket?: DynamicRiskBracketInfo;
+  rejectionBlock?: RejectionBlockInfo;
+  mcpiConviction?: MCPIConvictionInfo;
+  masterSuite?: MasterIndicatorSuite;
 }
 
 export interface NewsItem {
@@ -715,6 +777,11 @@ export interface AnalysisResult {
   fibonacciExtension?: FibonacciExtensionInfo;
   footprintAbsorption?: FootprintAbsorptionInfo;
   mtfStructureMatrix?: MTFStructureMatrixInfo;
+  liquidityInducement?: LiquidityInducementInfo;
+  institutionalChoS?: InstitutionalChoSInfo;
+  dynamicRiskBracket?: DynamicRiskBracketInfo;
+  rejectionBlock?: RejectionBlockInfo;
+  mcpiConviction?: MCPIConvictionInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -778,6 +845,11 @@ export interface AnalysisResult {
     fibonacciExtension?: FibonacciExtensionInfo;
     footprintAbsorption?: FootprintAbsorptionInfo;
     mtfStructureMatrix?: MTFStructureMatrixInfo;
+    liquidityInducement?: LiquidityInducementInfo;
+    institutionalChoS?: InstitutionalChoSInfo;
+    dynamicRiskBracket?: DynamicRiskBracketInfo;
+    rejectionBlock?: RejectionBlockInfo;
+    mcpiConviction?: MCPIConvictionInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -900,6 +972,236 @@ export interface Institutional5LayerHub {
   layer3Brain: MLPredictionInfo & { adaptiveStrategy: RegimeAdaptiveStrategyInfo };
   layer4Risk: InstitutionalRiskEngineInfo;
   layer5Validation: WalkForwardAnalysisInfo;
+}
+
+// ─── GLOBAL INDICATOR TAXONOMY & MULTI-FAMILY INTERFACES ───
+
+export interface KAMAInfo {
+  period: number;
+  efficiencyRatio: number;
+  kamaValue: number;
+  trendState: "BULLISH" | "BEARISH" | "FLAT";
+}
+
+export interface HMAInfo {
+  period: number;
+  hmaValue: number;
+  isTurningUp: boolean;
+  isTurningDown: boolean;
+}
+
+export interface ParabolicSARPoint {
+  sar: number;
+  isBullish: boolean;
+  isReversal: boolean;
+}
+
+export interface AroonInfo {
+  aroonUp: number;
+  aroonDown: number;
+  oscillator: number;
+  trendState: "STRONG_UPTREND" | "STRONG_DOWNTREND" | "CONSOLIDATION";
+}
+
+export interface VortexInfo {
+  viPlus: number;
+  viMinus: number;
+  trend: "BULLISH" | "BEARISH";
+  strength: number;
+}
+
+export interface FisherTransformPoint {
+  fisher: number;
+  trigger: number;
+  isExtremeOverbought: boolean;
+  isExtremeOversold: boolean;
+  crossSignal: "BULLISH_CROSS" | "BEARISH_CROSS" | "NONE";
+}
+
+export interface ConnorsRSIInfo {
+  crsi: number;
+  rsiClose: number;
+  streakRSI: number;
+  percentRank: number;
+  isExtremePullback: boolean;
+  isExtremeOverbought: boolean;
+}
+
+export interface TSIInfo {
+  tsi: number;
+  signal: number;
+  isBullish: boolean;
+}
+
+export interface AwesomeOscillatorPoint {
+  ao: number;
+  isGreen: boolean;
+  isZeroCross: boolean;
+  saucerSignal: "BULLISH_SAUCER" | "BEARISH_SAUCER" | "NONE";
+}
+
+export interface TTMSqueezeInfo {
+  isSqueezeOn: boolean; // BB inside Keltner Channel
+  squeezeFired: boolean; // Squeeze just released
+  momentum: number;
+  momentumDirection: "INCREASING_BULL" | "DECREASING_BULL" | "INCREASING_BEAR" | "DECREASING_BEAR";
+  histogramColor: "LIME" | "GREEN" | "RED" | "MAROON";
+}
+
+export interface KeltnerChannelPoint {
+  upper: number;
+  middle: number;
+  lower: number;
+}
+
+export interface DonchianChannelPoint {
+  upper: number;
+  middle: number;
+  lower: number;
+}
+
+export interface AdvancedVolatilitySuite {
+  garmanKlassVol: number;
+  yangZhangVol: number;
+  parkinsonVol: number;
+  standardDevVol: number;
+  ulcerIndex: number;
+  volatilityRegime: "EXTREME_LOW" | "NORMAL_EXPANSION" | "HIGH_CLIMAX";
+}
+
+export interface CMFInfo {
+  cmf: number;
+  capitalFlow: "STRONG_ACCUMULATION" | "MILD_ACCUMULATION" | "DISTRIBUTION" | "HEAVY_DISTRIBUTION";
+}
+
+export interface MFIInfo {
+  mfi: number;
+  isOverbought: boolean;
+  isOversold: boolean;
+}
+
+export interface HurstExponentInfo {
+  hurst: number; // 0.0 - 1.0
+  marketCharacter: "PERSISTENT_TRENDING" | "RANDOM_WALK_BROWNIAN" | "MEAN_REVERTING_ANTI_PERSISTENT";
+  confidence: number;
+  interpretation: string;
+}
+
+export interface KalmanFilterPoint {
+  filteredPrice: number;
+  estimationError: number;
+  innovativeResidual: number;
+}
+
+export interface ShannonEntropyInfo {
+  entropy: number; // bits
+  normalizedEntropy: number; // 0 - 1
+  orderliness: "HIGHLY_ORDERED_TREND" | "MODERATE_ENTROPY" | "MAXIMUM_CHAOS_NOISE";
+}
+
+export interface HalfLifeInfo {
+  halfLifeCandles: number;
+  reversionVelocity: "FAST_SCALP" | "MEDIUM_SWING" | "NON_MEAN_REVERTING";
+}
+
+export interface EhlersMESAInfo {
+  dominantCyclePeriod: number; // Period in bars
+  inPhase: number;
+  quadrature: number;
+  phaseAngle: number;
+  cycleState: "CYCLE_MODE" | "TREND_MODE";
+}
+
+export interface HarmonicPatternMatch {
+  patternName: "GARTLEY" | "BAT" | "BUTTERFLY" | "CRAB" | "CYPHER" | "SHARK" | "ABCD";
+  type: "BULLISH" | "BEARISH";
+  points: {
+    X: { index: number; price: number };
+    A: { index: number; price: number };
+    B: { index: number; price: number };
+    C: { index: number; price: number };
+    D: { index: number; price: number };
+  };
+  prz: { min: number; max: number }; // Potential Reversal Zone
+  confluenceScore: number; // 0 - 100%
+  targetTP1: number;
+  targetTP2: number;
+  invalidationSL: number;
+}
+
+export interface HarmonicScanResult {
+  hasPattern: boolean;
+  patterns: HarmonicPatternMatch[];
+  bestPattern: HarmonicPatternMatch | null;
+}
+
+export interface CandlestickPatternMatch {
+  pattern:
+    | "BULLISH_ENGULFING"
+    | "BEARISH_ENGULFING"
+    | "HAMMER_PINBAR"
+    | "SHOOTING_STAR_PINBAR"
+    | "MORNING_STAR"
+    | "EVENING_STAR"
+    | "DOJI_STAR"
+    | "DRAGONFLY_DOJI"
+    | "GRAVESTONE_DOJI"
+    | "MARUBOZU_BULL"
+    | "MARUBOZU_BEAR"
+    | "BULLISH_HARAMI"
+    | "BEARISH_HARAMI"
+    | "THREE_WHITE_SOLDIERS"
+    | "THREE_BLACK_CROWS"
+    | "TWEEZER_BOTTOM"
+    | "TWEEZER_TOP"
+    | "INSIDE_BAR_BREAKOUT";
+  category: "BULLISH_REVERSAL" | "BEARISH_REVERSAL" | "CONTINUATION" | "INDECISION";
+  confidence: number; // 0 - 100%
+  candleIndex: number;
+  description: string;
+}
+
+export interface CandlestickScanResult {
+  detectedPatterns: CandlestickPatternMatch[];
+  dominantSignal: "BULLISH" | "BEARISH" | "NEUTRAL";
+  overallScore: number; // -100 to +100
+}
+
+export interface MasterIndicatorSuite {
+  trend: {
+    kama: KAMAInfo;
+    hma: HMAInfo;
+    sar: ParabolicSARPoint;
+    aroon: AroonInfo;
+    vortex: VortexInfo;
+  };
+  momentum: {
+    fisher: FisherTransformPoint;
+    connorsRSI: ConnorsRSIInfo;
+    tsi: TSIInfo;
+    awesomeOsc: AwesomeOscillatorPoint;
+  };
+  volatility: {
+    ttmSqueeze: TTMSqueezeInfo;
+    advancedVol: AdvancedVolatilitySuite;
+    keltner: KeltnerChannelPoint;
+    donchian: DonchianChannelPoint;
+  };
+  volume: {
+    cmf: CMFInfo;
+    mfi: MFIInfo;
+  };
+  quantMath: {
+    hurst: HurstExponentInfo;
+    kalman: KalmanFilterPoint;
+    entropy: ShannonEntropyInfo;
+    halfLife: HalfLifeInfo;
+  };
+  dspCycles: {
+    ehlersMESA: EhlersMESAInfo;
+  };
+  harmonics: HarmonicScanResult;
+  candlestick: CandlestickScanResult;
 }
 
 export interface TelegramConfig {
