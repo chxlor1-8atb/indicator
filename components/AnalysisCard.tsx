@@ -164,6 +164,11 @@ export default function AnalysisCard({
     const permImpact = analysis.tradeSetup.permanentPriceImpact || analysis.permanentPriceImpact;
     const algoFoot = analysis.tradeSetup.algoExecutionFootprint || analysis.algoExecutionFootprint;
     const execAlpha = analysis.tradeSetup.executionAlpha || analysis.executionAlpha;
+    const quantum = analysis.tradeSetup.quantumProbabilityVector || analysis.quantumProbabilityVector;
+    const mfHurst = analysis.tradeSetup.multiFractalHurst || analysis.multiFractalHurst;
+    const fillSlip = analysis.tradeSetup.fillProbabilitySlippage || analysis.fillProbabilitySlippage;
+    const dpGamma = analysis.tradeSetup.darkPoolDealerGamma || analysis.darkPoolDealerGamma;
+    const sovAlpha = analysis.tradeSetup.sovereignSingularityAlpha || analysis.sovereignSingularityAlpha;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -172,6 +177,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (sovAlpha ? `• 🌌 Grand Milestone 100 Sovereign Singularity: [${sovAlpha.milestone100Grade}] Score ${sovAlpha.sovereignAlphaScore}/100 (Convergence: ${sovAlpha.singularityState} | Rec: ${sovAlpha.singularityRecommendation} | Lock 23: ${sovAlpha.safetyLock23Passed ? "PASSED" : "BLOCKED"})\n` : "") +
+      (quantum ? `• 🔮 Quantum Probability: |Up⟩ ${(quantum.stateVector.psiUp * 100).toFixed(0)}% vs |Down⟩ ${(quantum.stateVector.psiDown * 100).toFixed(0)}% (Entropy: ${quantum.shannonVonNeumannEntropy} bits | Coherence: ${quantum.quantumCoherenceScore}/100 - ${quantum.collapseState})\n` : "") +
+      (mfHurst ? `• 🧬 Multi-Fractal Cascades: [${mfHurst.cascadePersistenceState}] H(2): ${mfHurst.generalizedHurstQ2} (Singularity Δα: ${mfHurst.singularitySpectrumWidth} | Confluence: ${mfHurst.timeframeCascadesConfluencePct}%)\n` : "") +
+      (fillSlip ? `• 🎯 Fill Probability & Slippage: [${fillSlip.fillEfficiencyGrade}] Slippage: ~${fillSlip.forecastedSlippagePips} pips (Limit Fill: ${fillSlip.limitFillProbabilityPct}% | Style: ${fillSlip.recommendedExecutionStyle})\n` : "") +
+      (dpGamma ? `• 🌊 Dark Pool Dealer Gamma: [${dpGamma.gammaRegime}] GEX: ${dpGamma.netDealerGammaExposureScore} (Flip: ${dpGamma.syntheticGammaFlipLevel} | Pin: ${dpGamma.estimatedPinningStrike} | Index: ${dpGamma.darkPoolHiddenInventoryIndex}/100)\n` : "") +
       (leadLag ? `• 🌐 Cross-Market Lead-Lag: [${leadLag.leadState}] (Lag: ${leadLag.leadLagLagPeriods} bars | r: ${leadLag.leadCorrelationCoefficient} | Lead: +${leadLag.predictiveLeadPips} pips)\n` : "") +
       (liqRepl ? `• ⚡ Liquidity Replenishment: [${liqRepl.liquidityStickiness}] Velocity: ${liqRepl.replenishmentVelocityScore}/100 (Cancel: ${liqRepl.cancellationRatePct}% | Half-life: ${liqRepl.replenishmentHalfLifeSeconds}s)\n` : "") +
       (permImpact ? `• 🏛️ Hasbrouck Permanent Impact: [${permImpact.priceDiscoveryRegime}] (Permanent: ${(permImpact.permanentImpactRatio * 100).toFixed(0)}% | Informed: ${permImpact.informationAsymmetryPct}% - Reversion: ${permImpact.transitoryReversionPips} pips)\n` : "") +
@@ -449,7 +459,7 @@ export default function AnalysisCard({
             }`}
           >
             <Cpu className="w-4 h-4" />
-            <span>คลังอินดิเคเตอร์ 95 ตัวเชิงลึก (Deep Quant Lab)</span>
+            <span>คลังอินดิเคเตอร์ 100 ตัวเชิงลึก (Deep Quant Lab - Milestone 100 Complete)</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
               รันในพื้นหลัง
             </span>
@@ -459,7 +469,7 @@ export default function AnalysisCard({
         <span className="text-[11px] text-slate-500 hidden md:inline font-medium">
           {activeCardTab === "STRATEGY"
             ? "🛡️ คัดกรองกลยุทธ์ & ป้องกันสัญญาณตีกัน"
-            : "⚡ คำนวณเบื้องหลัง 95 เครื่องมือแบบเรียลไทม์"}
+            : "⚡ คำนวณเบื้องหลัง 100 เครื่องมือแบบเรียลไทม์ (100% Roadmap Complete)"}
         </span>
       </div>
 
@@ -4848,6 +4858,239 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.executionAlpha.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5t. 🌌 Grand Quantum Singularity Alpha Engine (Plans 96-100: Grand Milestone 100 Final Frontier) */}
+      {(analysis.quantumProbabilityVector || analysis.multiFractalHurst || analysis.fillProbabilitySlippage || analysis.darkPoolDealerGamma || analysis.sovereignSingularityAlpha) && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-purple-950/30 via-surface-100 to-indigo-950/30 border border-purple-500/40 space-y-3.5 shadow-lg shadow-purple-950/20">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                <Sparkles className="w-4 h-4 text-purple-300" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>🌌 Grand Quantum Singularity Alpha Engine (แผน 96-100)</span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white border border-purple-400 shadow-sm animate-pulse">
+                    Milestone 100 Finale (100% Roadmap Complete)
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  พลวัต Quantum Waveform Collapse, Multifractal Hurst Cascades, Dark Pool GEX และเกราะคุ้มกันสูงสุด Master Singularity Shield
+                </p>
+              </div>
+            </div>
+            {analysis.sovereignSingularityAlpha && (
+              <div className="flex items-center gap-1.5">
+                <span className={`text-[10px] px-2.5 py-1 rounded-lg border font-mono font-black ${
+                  analysis.sovereignSingularityAlpha.safetyLock23Passed
+                    ? "bg-purple-500/20 text-purple-200 border-purple-400/50"
+                    : "bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse"
+                }`}>
+                  {analysis.sovereignSingularityAlpha.safetyLock23Passed ? "🛡️ MASTER SINGULARITY SHIELD: PASSED" : "⛔ DECOHERENCE / GEX ALERT"}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Quantum Probability State Vector & Waveform Collapse (Plan 96) */}
+            {analysis.quantumProbabilityVector && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-purple-500/30 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-purple-200">🔮 Quantum Probability Vector</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                    analysis.quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  }`}>
+                    {analysis.quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH"
+                      ? "↑ |Up⟩ Collapse"
+                      : analysis.quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH"
+                      ? "↓ |Down⟩ Collapse"
+                      : "Ψ Superposition"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Amplitudes |ψ|²:</span>
+                    <span className="font-mono text-[10px] font-bold">
+                      <span className="text-emerald-400">{(analysis.quantumProbabilityVector.stateVector.psiUp * 100).toFixed(0)}% Up</span> / <span className="text-rose-400">{(analysis.quantumProbabilityVector.stateVector.psiDown * 100).toFixed(0)}% Dn</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Coherence / Horizon:</span>
+                    <span className="font-mono text-[10px] font-bold text-white">
+                      <span className="text-cyan-400">{analysis.quantumProbabilityVector.quantumCoherenceScore}/100</span> (~{analysis.quantumProbabilityVector.decoherenceTimeframeBars} bars)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">von Neumann Entropy:</span>
+                    <span className="font-mono text-[10px] font-bold text-indigo-300">
+                      {analysis.quantumProbabilityVector.shannonVonNeumannEntropy} bits
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.quantumProbabilityVector.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Cross-Timeframe Multi-Fractal Hurst Cascades (Plan 97) */}
+            {analysis.multiFractalHurst && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-indigo-500/30 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-indigo-200">🧬 Multi-Fractal Hurst Cascades</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                    analysis.multiFractalHurst.cascadePersistenceState === "PERSISTENT_MULTIFRACTAL_SUPER_TREND"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.multiFractalHurst.cascadePersistenceState === "ANTIPERSISTENT_MEAN_REVERTING"
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                      : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                  }`}>
+                    {analysis.multiFractalHurst.cascadePersistenceState === "PERSISTENT_MULTIFRACTAL_SUPER_TREND"
+                      ? "⚡ Super-Trend"
+                      : analysis.multiFractalHurst.cascadePersistenceState === "ANTIPERSISTENT_MEAN_REVERTING"
+                      ? "🔄 Mean-Reverting"
+                      : "🎲 Monofractal"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">H(q) Spectrum:</span>
+                    <span className="font-mono text-[10px] font-bold text-white">
+                      H(2): <span className="text-amber-300">{analysis.multiFractalHurst.generalizedHurstQ2}</span> | H(0): {analysis.multiFractalHurst.generalizedHurstQ0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Spectrum Width Δα:</span>
+                    <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                      {analysis.multiFractalHurst.singularitySpectrumWidth} (Cascade: {analysis.multiFractalHurst.timeframeCascadesConfluencePct}%)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Left-Tail H(-2):</span>
+                    <span className="font-mono text-slate-300 text-[10px] font-bold">
+                      {analysis.multiFractalHurst.generalizedHurstQMinus2}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.multiFractalHurst.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Fill Probability & Slippage (Plan 98) & Dark Pool Gamma (Plan 99) */}
+            {(analysis.fillProbabilitySlippage || analysis.darkPoolDealerGamma) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-cyan-500/30 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-cyan-200">🎯 Slippage & Dark Pool GEX</span>
+                  {analysis.darkPoolDealerGamma && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                      analysis.darkPoolDealerGamma.gammaRegime === "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : analysis.darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION"
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                        : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                    }`}>
+                      {analysis.darkPoolDealerGamma.gammaRegime === "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION"
+                        ? "+GEX Suppression"
+                        : analysis.darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION"
+                        ? "-GEX Explosion"
+                        : "GEX Neutral"}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.fillProbabilitySlippage && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Fill Prob / Slippage:</span>
+                        <span className="font-mono text-[10px] font-bold text-white">
+                          <span className="text-emerald-400">{analysis.fillProbabilitySlippage.limitFillProbabilityPct}%</span> (~{analysis.fillProbabilitySlippage.forecastedSlippagePips} pips)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Exec Style:</span>
+                        <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                          {analysis.fillProbabilitySlippage.recommendedExecutionStyle}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {analysis.darkPoolDealerGamma && (
+                    <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-slate-800/60">
+                      <span className="text-slate-400">GEX Score / Pin Strike:</span>
+                      <span className="font-mono text-[10px] font-bold text-amber-300">
+                        {analysis.darkPoolDealerGamma.netDealerGammaExposureScore} (Pin: {analysis.darkPoolDealerGamma.estimatedPinningStrike})
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.fillProbabilitySlippage?.description || analysis.darkPoolDealerGamma?.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Grand Milestone 100 Sovereign Singularity Alpha & Safety Lock 23 (Plan 100) */}
+            {analysis.sovereignSingularityAlpha && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-purple-400/50 space-y-2 shadow-sm shadow-purple-500/10">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-fuchsia-300 font-black flex items-center gap-1">
+                    <span>🌌</span> Grand Milestone 100
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-black ${
+                    analysis.sovereignSingularityAlpha.safetyLock23Passed
+                      ? "bg-gradient-to-r from-purple-500 to-indigo-600 text-white border border-purple-400 shadow-sm"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                  }`}>
+                    {analysis.sovereignSingularityAlpha.safetyLock23Passed ? "👑 S-TIER SINGULARITY" : "⛔ SHIELD LOCK 23"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Sovereign Alpha:</span>
+                    <span className="font-mono font-black text-amber-300 text-[10px]">
+                      {analysis.sovereignSingularityAlpha.sovereignAlphaScore} / 100 [{analysis.sovereignSingularityAlpha.milestone100Grade}]
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Convergence:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.sovereignSingularityAlpha.singularityState === "SINGULARITY_CONVERGENCE_BUY"
+                        ? "text-emerald-400"
+                        : analysis.sovereignSingularityAlpha.singularityState === "SINGULARITY_CONVERGENCE_SELL"
+                        ? "text-rose-400"
+                        : "text-amber-300"
+                    }`}>
+                      {analysis.sovereignSingularityAlpha.singularityState}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Active Pillars:</span>
+                    <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                      {analysis.sovereignSingularityAlpha.activeQuantPillarsCount} / 23 เสาหลัก (100 Indicators)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-slate-800/60">
+                    <span className="text-slate-400">Recommendation:</span>
+                    <span className="font-mono text-[10px] font-bold text-fuchsia-300">
+                      {analysis.sovereignSingularityAlpha.singularityRecommendation}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.sovereignSingularityAlpha.description}
                 </p>
               </div>
             )}

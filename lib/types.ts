@@ -706,6 +706,11 @@ export interface IndicatorData {
   permanentPriceImpact?: PermanentPriceImpactInfo;
   algoExecutionFootprint?: AlgorithmicExecutionFootprintInfo;
   executionAlpha?: InstitutionalExecutionAlphaInfo;
+  quantumProbabilityVector?: QuantumProbabilityVectorInfo;
+  multiFractalHurst?: MultiFractalHurstCascadesInfo;
+  fillProbabilitySlippage?: FillProbabilitySlippageInfo;
+  darkPoolDealerGamma?: DarkPoolDealerGammaExposureInfo;
+  sovereignSingularityAlpha?: SovereignSingularityAlphaInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -882,6 +887,11 @@ export interface AnalysisResult {
   permanentPriceImpact?: PermanentPriceImpactInfo;
   algoExecutionFootprint?: AlgorithmicExecutionFootprintInfo;
   executionAlpha?: InstitutionalExecutionAlphaInfo;
+  quantumProbabilityVector?: QuantumProbabilityVectorInfo;
+  multiFractalHurst?: MultiFractalHurstCascadesInfo;
+  fillProbabilitySlippage?: FillProbabilitySlippageInfo;
+  darkPoolDealerGamma?: DarkPoolDealerGammaExposureInfo;
+  sovereignSingularityAlpha?: SovereignSingularityAlphaInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -1000,6 +1010,11 @@ export interface AnalysisResult {
     permanentPriceImpact?: PermanentPriceImpactInfo;
     algoExecutionFootprint?: AlgorithmicExecutionFootprintInfo;
     executionAlpha?: InstitutionalExecutionAlphaInfo;
+    quantumProbabilityVector?: QuantumProbabilityVectorInfo;
+    multiFractalHurst?: MultiFractalHurstCascadesInfo;
+    fillProbabilitySlippage?: FillProbabilitySlippageInfo;
+    darkPoolDealerGamma?: DarkPoolDealerGammaExposureInfo;
+    sovereignSingularityAlpha?: SovereignSingularityAlphaInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1709,5 +1724,64 @@ export interface InstitutionalExecutionAlphaInfo {
   activeMicrostructurePillarsCount: number; // out of 22
   safetyLock22Passed: boolean;
   executionAlphaRecommendation: "AGGRESSIVE_FRONT_RUN_ALGO" | "PATIENT_LIQUIDITY_CAPTURE" | "HALT_SPOOFING_ALERT";
+  description: string;
+}
+
+// ─── BATCH 20 (PLANS 96-100: GRAND QUANTUM SINGULARITY MILESTONE 100 - THE ULTIMATE FINALE) ───
+
+export interface QuantumProbabilityVectorInfo {
+  stateVector: {
+    psiUp: number; // Amplitude squared |α|² (0.0 to 1.0)
+    psiDown: number; // Amplitude squared |β|² (0.0 to 1.0)
+    psiFlat: number; // Amplitude squared |γ|² (0.0 to 1.0)
+  };
+  quantumCoherenceScore: number; // 0 to 100 (state coherence before decoherence)
+  collapseState: "SUPERPOSITION_RESOLVING_BULLISH" | "SUPERPOSITION_RESOLVING_BEARISH" | "MAXIMAL_SUPERPOSITION_ENTANGLED";
+  shannonVonNeumannEntropy: number; // Quantum entropy (0.0 to 1.585 bits)
+  decoherenceTimeframeBars: number; // Expected bars before wavefunction collapse
+  safetyLock23Passed: boolean;
+  description: string;
+}
+
+export interface MultiFractalHurstCascadesInfo {
+  generalizedHurstQMinus2: number; // H(q = -2) left tail / small fluctuations
+  generalizedHurstQ0: number; // H(q = 0) median scale
+  generalizedHurstQ2: number; // H(q = +2) classical Hurst exponent
+  singularitySpectrumWidth: number; // Δα = α_max - α_min (degree of multifractality)
+  cascadePersistenceState: "PERSISTENT_MULTIFRACTAL_SUPER_TREND" | "ANTIPERSISTENT_MEAN_REVERTING" | "MONOFRACTAL_GAUSSIAN_RANDOM";
+  timeframeCascadesConfluencePct: number; // 0 to 100% across M1-D1 cascades
+  description: string;
+}
+
+export interface FillProbabilitySlippageInfo {
+  forecastedSlippagePips: number; // Expected execution slippage in pips
+  limitFillProbabilityPct: number; // 0 to 100% (probability of limit order fill within 3 bars)
+  effectiveSpreadPips: number; // Half-spread + price impact
+  adverseSelectionPenaltyPips: number; // Loss expected to informed order flow
+  recommendedExecutionStyle: "IMMEDIATE_CROSS_ZERO_SLIPPAGE" | "PASSIVE_POST_ONLY_LIMIT" | "AGGRESSIVE_SWEEP_ALLOWED" | "HALT_HIGH_SLIPPAGE_RISK";
+  fillEfficiencyGrade: "A_PERFECT_FILL" | "B_MODERATE_FRICTION" | "C_HIGH_SLIPPAGE_HAZARD";
+  description: string;
+}
+
+export interface DarkPoolDealerGammaExposureInfo {
+  netDealerGammaExposureScore: number; // -100 to +100 (synthetic GEX proxy)
+  gammaRegime: "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION" | "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION" | "GAMMA_FLIP_NEUTRAL_ZONE";
+  syntheticGammaFlipLevel: number; // Price level where dealer delta hedging inverts
+  estimatedPinningStrike: number; // Magnet strike price where gamma concentration pulls spot
+  darkPoolHiddenInventoryIndex: number; // 0 to 100 (proxy of unprinted institutional volume)
+  volatilityAccelerationRisk: "HIGH_ACCELERATION_RISK" | "COMPRESSED_PINNING_STABLE" | "NORMAL_DRIFT";
+  description: string;
+}
+
+export interface SovereignSingularityAlphaInfo {
+  sovereignAlphaScore: number; // 0 to 100
+  milestone100Grade: "S_TIER_SOVEREIGN_SINGULARITY" | "A_TIER_INSTITUTIONAL_SUPREMACY" | "B_TIER_BALANCED_ALPHA" | "F_TIER_CHAOS_LOCKOUT";
+  singularityState: "SINGULARITY_CONVERGENCE_BUY" | "SINGULARITY_CONVERGENCE_SELL" | "SINGULARITY_NEUTRAL_HOLD";
+  activeQuantPillarsCount: number; // 23 out of 23
+  totalIndicatorsSynthesizedCount: number; // 100 out of 100
+  safetyLock23Passed: boolean; // Master Singularity Shield
+  safetyLocksPassedCount: number; // 23
+  grandSingularityShieldActive: boolean;
+  singularityRecommendation: "MAXIMAL_CONVICTION_EXECUTION" | "TACTICAL_PROBABILITY_PLAY" | "DEFENSIVE_CAPITAL_PRESERVATION";
   description: string;
 }

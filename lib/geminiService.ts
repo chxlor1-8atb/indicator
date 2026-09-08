@@ -90,6 +90,11 @@ import {
   PermanentPriceImpactInfo,
   AlgorithmicExecutionFootprintInfo,
   InstitutionalExecutionAlphaInfo,
+  QuantumProbabilityVectorInfo,
+  MultiFractalHurstCascadesInfo,
+  FillProbabilitySlippageInfo,
+  DarkPoolDealerGammaExposureInfo,
+  SovereignSingularityAlphaInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -184,6 +189,11 @@ import {
   calculatePermanentPriceImpact,
   detectAlgorithmicExecutionFootprint,
   synthesizeInstitutionalExecutionAlpha,
+  calculateQuantumProbabilityVector,
+  calculateMultiFractalHurstCascades,
+  forecastFillProbabilityAndSlippage,
+  calculateDarkPoolDealerGammaExposure,
+  synthesizeSovereignSingularityQuantAlpha,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -546,6 +556,20 @@ export function generateRuleBasedAnalysis(
     22
   );
 
+  // ─── BATCH 20 PRE-COMPUTATIONS (PLANS 96-100: GRAND QUANTUM SINGULARITY MILESTONE 100) ───
+  const quantumProbabilityVector = indicators.quantumProbabilityVector || calculateQuantumProbabilityVector(candles, precision);
+  const multiFractalHurst = indicators.multiFractalHurst || calculateMultiFractalHurstCascades(candles);
+  const fillProbabilitySlippage = indicators.fillProbabilitySlippage || forecastFillProbabilityAndSlippage(candles, precision, indicators.orderBookImbalance);
+  const darkPoolDealerGamma = indicators.darkPoolDealerGamma || calculateDarkPoolDealerGammaExposure(candles, precision);
+  const sovereignSingularityAlpha = indicators.sovereignSingularityAlpha || synthesizeSovereignSingularityQuantAlpha(
+    quantumProbabilityVector,
+    multiFractalHurst,
+    fillProbabilitySlippage,
+    darkPoolDealerGamma,
+    executionAlpha,
+    23
+  );
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = Math.max(75, adaptiveConfig?.minScoreThreshold ?? 75);
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -761,7 +785,22 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 30);
     executionAlpha.safetyLock22Passed = false;
   }
-  // SAFETY LOCK 23: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
+  // SAFETY LOCK 23/FINAL: Grand Quantum Singularity Master Shield [แผน 100]
+  else if (
+    !sovereignSingularityAlpha.safetyLock23Passed ||
+    !quantumProbabilityVector.safetyLock23Passed ||
+    (tier1Bias === "BULLISH" && quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH" && quantumProbabilityVector.stateVector.psiDown >= 0.60) ||
+    (tier1Bias === "BEARISH" && quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH" && quantumProbabilityVector.stateVector.psiUp >= 0.60) ||
+    (darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION" && fillProbabilitySlippage.fillEfficiencyGrade === "C_HIGH_SLIPPAGE_HAZARD") ||
+    sovereignSingularityAlpha.milestone100Grade === "F_TIER_CHAOS_LOCKOUT"
+  ) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 30);
+    sovereignSingularityAlpha.safetyLock23Passed = false;
+    quantumProbabilityVector.safetyLock23Passed = false;
+  }
+  // SAFETY LOCK 24: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
   else if (
     regimeInfo.regime !== "VOLATILITY_SQUEEZE" &&
     ((indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 20) ||
@@ -772,7 +811,7 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
   }
-  // SAFETY LOCK 24: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
+  // SAFETY LOCK 25: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
   else if (
     (tier1Bias === "BULLISH" && (mtfMatrix.h4 === "BEARISH" || mtfStructureMatrix.htfTrend === "BEARISH" || (mtfMatrix.alignmentScore ?? 0) <= -25)) ||
     (tier1Bias === "BEARISH" && (mtfMatrix.h4 === "BULLISH" || mtfStructureMatrix.htfTrend === "BULLISH" || (mtfMatrix.alignmentScore ?? 0) >= 25)) ||
@@ -845,6 +884,11 @@ export function generateRuleBasedAnalysis(
     if (permanentPriceImpact.priceDiscoveryRegime === "INFORMED_INSTITUTIONAL_DRIVE" && permanentPriceImpact.informationAsymmetryPct >= 60) confidence = Math.min(98, confidence + 4);
     if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_BUYING_PROGRAM") confidence = Math.min(98, confidence + 5);
     if (executionAlpha.milestone95Grade === "S_TIER_ALPHA_SNIPER") confidence = Math.min(98, confidence + 5);
+    if (quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH" && quantumProbabilityVector.stateVector.psiUp >= 0.55) confidence = Math.min(99, confidence + 5);
+    if (multiFractalHurst.cascadePersistenceState === "PERSISTENT_MULTIFRACTAL_SUPER_TREND") confidence = Math.min(99, confidence + 4);
+    if (fillProbabilitySlippage.fillEfficiencyGrade === "A_PERFECT_FILL") confidence = Math.min(99, confidence + 4);
+    if (darkPoolDealerGamma.gammaRegime === "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION" || darkPoolDealerGamma.netDealerGammaExposureScore > 0) confidence = Math.min(99, confidence + 4);
+    if (sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY") confidence = Math.min(99, confidence + 6);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -905,6 +949,11 @@ export function generateRuleBasedAnalysis(
     if (permanentPriceImpact.priceDiscoveryRegime === "INFORMED_INSTITUTIONAL_DRIVE" && permanentPriceImpact.informationAsymmetryPct >= 60) confidence = Math.min(98, confidence + 4);
     if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_SELLING_PROGRAM") confidence = Math.min(98, confidence + 5);
     if (executionAlpha.milestone95Grade === "S_TIER_ALPHA_SNIPER") confidence = Math.min(98, confidence + 5);
+    if (quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH" && quantumProbabilityVector.stateVector.psiDown >= 0.55) confidence = Math.min(99, confidence + 5);
+    if (multiFractalHurst.cascadePersistenceState === "PERSISTENT_MULTIFRACTAL_SUPER_TREND") confidence = Math.min(99, confidence + 4);
+    if (fillProbabilitySlippage.fillEfficiencyGrade === "A_PERFECT_FILL") confidence = Math.min(99, confidence + 4);
+    if (darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION" || darkPoolDealerGamma.netDealerGammaExposureScore < 0) confidence = Math.min(99, confidence + 4);
+    if (sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY") confidence = Math.min(99, confidence + 6);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -1229,12 +1278,19 @@ export function generateRuleBasedAnalysis(
       note: `${crossMarketLeadLag.description} • ${liquidityReplenishment.description} • ${permanentPriceImpact.description} • ${algoExecutionFootprint.description} • ${executionAlpha.description}`,
     },
     {
-      name: `Pillar 23: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
+      name: `Pillar 23: Grand Quantum Singularity & Dark Pool Alpha Matrix (Quantum: ${quantumProbabilityVector.collapseState} | GEX: ${darkPoolDealerGamma.gammaRegime} | Milestone 100: ${sovereignSingularityAlpha.milestone100Grade})`,
+      passed: ((tradeAction === "BUY" && (quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH" || darkPoolDealerGamma.gammaRegime === "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION" || sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY")) ||
+              (tradeAction === "SELL" && (quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH" || darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION" || sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY")) ||
+              sovereignSingularityAlpha.safetyLock23Passed) ?? false,
+      note: `${quantumProbabilityVector.description} • ${multiFractalHurst.description} • ${fillProbabilitySlippage.description} • ${darkPoolDealerGamma.description} • ${sovereignSingularityAlpha.description}`,
+    },
+    {
+      name: `Pillar 24: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
       passed: (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) >= 22) ?? true,
       note: `กรองสภาวะตลาดไร้แนวโน้ม ป้องกันการออกออเดอร์ในกรอบ Sideways (ADX >= 22 และ EMA50 Slope สอดคล้องทิศทางเทรนด์)`,
     },
     {
-      name: `Pillar 24: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
+      name: `Pillar 25: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
       passed: !isCounterTrend && !mtfStructureMatrix.isHTFConflict && !(harmonics.hasPattern && ((tradeAction === "BUY" && harmonics.bestPattern?.type === "BEARISH") || (tradeAction === "SELL" && harmonics.bestPattern?.type === "BULLISH"))),
       note: `Macro HTF Alignment: ${mtfMatrix.h4}/${mtfMatrix.d1} (Score: ${mtfMatrix.alignmentScore}%) • Harmonic PRZ Guard: ${harmonics.hasPattern ? `${harmonics.bestPattern?.patternName} (${harmonics.bestPattern?.type})` : "Clear"} • VSA: ${footprintAbsorption.vsaSignal}`,
     },
@@ -1344,6 +1400,11 @@ export function generateRuleBasedAnalysis(
     permanentPriceImpact,
     algoExecutionFootprint,
     executionAlpha,
+    quantumProbabilityVector,
+    multiFractalHurst,
+    fillProbabilitySlippage,
+    darkPoolDealerGamma,
+    sovereignSingularityAlpha,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -1437,6 +1498,11 @@ export function generateRuleBasedAnalysis(
         `Hasbrouck Permanent Impact: [${permanentPriceImpact.priceDiscoveryRegime}] (Permanent: ${(permanentPriceImpact.permanentImpactRatio * 100).toFixed(0)}% | Informed: ${permanentPriceImpact.informationAsymmetryPct}% - Reversion: ${permanentPriceImpact.transitoryReversionPips} pips)`,
         `Algorithmic Footprint: [${algoExecutionFootprint.algoType}] (Bias: ${algoExecutionFootprint.institutionalExecutionBias} | Cadence: ${algoExecutionFootprint.cadenceRegularityScore}/100 | Remaining: ~${algoExecutionFootprint.estimatedRemainingBars} bars)`,
         `Milestone 95 Execution Alpha: [${executionAlpha.milestone95Grade}] Score: ${executionAlpha.executionAlphaScore}/100 (Rec: ${executionAlpha.executionAlphaRecommendation} | Lock 22: ${executionAlpha.safetyLock22Passed ? "PASSED" : "BLOCKED"})`,
+        `Quantum Probability Vector: |Up⟩ ${(quantumProbabilityVector.stateVector.psiUp * 100).toFixed(0)}% vs |Down⟩ ${(quantumProbabilityVector.stateVector.psiDown * 100).toFixed(0)}% (Entropy: ${quantumProbabilityVector.shannonVonNeumannEntropy} bits | Coherence: ${quantumProbabilityVector.quantumCoherenceScore}/100 - ${quantumProbabilityVector.collapseState})`,
+        `Multi-Fractal Hurst Cascades: [${multiFractalHurst.cascadePersistenceState}] H(2): ${multiFractalHurst.generalizedHurstQ2} (Singularity Width Δα: ${multiFractalHurst.singularitySpectrumWidth} | Cascade Confluence: ${multiFractalHurst.timeframeCascadesConfluencePct}%)`,
+        `Fill Probability & Slippage: [${fillProbabilitySlippage.fillEfficiencyGrade}] Slippage: ~${fillProbabilitySlippage.forecastedSlippagePips} pips (Limit Fill: ${fillProbabilitySlippage.limitFillProbabilityPct}% | Style: ${fillProbabilitySlippage.recommendedExecutionStyle})`,
+        `Dark Pool Dealer Gamma: [${darkPoolDealerGamma.gammaRegime}] GEX: ${darkPoolDealerGamma.netDealerGammaExposureScore} (Flip: ${darkPoolDealerGamma.syntheticGammaFlipLevel} | Pin: ${darkPoolDealerGamma.estimatedPinningStrike} | Dark Pool Index: ${darkPoolDealerGamma.darkPoolHiddenInventoryIndex}/100)`,
+        `Grand Milestone 100 Sovereign Singularity: [${sovereignSingularityAlpha.milestone100Grade}] Score: ${sovereignSingularityAlpha.sovereignAlphaScore}/100 (Convergence: ${sovereignSingularityAlpha.singularityState} | Rec: ${sovereignSingularityAlpha.singularityRecommendation} | Lock 23: ${sovereignSingularityAlpha.safetyLock23Passed ? "PASSED" : "BLOCKED"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -1550,6 +1616,11 @@ export function generateRuleBasedAnalysis(
       permanentPriceImpact,
       algoExecutionFootprint,
       executionAlpha,
+      quantumProbabilityVector,
+      multiFractalHurst,
+      fillProbabilitySlippage,
+      darkPoolDealerGamma,
+      sovereignSingularityAlpha,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1945,6 +2016,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.permanentPriceImpact = ruleAnalysis.permanentPriceImpact;
     parsed.algoExecutionFootprint = ruleAnalysis.algoExecutionFootprint;
     parsed.executionAlpha = ruleAnalysis.executionAlpha;
+    parsed.quantumProbabilityVector = ruleAnalysis.quantumProbabilityVector;
+    parsed.multiFractalHurst = ruleAnalysis.multiFractalHurst;
+    parsed.fillProbabilitySlippage = ruleAnalysis.fillProbabilitySlippage;
+    parsed.darkPoolDealerGamma = ruleAnalysis.darkPoolDealerGamma;
+    parsed.sovereignSingularityAlpha = ruleAnalysis.sovereignSingularityAlpha;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -2028,6 +2104,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.permanentPriceImpact = ruleAnalysis.tradeSetup.permanentPriceImpact;
       parsed.tradeSetup.algoExecutionFootprint = ruleAnalysis.tradeSetup.algoExecutionFootprint;
       parsed.tradeSetup.executionAlpha = ruleAnalysis.tradeSetup.executionAlpha;
+      parsed.tradeSetup.quantumProbabilityVector = ruleAnalysis.tradeSetup.quantumProbabilityVector;
+      parsed.tradeSetup.multiFractalHurst = ruleAnalysis.tradeSetup.multiFractalHurst;
+      parsed.tradeSetup.fillProbabilitySlippage = ruleAnalysis.tradeSetup.fillProbabilitySlippage;
+      parsed.tradeSetup.darkPoolDealerGamma = ruleAnalysis.tradeSetup.darkPoolDealerGamma;
+      parsed.tradeSetup.sovereignSingularityAlpha = ruleAnalysis.tradeSetup.sovereignSingularityAlpha;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;
