@@ -14,6 +14,7 @@ import {
   Zap,
   Clock,
   AlertOctagon,
+  Layers,
 } from "lucide-react";
 
 interface HeroExecutionHUDProps {
@@ -347,6 +348,68 @@ export default function HeroExecutionHUD({
             <span className="text-[10px] text-slate-400">Profit Factor:</span>
             <span className="text-xs font-black text-emerald-300 bg-surface-100 px-2 py-1 rounded-lg border border-slate-700">
               {analysis.optimizedConfig.profitFactor}x
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 4.5. CLASSIC TRIO CONFLUENCE STATUS (MA 20 • MA 50 • RSI 14) ─── */}
+      {analysis.classicTrio && (
+        <div className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs shadow-inner ${
+          analysis.classicTrio.alignment === "FULL_BULLISH_TRIO"
+            ? "bg-gradient-to-r from-emerald-950/40 via-teal-950/20 to-slate-900 border-emerald-500/40"
+            : analysis.classicTrio.alignment === "FULL_BEARISH_TRIO"
+            ? "bg-gradient-to-r from-rose-950/40 via-red-950/20 to-slate-900 border-rose-500/40"
+            : analysis.classicTrio.alignment === "PULLBACK_RETEST"
+            ? "bg-gradient-to-r from-sky-950/40 via-indigo-950/20 to-slate-900 border-sky-500/40"
+            : "bg-surface-50/70 border-slate-800"
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`p-1.5 rounded-lg border shrink-0 ${
+              analysis.classicTrio.isAligned
+                ? (analysis.classicTrio.signalBias === "BULLISH" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" : "bg-rose-500/20 text-rose-300 border-rose-500/40")
+                : "bg-surface-100 text-slate-400 border-slate-700"
+            }`}>
+              <Layers className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-black text-white text-xs tracking-wide">
+                  🎯 Classic Trio Confluence: MA(20) • MA(50) • RSI(14)
+                </span>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
+                  analysis.classicTrio.alignment === "FULL_BULLISH_TRIO"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                    : analysis.classicTrio.alignment === "FULL_BEARISH_TRIO"
+                    ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                    : analysis.classicTrio.alignment === "PULLBACK_RETEST"
+                    ? "bg-sky-500/20 text-sky-300 border-sky-500/40"
+                    : "bg-slate-800 text-slate-400 border-slate-700"
+                }`}>
+                  {analysis.classicTrio.alignment === "FULL_BULLISH_TRIO"
+                    ? "🟢 FULL BULLISH TRIO (+7.5% WR Boost)"
+                    : analysis.classicTrio.alignment === "FULL_BEARISH_TRIO"
+                    ? "🔴 FULL BEARISH TRIO (+7.5% WR Boost)"
+                    : analysis.classicTrio.alignment === "PULLBACK_RETEST"
+                    ? "🟡 PULLBACK RETEST (+5.0% WR Boost)"
+                    : "⚪ DIVERGENT (No Boost)"}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">
+                {analysis.classicTrio.summary}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-center font-mono text-[11px] shrink-0">
+            <span className="px-2 py-0.5 rounded bg-surface-100 border border-slate-800 text-cyan-300">
+              MA20: {analysis.classicTrio.ma20}
+            </span>
+            <span className="px-2 py-0.5 rounded bg-surface-100 border border-slate-800 text-amber-300">
+              MA50: {analysis.classicTrio.ma50}
+            </span>
+            <span className="px-2 py-0.5 rounded bg-surface-100 border border-slate-800 text-purple-300">
+              RSI: {analysis.classicTrio.rsi14} {analysis.classicTrio.rsi14 >= analysis.classicTrio.prevRsi14 ? "↗" : "↘"}
             </span>
           </div>
         </div>

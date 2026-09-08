@@ -703,6 +703,19 @@ export default function MarketChart({
     totalVolume += c.volume;
   });
 
+  const lastEma20 = indicators.ema20?.filter((v): v is number => v !== null && !isNaN(v)).pop();
+  const lastEma50 = indicators.ema50?.filter((v): v is number => v !== null && !isNaN(v)).pop();
+  const lastRsi14 = indicators.rsi14?.filter((v): v is number => v !== null && !isNaN(v)).pop();
+  const trioData = indicators.classicTrio || (lastEma20 && lastEma50 && lastRsi14 ? {
+    ma20: Number(lastEma20.toFixed(assetPrecision)),
+    ma50: Number(lastEma50.toFixed(assetPrecision)),
+    rsi14: Number(lastRsi14.toFixed(1)),
+    alignment: (candles.length > 0 && candles[candles.length - 1].close >= lastEma20 && lastEma20 >= lastEma50 && lastRsi14 >= 50) ? "FULL_BULLISH_TRIO" : "DIVERGENT",
+    isAligned: (candles.length > 0 && candles[candles.length - 1].close >= lastEma20 && lastEma20 >= lastEma50 && lastRsi14 >= 50),
+    winRateBonus: (candles.length > 0 && candles[candles.length - 1].close >= lastEma20 && lastEma20 >= lastEma50 && lastRsi14 >= 50) ? 7.5 : 0,
+    alignmentScore: 70,
+  } : null);
+
   return (
     <div className="bg-surface-100 border border-slate-800 rounded-2xl overflow-hidden shadow-sm" ref={containerRef}>
       {/* ─── Institutional Live Price Header Banner ─── */}
@@ -851,6 +864,45 @@ export default function MarketChart({
 
       {/* Canvas chart */}
       <div className="relative w-full p-2 bg-surface-200">
+        {/* TradingView-Style On-Chart Legend: Classic Trio (MA 20 • MA 50 • RSI 14) */}
+        {trioData && (
+          <div className="absolute top-4 left-4 z-10 flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950/85 backdrop-blur-md border border-slate-700/60 shadow-xl text-[11px] font-mono pointer-events-none select-none">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+              <span className="text-cyan-300 font-bold">MA(20): {trioData.ma20}</span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span className="text-amber-300 font-bold">MA(50): {trioData.ma50}</span>
+            </div>
+            <span className="text-slate-600">•</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+              <span className="text-purple-300 font-bold">RSI(14): {trioData.rsi14}</span>
+            </div>
+            <div className="pl-1 border-l border-slate-700/80">
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                trioData.alignment === "FULL_BULLISH_TRIO"
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                  : trioData.alignment === "FULL_BEARISH_TRIO"
+                  ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                  : trioData.alignment === "PULLBACK_RETEST"
+                  ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                  : "bg-slate-800 text-slate-400 border border-slate-700"
+              }`}>
+                {trioData.alignment === "FULL_BULLISH_TRIO"
+                  ? "✓ TRIO BULLISH (+7.5% WR)"
+                  : trioData.alignment === "FULL_BEARISH_TRIO"
+                  ? "✓ TRIO BEARISH (+7.5% WR)"
+                  : trioData.alignment === "PULLBACK_RETEST"
+                  ? "↻ TRIO RETEST (+5.0% WR)"
+                  : "TRIO DIVERGENT"}
+              </span>
+            </div>
+          </div>
+        )}
+
         <canvas
           ref={canvasRef}
           onMouseMove={handleMouseMove}

@@ -942,6 +942,9 @@ export function generateRuleBasedAnalysis(
     if (sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY") confidence = Math.min(99, confidence + 6);
     // Algo Footprint adverse signal: confidence penalty instead of hard block (synthesized data)
     if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_SELLING_PROGRAM") confidence = Math.max(30, confidence - 15);
+    if (classicTrio.isAligned && classicTrio.signalBias === "BULLISH") {
+      confidence = Math.min(99, confidence + (classicTrio.alignment === "FULL_BULLISH_TRIO" ? 5 : 3));
+    }
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -1009,6 +1012,9 @@ export function generateRuleBasedAnalysis(
     if (sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY") confidence = Math.min(99, confidence + 6);
     // Algo Footprint adverse signal: confidence penalty instead of hard block (synthesized data)
     if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_BUYING_PROGRAM") confidence = Math.max(30, confidence - 15);
+    if (classicTrio.isAligned && classicTrio.signalBias === "BEARISH") {
+      confidence = Math.min(99, confidence + (classicTrio.alignment === "FULL_BEARISH_TRIO" ? 5 : 3));
+    }
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -1380,6 +1386,15 @@ export function generateRuleBasedAnalysis(
       passed: !isCounterTrend && !mtfStructureMatrix.isHTFConflict && !(harmonics.hasPattern && ((tradeAction === "BUY" && harmonics.bestPattern?.type === "BEARISH") || (tradeAction === "SELL" && harmonics.bestPattern?.type === "BULLISH"))),
       note: `Macro HTF Alignment: ${mtfMatrix.h4}/${mtfMatrix.d1} (Score: ${mtfMatrix.alignmentScore}%) • Harmonic PRZ Guard: ${harmonics.hasPattern ? `${harmonics.bestPattern?.patternName} (${harmonics.bestPattern?.type})` : "Clear"} • VSA: ${footprintAbsorption.vsaSignal}`,
     },
+    {
+      name: `Pillar 26: Classic Trio Confluence (MA20 • MA50 • RSI14)`,
+      passed: classicTrio.isAligned && (
+        (tradeAction === "BUY" && classicTrio.signalBias === "BULLISH") ||
+        (tradeAction === "SELL" && classicTrio.signalBias === "BEARISH") ||
+        tradeAction === "NO_TRADE"
+      ),
+      note: `${classicTrio.summary} (คะแนนสอดคล้อง: ${classicTrio.alignmentScore}%, โบนัส WR: +${classicTrio.winRateBonus}%)`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
@@ -1493,6 +1508,7 @@ export function generateRuleBasedAnalysis(
     fillProbabilitySlippage,
     darkPoolDealerGamma,
     sovereignSingularityAlpha,
+    classicTrio,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -1591,6 +1607,7 @@ export function generateRuleBasedAnalysis(
         `Fill Probability & Slippage: [${fillProbabilitySlippage.fillEfficiencyGrade}] Slippage: ~${fillProbabilitySlippage.forecastedSlippagePips} pips (Limit Fill: ${fillProbabilitySlippage.limitFillProbabilityPct}% | Style: ${fillProbabilitySlippage.recommendedExecutionStyle})`,
         `Dark Pool Dealer Gamma: [${darkPoolDealerGamma.gammaRegime}] GEX: ${darkPoolDealerGamma.netDealerGammaExposureScore} (Flip: ${darkPoolDealerGamma.syntheticGammaFlipLevel} | Pin: ${darkPoolDealerGamma.estimatedPinningStrike} | Dark Pool Index: ${darkPoolDealerGamma.darkPoolHiddenInventoryIndex}/100)`,
         `Grand Milestone 100 Sovereign Singularity: [${sovereignSingularityAlpha.milestone100Grade}] Score: ${sovereignSingularityAlpha.sovereignAlphaScore}/100 (Convergence: ${sovereignSingularityAlpha.singularityState} | Rec: ${sovereignSingularityAlpha.singularityRecommendation} | Lock 23: ${sovereignSingularityAlpha.safetyLock23Passed ? "PASSED" : "BLOCKED"})`,
+        `Classic Trio (MA20 • MA50 • RSI14): ${classicTrio.summary} [Alignment: ${classicTrio.alignmentScore}%, Win Rate Boost: +${classicTrio.winRateBonus}%]`,
       ],
     },
     newsSentimentAnalysis: {
@@ -1709,6 +1726,7 @@ export function generateRuleBasedAnalysis(
       fillProbabilitySlippage,
       darkPoolDealerGamma,
       sovereignSingularityAlpha,
+      classicTrio,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),

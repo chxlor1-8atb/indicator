@@ -1019,6 +1019,7 @@ export interface AnalysisResult {
     fillProbabilitySlippage?: FillProbabilitySlippageInfo;
     darkPoolDealerGamma?: DarkPoolDealerGammaExposureInfo;
     sovereignSingularityAlpha?: SovereignSingularityAlphaInfo;
+    classicTrio?: ClassicTrioInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
