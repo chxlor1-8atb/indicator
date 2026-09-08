@@ -144,6 +144,11 @@ export default function AnalysisCard({
     const rvi = analysis.tradeSetup.rvi || analysis.rvi;
     const frama = analysis.tradeSetup.frama || analysis.frama;
     const m75 = analysis.tradeSetup.milestone75 || analysis.milestone75;
+    const obi = analysis.tradeSetup.orderBookImbalance || analysis.orderBookImbalance;
+    const vwapBands = analysis.tradeSetup.vwapVarianceBands || analysis.vwapVarianceBands;
+    const volVel = analysis.tradeSetup.volumeVelocity || analysis.volumeVelocity;
+    const iceberg = analysis.tradeSetup.icebergOrders || analysis.icebergOrders;
+    const liqMatrix = analysis.tradeSetup.liquidityMatrix || analysis.liquidityMatrix;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -152,6 +157,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (obi ? `• 🌊 Order Book Imbalance: OBI ${obi.imbalanceRatio.toFixed(2)} (${obi.pressureState} | Bid: ${obi.bidDepthPct}% vs Ask: ${obi.askDepthPct}%)\n` : "") +
+      (vwapBands ? `• 🎯 VWAP Variance Envelopes: VWAP ${vwapBands.vwap} (Pos: ${vwapBands.bandPosition} | Reversion: ${vwapBands.isMeanReversionZone ? "ACTIVE" : "NO"})\n` : "") +
+      (volVel ? `• ⚡ Volume Velocity: ${volVel.velocityRatio}x | Accel ${volVel.accelerationRatio}x (${volVel.burstDirection} | Climax: ${volVel.isVolumeClimax ? "YES" : "NO"})\n` : "") +
+      (iceberg && iceberg.isIcebergDetected ? `• 🧊 Iceberg Order: DETECTED (${iceberg.icebergSide} @ ${iceberg.icebergPrice} | Anomaly: ${iceberg.anomalyRatio}x)\n` : "") +
+      (liqMatrix ? `• 🏆 Institutional Liquidity Matrix: [${liqMatrix.liquidityState}] Score ${liqMatrix.liquidityScore}/100 (Lock 19: ${liqMatrix.safetyLock19Passed ? "PASSED" : "BLOCKED"} | Phase 4: ${liqMatrix.phase4Readiness})\n` : "") +
       (mcginley ? `• 📈 McGinley Dynamic: MD ${mcginley.mcginley} (${mcginley.trendState} | Dev: ${mcginley.deviationPips} pips)\n` : "") +
       (elderForce ? `• ⚡ Elder Force Index: EFI(2) ${elderForce.efiShort} | EFI(13) ${elderForce.efiLong} (${elderForce.forceState} - ${elderForce.efiTrend})\n` : "") +
       (rvi ? `• 🌪️ Relative Volatility Index: RVI ${rvi.rvi} (${rvi.rviSignal} | ${rvi.volatilityDirection})\n` : "") +
@@ -409,7 +419,7 @@ export default function AnalysisCard({
             }`}
           >
             <Cpu className="w-4 h-4" />
-            <span>คลังอินดิเคเตอร์ 75 ตัวเชิงลึก (Deep Quant Lab)</span>
+            <span>คลังอินดิเคเตอร์ 80 ตัวเชิงลึก (Deep Quant Lab)</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
               รันในพื้นหลัง
             </span>
@@ -419,7 +429,7 @@ export default function AnalysisCard({
         <span className="text-[11px] text-slate-500 hidden md:inline font-medium">
           {activeCardTab === "STRATEGY"
             ? "🛡️ คัดกรองกลยุทธ์ & ป้องกันสัญญาณตีกัน"
-            : "⚡ คำนวณเบื้องหลัง 75 เครื่องมือแบบเรียลไทม์"}
+            : "⚡ คำนวณเบื้องหลัง 80 เครื่องมือแบบเรียลไทม์"}
         </span>
       </div>
 
@@ -900,18 +910,18 @@ export default function AnalysisCard({
         </div>
       )}
 
-      {/* ─── TAB 2: DEEP QUANT LAB (75 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
+      {/* ─── TAB 2: DEEP QUANT LAB (80 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
       {activeCardTab === "DEEP_QUANT" && (
         <div className="space-y-5 animate-fadeIn">
           <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-purple-200">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
               <span>
-                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 75 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
+                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 80 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
               </span>
             </div>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              75 Pillars Active (รันในพื้นหลัง)
+              80 Pillars Active (รันในพื้นหลัง)
             </span>
           </div>
 
@@ -3974,6 +3984,206 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.milestone75.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5p. 🌊 Order Flow Microstructure, VWAP Variance & Liquidity Matrix (Plans 76-80) */}
+      {(analysis.orderBookImbalance || analysis.vwapVarianceBands || analysis.volumeVelocity || analysis.icebergOrders || analysis.liquidityMatrix) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-blue-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                <Layers className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Order Flow, VWAP Variance & Institutional Liquidity Matrix (แผน 76-80)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-500/20 to-indigo-500/20 text-blue-300 border border-blue-500/30">
+                    🌊 Phase 4 Kickoff
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  จำลองความลึก Order Book Imbalance (OBI), VWAP Variance Envelopes (±1σ, ±2σ, ±3σ), Tick Volume Velocity & Acceleration, ดักจับคำสั่งลับ Iceberg Orders และ Institutional Liquidity Matrix พร้อมเกราะ Safety Lock 19
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Market Depth & Order Book Imbalance (Plan 76) */}
+            {analysis.orderBookImbalance && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌊 Order Book Imbalance</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.orderBookImbalance.pressureState === "HEAVY_BID_PRESSURE"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.orderBookImbalance.pressureState === "HEAVY_ASK_PRESSURE"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                  }`}>
+                    {analysis.orderBookImbalance.pressureState}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Imbalance Ratio:</span>
+                    <span className="font-mono font-bold text-white text-[10px]">
+                      {analysis.orderBookImbalance.imbalanceRatio.toFixed(2)}x
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Bid / Ask Depth:</span>
+                    <span className="font-mono text-[10px] font-bold">
+                      <span className="text-emerald-400">{analysis.orderBookImbalance.bidDepthPct}%</span>
+                      <span className="text-slate-500"> / </span>
+                      <span className="text-rose-400">{analysis.orderBookImbalance.askDepthPct}%</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Spread Estimate:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.orderBookImbalance.spreadPipsEstimate} pips
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.orderBookImbalance.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: VWAP Variance & Standard Deviation Envelopes (Plan 77) */}
+            {analysis.vwapVarianceBands && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🎯 VWAP Variance Envelopes</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.vwapVarianceBands.bandPosition === "INSIDE_SIGMA_1"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.vwapVarianceBands.isMeanReversionZone
+                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                  }`}>
+                    {analysis.vwapVarianceBands.bandPosition}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">VWAP Std Dev (σ):</span>
+                    <span className="font-mono font-bold text-white text-[10px]">
+                      ±{analysis.vwapVarianceBands.standardDeviation}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">±2σ Envelopes:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.vwapVarianceBands.lowerBand2} - {analysis.vwapVarianceBands.upperBand2}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Mean Reversion Zone:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.vwapVarianceBands.isMeanReversionZone ? "text-amber-400" : "text-slate-400"
+                    }`}>
+                      {analysis.vwapVarianceBands.isMeanReversionZone ? "⚡ REVERSION ZONE" : "NORMAL"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.vwapVarianceBands.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Tick Volume Velocity & Iceberg Orders (Plans 78 & 79) */}
+            {(analysis.volumeVelocity || analysis.icebergOrders) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚡ Volume Velocity & Iceberg</span>
+                  {analysis.icebergOrders && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.icebergOrders.isIcebergDetected
+                        ? "bg-purple-500/20 text-purple-300 border border-purple-500/30 animate-pulse"
+                        : "bg-slate-700/50 text-slate-400 border border-slate-600/30"
+                    }`}>
+                      {analysis.icebergOrders.isIcebergDetected ? `🧊 ${analysis.icebergOrders.icebergSide}` : "NO ICEBERG"}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.volumeVelocity && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Volume Velocity:</span>
+                        <span className={`font-mono font-bold text-[10px] ${
+                          analysis.volumeVelocity.burstDirection === "BULLISH_BURST" ? "text-emerald-400" : analysis.volumeVelocity.burstDirection === "BEARISH_BURST" ? "text-rose-400" : "text-slate-300"
+                        }`}>
+                          {analysis.volumeVelocity.velocityRatio}x ({analysis.volumeVelocity.burstDirection})
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Acceleration / Climax:</span>
+                        <span className="font-mono text-amber-300 font-bold text-[10px]">
+                          {analysis.volumeVelocity.accelerationRatio}x | {analysis.volumeVelocity.isVolumeClimax ? "🔥 CLIMAX" : "NORMAL"}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {analysis.icebergOrders && analysis.icebergOrders.isIcebergDetected && (
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Iceberg Price / Anomaly:</span>
+                      <span className="font-mono text-purple-300 font-bold text-[10px]">
+                        {analysis.icebergOrders.icebergPrice} ({analysis.icebergOrders.anomalyRatio}x Vol)
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.volumeVelocity?.description || analysis.icebergOrders?.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Institutional Liquidity Matrix & Safety Lock 19 (Plan 80) */}
+            {analysis.liquidityMatrix && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🏆 Liquidity Matrix (Gateway)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.liquidityMatrix.safetyLock19Passed
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                  }`}>
+                    {analysis.liquidityMatrix.safetyLock19Passed ? "🛡️ LOCK 19 PASS" : "⛔ LIQUIDITY ABYSS"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Liquidity State:</span>
+                    <span className="font-mono font-bold text-amber-300 text-[10px]">
+                      {analysis.liquidityMatrix.liquidityState}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Liquidity Score:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.liquidityMatrix.liquidityScore} / 100
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Phase 4 Gateway:</span>
+                    <span className="font-mono text-emerald-400 text-[10px] font-bold">
+                      {analysis.liquidityMatrix.phase4Readiness === "PHASE_4_ORDER_FLOW_ENGAGED" ? "🌊 ENGAGED (80/80)" : "INITIALIZING"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.liquidityMatrix.description}
                 </p>
               </div>
             )}

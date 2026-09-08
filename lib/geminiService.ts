@@ -70,6 +70,11 @@ import {
   RelativeVolatilityIndexInfo,
   FRAMAPoint,
   Milestone75QuantFusionInfo,
+  OrderBookImbalanceInfo,
+  VWAPVarianceBandsInfo,
+  TickVolumeVelocityInfo,
+  IcebergOrderInfo,
+  InstitutionalLiquidityMatrixInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -144,6 +149,11 @@ import {
   calculateRelativeVolatilityIndex,
   calculateFRAMA,
   synthesizeGrandQuantMilestone75,
+  calculateOrderBookImbalance,
+  calculateVWAPVarianceBands,
+  calculateTickVolumeVelocity,
+  detectIcebergOrders,
+  synthesizeInstitutionalLiquidityMatrix,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -453,6 +463,20 @@ export function generateRuleBasedAnalysis(
     20
   );
 
+  // ─── BATCH 16 PRE-COMPUTATIONS (PLANS 76-80: ORDER FLOW & LIQUIDITY) ───
+  const orderBookImbalance = indicators.orderBookImbalance || calculateOrderBookImbalance(candles, precision);
+  const vwapVarianceBands = indicators.vwapVarianceBands || calculateVWAPVarianceBands(candles, precision);
+  const volumeVelocity = indicators.volumeVelocity || calculateTickVolumeVelocity(candles);
+  const icebergOrders = indicators.icebergOrders || detectIcebergOrders(candles, precision);
+  const liquidityMatrix = indicators.liquidityMatrix || synthesizeInstitutionalLiquidityMatrix(
+    orderBookImbalance,
+    vwapVarianceBands,
+    volumeVelocity,
+    icebergOrders,
+    currentPrice,
+    19
+  );
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = Math.max(75, adaptiveConfig?.minScoreThreshold ?? 75);
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -612,7 +636,19 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 30);
     milestone75.safetyLock18Passed = false;
   }
-  // SAFETY LOCK 19: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
+  // SAFETY LOCK 19: Liquidity Abyss & Order Flow Exhaustion Shield [แผน 80]
+  else if (
+    !liquidityMatrix.safetyLock19Passed ||
+    liquidityMatrix.liquidityState === "LIQUIDITY_ABYSS" ||
+    (tier1Bias === "BULLISH" && orderBookImbalance.pressureState === "HEAVY_ASK_PRESSURE" && volumeVelocity.burstDirection === "BEARISH_BURST") ||
+    (tier1Bias === "BEARISH" && orderBookImbalance.pressureState === "HEAVY_BID_PRESSURE" && volumeVelocity.burstDirection === "BULLISH_BURST")
+  ) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 30);
+    liquidityMatrix.safetyLock19Passed = false;
+  }
+  // SAFETY LOCK 20: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
   else if (
     (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 22) ||
     (tier1Bias === "BULLISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) < (indicators.ema50.slice(-4)[0] ?? 0)) ||
@@ -622,7 +658,7 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
   }
-  // SAFETY LOCK 20: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
+  // SAFETY LOCK 21: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
   else if (
     (tier1Bias === "BULLISH" && (mtfMatrix.h4 === "BEARISH" || mtfStructureMatrix.htfTrend === "BEARISH" || (mtfMatrix.alignmentScore ?? 0) <= -25)) ||
     (tier1Bias === "BEARISH" && (mtfMatrix.h4 === "BULLISH" || mtfStructureMatrix.htfTrend === "BULLISH" || (mtfMatrix.alignmentScore ?? 0) >= 25)) ||
@@ -675,6 +711,11 @@ export function generateRuleBasedAnalysis(
     if (rvi.volatilityDirection === "BULLISH_EXPANSION") confidence = Math.min(98, confidence + 4);
     if (frama.state === "TRENDING_SMOOTH") confidence = Math.min(98, confidence + 5);
     if (milestone75.phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED") confidence = Math.min(98, confidence + 5);
+    if (orderBookImbalance.pressureState === "HEAVY_BID_PRESSURE") confidence = Math.min(98, confidence + 4);
+    if (vwapVarianceBands.bandPosition === "INSIDE_SIGMA_1" || (vwapVarianceBands.isMeanReversionZone && currentPrice <= vwapVarianceBands.lowerBand2)) confidence = Math.min(98, confidence + 4);
+    if (volumeVelocity.burstDirection === "BULLISH_BURST") confidence = Math.min(98, confidence + 4);
+    if (icebergOrders.isIcebergDetected && icebergOrders.icebergSide === "BUY_ICEBERG") confidence = Math.min(98, confidence + 5);
+    if (liquidityMatrix.liquidityState === "DEEP_INSTITUTIONAL") confidence = Math.min(98, confidence + 5);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -715,6 +756,11 @@ export function generateRuleBasedAnalysis(
     if (rvi.volatilityDirection === "BEARISH_EXPANSION") confidence = Math.min(98, confidence + 4);
     if (frama.state === "TRENDING_SMOOTH") confidence = Math.min(98, confidence + 5);
     if (milestone75.phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED") confidence = Math.min(98, confidence + 5);
+    if (orderBookImbalance.pressureState === "HEAVY_ASK_PRESSURE") confidence = Math.min(98, confidence + 4);
+    if (vwapVarianceBands.bandPosition === "INSIDE_SIGMA_1" || (vwapVarianceBands.isMeanReversionZone && currentPrice >= vwapVarianceBands.upperBand2)) confidence = Math.min(98, confidence + 4);
+    if (volumeVelocity.burstDirection === "BEARISH_BURST") confidence = Math.min(98, confidence + 4);
+    if (icebergOrders.isIcebergDetected && icebergOrders.icebergSide === "SELL_ICEBERG") confidence = Math.min(98, confidence + 5);
+    if (liquidityMatrix.liquidityState === "DEEP_INSTITUTIONAL") confidence = Math.min(98, confidence + 5);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -1011,12 +1057,19 @@ export function generateRuleBasedAnalysis(
       note: `${mcginley.description} • ${elderForce.description} • ${rvi.description} • ${frama.description} • ${milestone75.description}`,
     },
     {
-      name: `Pillar 19: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
+      name: `Pillar 19: Order Flow Depth, VWAP Variance & Liquidity Matrix (OBI: ${orderBookImbalance.imbalanceRatio.toFixed(2)} | VWAP: ${vwapVarianceBands.bandPosition} | Matrix: ${liquidityMatrix.liquidityState})`,
+      passed: ((tradeAction === "BUY" && (orderBookImbalance.pressureState === "HEAVY_BID_PRESSURE" || vwapVarianceBands.bandPosition === "INSIDE_SIGMA_1" || volumeVelocity.burstDirection === "BULLISH_BURST" || icebergOrders.icebergSide === "BUY_ICEBERG")) ||
+              (tradeAction === "SELL" && (orderBookImbalance.pressureState === "HEAVY_ASK_PRESSURE" || vwapVarianceBands.bandPosition === "INSIDE_SIGMA_1" || volumeVelocity.burstDirection === "BEARISH_BURST" || icebergOrders.icebergSide === "SELL_ICEBERG")) ||
+              liquidityMatrix.safetyLock19Passed) ?? false,
+      note: `${orderBookImbalance.description} • ${vwapVarianceBands.description} • ${volumeVelocity.description} • ${icebergOrders.description} • ${liquidityMatrix.description}`,
+    },
+    {
+      name: `Pillar 20: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
       passed: (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) >= 22) ?? true,
       note: `กรองสภาวะตลาดไร้แนวโน้ม ป้องกันการออกออเดอร์ในกรอบ Sideways (ADX >= 22 และ EMA50 Slope สอดคล้องทิศทางเทรนด์)`,
     },
     {
-      name: `Pillar 20: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
+      name: `Pillar 21: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
       passed: !isCounterTrend && !mtfStructureMatrix.isHTFConflict && !(harmonics.hasPattern && ((tradeAction === "BUY" && harmonics.bestPattern?.type === "BEARISH") || (tradeAction === "SELL" && harmonics.bestPattern?.type === "BULLISH"))),
       note: `Macro HTF Alignment: ${mtfMatrix.h4}/${mtfMatrix.d1} (Score: ${mtfMatrix.alignmentScore}%) • Harmonic PRZ Guard: ${harmonics.hasPattern ? `${harmonics.bestPattern?.patternName} (${harmonics.bestPattern?.type})` : "Clear"} • VSA: ${footprintAbsorption.vsaSignal}`,
     },
@@ -1106,6 +1159,11 @@ export function generateRuleBasedAnalysis(
     rvi,
     frama,
     milestone75,
+    orderBookImbalance,
+    vwapVarianceBands,
+    volumeVelocity,
+    icebergOrders,
+    liquidityMatrix,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -1179,6 +1237,11 @@ export function generateRuleBasedAnalysis(
         `Relative Volatility Index: RVI ${rvi.rvi} (Signal: ${rvi.rviSignal} | ${rvi.volatilityDirection})`,
         `FRAMA Fractal MA: ${frama.frama} (D=${frama.fractalDimension} | Alpha: ${frama.alpha} | ${frama.state})`,
         `Grand Milestone 75 Quant Fusion: [${milestone75.milestoneGrade}] Score: ${milestone75.quantScore}/100 - ${milestone75.phase3DominanceStatus} (Lock 18: ${milestone75.safetyLock18Passed ? "PASSED" : "BLOCKED"})`,
+        `Order Book Imbalance: OBI ${orderBookImbalance.imbalanceRatio.toFixed(2)} (${orderBookImbalance.pressureState} - Bid: ${orderBookImbalance.bidDepthPct}% vs Ask: ${orderBookImbalance.askDepthPct}%)`,
+        `VWAP Variance Envelopes: VWAP ${vwapVarianceBands.vwap} (Pos: ${vwapVarianceBands.bandPosition} | Mean Reversion: ${vwapVarianceBands.isMeanReversionZone ? "ACTIVE" : "NO"})`,
+        `Tick Volume Velocity: Velocity ${volumeVelocity.velocityRatio}x | Accel ${volumeVelocity.accelerationRatio}x (${volumeVelocity.burstDirection} - Climax: ${volumeVelocity.isVolumeClimax ? "YES" : "NO"})`,
+        `Iceberg Hidden Liquidity: ${icebergOrders.isIcebergDetected ? `DETECTED (${icebergOrders.icebergSide} | Ratio ${icebergOrders.anomalyRatio}x)` : "None"}`,
+        `Institutional Liquidity Matrix: [${liquidityMatrix.liquidityState}] Score: ${liquidityMatrix.liquidityScore}/100 (Lock 19: ${liquidityMatrix.safetyLock19Passed ? "PASSED" : "BLOCKED"} | Spread Climax: ${liquidityMatrix.isSpreadClimaxRisk ? "YES" : "NO"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -1272,6 +1335,11 @@ export function generateRuleBasedAnalysis(
       rvi,
       frama,
       milestone75,
+      orderBookImbalance,
+      vwapVarianceBands,
+      volumeVelocity,
+      icebergOrders,
+      liquidityMatrix,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1647,6 +1715,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.rvi = ruleAnalysis.rvi;
     parsed.frama = ruleAnalysis.frama;
     parsed.milestone75 = ruleAnalysis.milestone75;
+    parsed.orderBookImbalance = ruleAnalysis.orderBookImbalance;
+    parsed.vwapVarianceBands = ruleAnalysis.vwapVarianceBands;
+    parsed.volumeVelocity = ruleAnalysis.volumeVelocity;
+    parsed.icebergOrders = ruleAnalysis.icebergOrders;
+    parsed.liquidityMatrix = ruleAnalysis.liquidityMatrix;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -1710,6 +1783,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.rvi = ruleAnalysis.tradeSetup.rvi;
       parsed.tradeSetup.frama = ruleAnalysis.tradeSetup.frama;
       parsed.tradeSetup.milestone75 = ruleAnalysis.tradeSetup.milestone75;
+      parsed.tradeSetup.orderBookImbalance = ruleAnalysis.tradeSetup.orderBookImbalance;
+      parsed.tradeSetup.vwapVarianceBands = ruleAnalysis.tradeSetup.vwapVarianceBands;
+      parsed.tradeSetup.volumeVelocity = ruleAnalysis.tradeSetup.volumeVelocity;
+      parsed.tradeSetup.icebergOrders = ruleAnalysis.tradeSetup.icebergOrders;
+      parsed.tradeSetup.liquidityMatrix = ruleAnalysis.tradeSetup.liquidityMatrix;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

@@ -686,6 +686,11 @@ export interface IndicatorData {
   rvi?: RelativeVolatilityIndexInfo;
   frama?: FRAMAPoint;
   milestone75?: Milestone75QuantFusionInfo;
+  orderBookImbalance?: OrderBookImbalanceInfo;
+  vwapVarianceBands?: VWAPVarianceBandsInfo;
+  volumeVelocity?: TickVolumeVelocityInfo;
+  icebergOrders?: IcebergOrderInfo;
+  liquidityMatrix?: InstitutionalLiquidityMatrixInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -842,6 +847,11 @@ export interface AnalysisResult {
   rvi?: RelativeVolatilityIndexInfo;
   frama?: FRAMAPoint;
   milestone75?: Milestone75QuantFusionInfo;
+  orderBookImbalance?: OrderBookImbalanceInfo;
+  vwapVarianceBands?: VWAPVarianceBandsInfo;
+  volumeVelocity?: TickVolumeVelocityInfo;
+  icebergOrders?: IcebergOrderInfo;
+  liquidityMatrix?: InstitutionalLiquidityMatrixInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -940,6 +950,11 @@ export interface AnalysisResult {
     rvi?: RelativeVolatilityIndexInfo;
     frama?: FRAMAPoint;
     milestone75?: Milestone75QuantFusionInfo;
+    orderBookImbalance?: OrderBookImbalanceInfo;
+    vwapVarianceBands?: VWAPVarianceBandsInfo;
+    volumeVelocity?: TickVolumeVelocityInfo;
+    icebergOrders?: IcebergOrderInfo;
+    liquidityMatrix?: InstitutionalLiquidityMatrixInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1258,6 +1273,69 @@ export interface Milestone75QuantFusionInfo {
   safetyLock18Passed: boolean;
   activePillarsCount: number; // out of 18
   safetyLocksPassedCount: number;
+  description: string;
+}
+
+// ─── BATCH 16 (PLANS 76-80) INTERFACES: ORDER FLOW, LIQUIDITY & MICROSTRUCTURE ───
+export interface OrderBookImbalanceInfo {
+  imbalanceRatio: number; // -100 to +100 (%)
+  bidDepthVolume: number;
+  askDepthVolume: number;
+  bidAskRatio: number; // e.g. 1.45
+  bidDepthPct?: number; // e.g. 62%
+  askDepthPct?: number; // e.g. 38%
+  spreadPipsEstimate?: number;
+  pressureState: "HEAVY_BID_PRESSURE" | "HEAVY_ASK_PRESSURE" | "BALANCED_DEPTH";
+  description: string;
+}
+
+export interface VWAPVarianceBandsInfo {
+  vwap: number;
+  stdDev: number;
+  standardDeviation?: number;
+  upperBand1: number; // +1 sigma
+  lowerBand1: number; // -1 sigma
+  upperBand2: number; // +2 sigma (Mean reversion sell zone)
+  lowerBand2: number; // -2 sigma (Mean reversion buy zone)
+  upperBand3: number; // +3 sigma (Extreme exhaustion band)
+  lowerBand3: number; // -3 sigma (Extreme exhaustion band)
+  bandPosition: "INSIDE_SIGMA_1" | "EXPANDING_SIGMA_2" | "EXTREME_SIGMA_3";
+  isMeanReversionZone: boolean;
+  description: string;
+}
+
+export interface TickVolumeVelocityInfo {
+  velocity: number; // First derivative of volume
+  acceleration: number; // Second derivative of volume
+  relativeBurstRatio: number; // Current volume vs 20-period moving average
+  velocityRatio?: number;
+  accelerationRatio?: number;
+  isVolumeBurst: boolean; // True if sudden institutional surge
+  isVolumeClimax?: boolean;
+  burstDirection: "BULLISH_BURST" | "BEARISH_BURST" | "QUIET";
+  description: string;
+}
+
+export interface IcebergOrderInfo {
+  isIcebergDetected: boolean;
+  icebergSide: "BUY_ICEBERG" | "SELL_ICEBERG" | "NONE";
+  hiddenLevel: number;
+  icebergPrice?: number;
+  absorbedVolume: number;
+  anomalyRatio?: number;
+  icebergConfidencePct: number; // 0 to 100
+  absorptionsCount: number;
+  description: string;
+}
+
+export interface InstitutionalLiquidityMatrixInfo {
+  liquidityScore: number; // 0 to 100
+  liquidityState: "DEEP_INSTITUTIONAL" | "ADEQUATE" | "FRAGILE" | "LIQUIDITY_ABYSS";
+  activePillarsCount: number; // out of 19
+  safetyLock19Passed: boolean;
+  isHighFrequencyAnomaly: boolean;
+  phase4Readiness?: string;
+  isSpreadClimaxRisk?: boolean;
   description: string;
 }
 

@@ -83,6 +83,11 @@ import {
   RelativeVolatilityIndexInfo,
   FRAMAPoint,
   Milestone75QuantFusionInfo,
+  OrderBookImbalanceInfo,
+  VWAPVarianceBandsInfo,
+  TickVolumeVelocityInfo,
+  IcebergOrderInfo,
+  InstitutionalLiquidityMatrixInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -5834,6 +5839,397 @@ export function synthesizeGrandQuantMilestone75(
   };
 }
 
+/**
+ * [แผน 76] Market Depth & Order Book Imbalance Simulator (L2/L3 Bid-Ask Pressure Matrix)
+ * Simulates institutional Level-2/Level-3 order book queue pressure from high-frequency tick dynamics
+ */
+export function calculateOrderBookImbalance(
+  candles: Candle[],
+  precision = 2
+): OrderBookImbalanceInfo {
+  if (candles.length < 5) {
+    return {
+      imbalanceRatio: 0,
+      bidDepthVolume: 0,
+      askDepthVolume: 0,
+      bidAskRatio: 1.0,
+      bidDepthPct: 50,
+      askDepthPct: 50,
+      spreadPipsEstimate: 0.5,
+      pressureState: "BALANCED_DEPTH",
+      description: "Order Book Imbalance: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  // Look at the last 15 bars, weighting recent bars more heavily
+  const lookback = Math.min(candles.length, 15);
+  const sample = candles.slice(-lookback);
+
+  let weightedBidVol = 0;
+  let weightedAskVol = 0;
+
+  for (let i = 0; i < sample.length; i++) {
+    const c = sample[i];
+    const range = Math.max(0.0001, c.high - c.low);
+    const weight = (i + 1) / lookback; // 0 < weight <= 1
+    const vol = c.volume > 0 ? c.volume : 100;
+
+    // Buyer push: close distance from low relative to range
+    const buyFraction = Math.max(0.05, Math.min(0.95, (c.close - c.low) / range));
+    const sellFraction = 1 - buyFraction;
+
+    weightedBidVol += vol * buyFraction * weight;
+    weightedAskVol += vol * sellFraction * weight;
+  }
+
+  const totalVol = weightedBidVol + weightedAskVol;
+  const rawImbalance = totalVol > 0 ? ((weightedBidVol - weightedAskVol) / totalVol) * 100 : 0;
+  const imbalanceRatio = Number(Math.max(-100, Math.min(100, rawImbalance)).toFixed(1));
+  const bidAskRatio = Number((weightedBidVol / Math.max(1, weightedAskVol)).toFixed(2));
+  const bidDepthPct = totalVol > 0 ? Math.round((weightedBidVol / totalVol) * 100) : 50;
+  const askDepthPct = 100 - bidDepthPct;
+  const spreadPipsEstimate = Number((Math.max(0.1, Math.abs(imbalanceRatio) * 0.02 + 0.2)).toFixed(1));
+
+  let pressureState: OrderBookImbalanceInfo["pressureState"] = "BALANCED_DEPTH";
+  if (imbalanceRatio >= 28) {
+    pressureState = "HEAVY_BID_PRESSURE";
+  } else if (imbalanceRatio <= -28) {
+    pressureState = "HEAVY_ASK_PRESSURE";
+  }
+
+  const desc = pressureState === "HEAVY_BID_PRESSURE"
+    ? `🌊 Order Book Imbalance ฝั่ง Bid หนาแน่น (+${imbalanceRatio}% | Ratio: ${bidAskRatio}x): แรงซื้อตั้งแถวรอรับในสมุดคำสั่งสถาบัน`
+    : pressureState === "HEAVY_ASK_PRESSURE"
+    ? `🌊 Order Book Imbalance ฝั่ง Ask หนาแน่น (${imbalanceRatio}% | Ratio: ${bidAskRatio}x): แรงขายดักเทในสมุดคำสั่งสถาบัน`
+    : `🌊 Order Book Imbalance สมดุล (${imbalanceRatio}% | Ratio: ${bidAskRatio}x): สภาพคล่อง Bid-Ask กระจายตัวเท่ากัน`;
+
+  return {
+    imbalanceRatio,
+    bidDepthVolume: Number(weightedBidVol.toFixed(0)),
+    askDepthVolume: Number(weightedAskVol.toFixed(0)),
+    bidAskRatio,
+    bidDepthPct,
+    askDepthPct,
+    spreadPipsEstimate,
+    pressureState,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 77] Volume-Weighted Average Price Variance & VWAP Standard Deviation Envelopes (±1σ, ±2σ, ±3σ)
+ * Calculates quantitative variance bands around VWAP for institutional mean-reversion & trend expansion
+ */
+export function calculateVWAPVarianceBands(
+  candles: Candle[],
+  precision = 2
+): VWAPVarianceBandsInfo {
+  if (candles.length < 5) {
+    const c = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      vwap: c,
+      stdDev: 0,
+      standardDeviation: 0,
+      upperBand1: c,
+      lowerBand1: c,
+      upperBand2: c,
+      lowerBand2: c,
+      upperBand3: c,
+      lowerBand3: c,
+      bandPosition: "INSIDE_SIGMA_1",
+      isMeanReversionZone: false,
+      description: "VWAP Variance Bands: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const lookback = Math.min(candles.length, 50);
+  const sample = candles.slice(-lookback);
+
+  let sumPV = 0;
+  let sumV = 0;
+
+  for (const c of sample) {
+    const typicalPrice = (c.high + c.low + c.close) / 3;
+    const vol = c.volume > 0 ? c.volume : 1;
+    sumPV += typicalPrice * vol;
+    sumV += vol;
+  }
+
+  const vwap = sumV > 0 ? sumPV / sumV : sample[sample.length - 1].close;
+
+  // Calculate volume-weighted variance
+  let sumSquaredDiffV = 0;
+  for (const c of sample) {
+    const typicalPrice = (c.high + c.low + c.close) / 3;
+    const vol = c.volume > 0 ? c.volume : 1;
+    sumSquaredDiffV += vol * Math.pow(typicalPrice - vwap, 2);
+  }
+
+  const variance = sumV > 0 ? sumSquaredDiffV / sumV : 0;
+  const stdDev = Math.max(0.01, Math.sqrt(variance));
+
+  const currentPrice = candles[candles.length - 1].close;
+
+  const upperBand1 = Number((vwap + 1.0 * stdDev).toFixed(precision));
+  const lowerBand1 = Number((vwap - 1.0 * stdDev).toFixed(precision));
+  const upperBand2 = Number((vwap + 2.0 * stdDev).toFixed(precision));
+  const lowerBand2 = Number((vwap - 2.0 * stdDev).toFixed(precision));
+  const upperBand3 = Number((vwap + 3.0 * stdDev).toFixed(precision));
+  const lowerBand3 = Number((vwap - 3.0 * stdDev).toFixed(precision));
+
+  let bandPosition: VWAPVarianceBandsInfo["bandPosition"] = "INSIDE_SIGMA_1";
+  if (currentPrice >= upperBand3 || currentPrice <= lowerBand3) {
+    bandPosition = "EXTREME_SIGMA_3";
+  } else if (currentPrice >= upperBand2 || currentPrice <= lowerBand2) {
+    bandPosition = "EXPANDING_SIGMA_2";
+  }
+
+  const isMeanReversionZone = currentPrice >= upperBand2 || currentPrice <= lowerBand2;
+
+  const desc = bandPosition === "EXTREME_SIGMA_3"
+    ? `🎯 VWAP Variance แตะกรอบสุดขีด ±3σ (VWAP: ${vwap.toFixed(precision)} | σ: ${stdDev.toFixed(precision)}): ภาวะ Overextended ขั้นวิกฤต ระวัง Mean Reversion ดีดกลับรุนแรง`
+    : bandPosition === "EXPANDING_SIGMA_2"
+    ? `🎯 VWAP Variance ทะลุกรอบ ±2σ (VWAP: ${vwap.toFixed(precision)}): เข้าสู่โซน Mean Reversion โอกาสดักกลับตัวสถาบัน`
+    : `🎯 VWAP Variance อยู่ในกรอบปกติ ±1σ (VWAP: ${vwap.toFixed(precision)} | Band: ${lowerBand1} - ${upperBand1})`;
+
+  return {
+    vwap: Number(vwap.toFixed(precision)),
+    stdDev: Number(stdDev.toFixed(precision)),
+    standardDeviation: Number(stdDev.toFixed(precision)),
+    upperBand1,
+    lowerBand1,
+    upperBand2,
+    lowerBand2,
+    upperBand3,
+    lowerBand3,
+    bandPosition,
+    isMeanReversionZone,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 78] Tick Volume Velocity & Acceleration Engine (Price Action Burst Detector)
+ * Detects sudden institutional surges using first and second derivatives of volume flow
+ */
+export function calculateTickVolumeVelocity(
+  candles: Candle[]
+): TickVolumeVelocityInfo {
+  if (candles.length < 5) {
+    return {
+      velocity: 0,
+      acceleration: 0,
+      relativeBurstRatio: 1.0,
+      velocityRatio: 1.0,
+      accelerationRatio: 0,
+      isVolumeBurst: false,
+      isVolumeClimax: false,
+      burstDirection: "QUIET",
+      description: "Volume Velocity: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const idx = candles.length - 1;
+  const currentVol = candles[idx].volume > 0 ? candles[idx].volume : 1;
+  const prevVol = candles[idx - 1].volume > 0 ? candles[idx - 1].volume : 1;
+  const prev2Vol = candles.length > 2 && candles[idx - 2].volume > 0 ? candles[idx - 2].volume : prevVol;
+
+  // First derivative: Velocity
+  const velocity = Number((currentVol - prevVol).toFixed(0));
+
+  // Second derivative: Acceleration
+  const prevVelocity = prevVol - prev2Vol;
+  const acceleration = Number((velocity - prevVelocity).toFixed(0));
+
+  // 20-period average volume
+  const lookback = Math.min(candles.length, 20);
+  const avgVol = candles.slice(-lookback).reduce((sum, c) => sum + (c.volume > 0 ? c.volume : 1), 0) / lookback;
+
+  const relativeBurstRatio = Number((currentVol / Math.max(1, avgVol)).toFixed(2));
+  const isVolumeBurst = relativeBurstRatio >= 1.85 || (acceleration > avgVol * 0.8 && currentVol > avgVol);
+  const velocityRatio = relativeBurstRatio;
+  const accelerationRatio = Number((Math.abs(acceleration) / Math.max(1, avgVol)).toFixed(2));
+  const isVolumeClimax = relativeBurstRatio >= 2.5;
+
+  const c = candles[idx];
+  let burstDirection: TickVolumeVelocityInfo["burstDirection"] = "QUIET";
+  if (isVolumeBurst) {
+    burstDirection = c.close >= c.open ? "BULLISH_BURST" : "BEARISH_BURST";
+  }
+
+  const desc = isVolumeBurst
+    ? `⚡ Volume Velocity เกิดสภาวะระเบิดตัว (${burstDirection} | อัตราเร่ง: ${relativeBurstRatio}x ค่าเฉลี่ย): อัลกอริทึมสถาบันเข้าแทรกแซงฉับพลัน`
+    : `⚡ Volume Velocity ปกติ (อัตราเร่ง: ${relativeBurstRatio}x | ความเร่ง: ${acceleration}): การไหลเวียนของสภาพคล่องสม่ำเสมอ`;
+
+  return {
+    velocity,
+    acceleration,
+    relativeBurstRatio,
+    velocityRatio,
+    accelerationRatio,
+    isVolumeBurst,
+    isVolumeClimax,
+    burstDirection,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 79] Iceberg Order & Hidden Execution Liquidity Footprint
+ * Detects institutional iceberg orders absorbing flow without breaking price barriers
+ */
+export function detectIcebergOrders(
+  candles: Candle[],
+  precision = 2
+): IcebergOrderInfo {
+  if (candles.length < 15) {
+    return {
+      isIcebergDetected: false,
+      icebergSide: "NONE",
+      hiddenLevel: 0,
+      icebergPrice: 0,
+      absorbedVolume: 0,
+      anomalyRatio: 1.0,
+      icebergConfidencePct: 0,
+      absorptionsCount: 0,
+      description: "Iceberg Orders: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const sample = candles.slice(-15);
+  const avgVol = sample.reduce((sum, c) => sum + (c.volume > 0 ? c.volume : 1), 0) / sample.length;
+
+  let buyAbsorptionCount = 0;
+  let sellAbsorptionCount = 0;
+  let buyAbsorbedVol = 0;
+  let sellAbsorbedVol = 0;
+
+  const latest = sample[sample.length - 1];
+  const tolerance = (latest.high - latest.low) * 0.4 || 1.0;
+
+  // Scan recent candles testing resistance/support with high volume but failing to break
+  for (let i = 0; i < sample.length; i++) {
+    const c = sample[i];
+    const vol = c.volume > 0 ? c.volume : 1;
+
+    // Potential Sell Iceberg at upper range
+    if (Math.abs(c.high - latest.high) <= tolerance && vol >= 1.3 * avgVol && c.close < c.high - (c.high - c.low) * 0.3) {
+      sellAbsorptionCount++;
+      sellAbsorbedVol += vol;
+    }
+
+    // Potential Buy Iceberg at lower range
+    if (Math.abs(c.low - latest.low) <= tolerance && vol >= 1.3 * avgVol && c.close > c.low + (c.high - c.low) * 0.3) {
+      buyAbsorptionCount++;
+      buyAbsorbedVol += vol;
+    }
+  }
+
+  let isIcebergDetected = false;
+  let icebergSide: IcebergOrderInfo["icebergSide"] = "NONE";
+  let hiddenLevel = 0;
+  let absorbedVolume = 0;
+  let absorptionsCount = 0;
+  let icebergConfidencePct = 0;
+
+  if (buyAbsorptionCount >= 2 && buyAbsorbedVol > sellAbsorbedVol) {
+    isIcebergDetected = true;
+    icebergSide = "BUY_ICEBERG";
+    hiddenLevel = Number(latest.low.toFixed(precision));
+    absorbedVolume = Number(buyAbsorbedVol.toFixed(0));
+    absorptionsCount = buyAbsorptionCount;
+    icebergConfidencePct = Math.min(95, 60 + buyAbsorptionCount * 12);
+  } else if (sellAbsorptionCount >= 2 && sellAbsorbedVol > buyAbsorbedVol) {
+    isIcebergDetected = true;
+    icebergSide = "SELL_ICEBERG";
+    hiddenLevel = Number(latest.high.toFixed(precision));
+    absorbedVolume = Number(sellAbsorbedVol.toFixed(0));
+    absorptionsCount = sellAbsorptionCount;
+    icebergConfidencePct = Math.min(95, 60 + sellAbsorptionCount * 12);
+  }
+
+  const icebergPrice = hiddenLevel;
+  const anomalyRatio = Number((absorbedVolume / Math.max(1, avgVol)).toFixed(1));
+
+  const desc = isIcebergDetected
+    ? `🧊 Iceberg Order ตรวจพบคำสั่งแฝงสถาบัน [${icebergSide}] ที่แนว ${hiddenLevel} (ดูดซับแล้ว ${absorptionsCount} ครั้ง | ความมั่นใจ ${icebergConfidencePct}%): วาฬซ่อนคำสั่ง Limit ก้อนใหญ่สะสมของ`
+    : "🧊 Iceberg Order ไม่พบคำสั่งแฝงขนาดใหญ่ผิดปกติในโซนราคาปัจจุบัน";
+
+  return {
+    isIcebergDetected,
+    icebergSide,
+    hiddenLevel,
+    icebergPrice,
+    absorbedVolume,
+    anomalyRatio,
+    icebergConfidencePct,
+    absorptionsCount,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 80] Institutional Liquidity Matrix & Phase 4 Alpha Gateway + Safety Lock 19
+ * Synthesizes order book depth, VWAP variance bands, volume acceleration and iceberg orders
+ */
+export function synthesizeInstitutionalLiquidityMatrix(
+  imbalance: OrderBookImbalanceInfo,
+  vwapBands: VWAPVarianceBandsInfo,
+  volumeVelocity: TickVolumeVelocityInfo,
+  iceberg: IcebergOrderInfo,
+  currentPrice: number,
+  activePillarsCount = 19
+): InstitutionalLiquidityMatrixInfo {
+  // Safety Lock 19: Liquidity Abyss & Spread Climax Shield
+  // Blocks trade if Market Depth has severe hostile imbalance against trade OR extreme ±3 sigma exhaustion
+  const isExtremeSigma3 = vwapBands.bandPosition === "EXTREME_SIGMA_3";
+
+  let safetyLock19Passed = true;
+  if (isExtremeSigma3) {
+    safetyLock19Passed = false;
+  }
+
+  // Calculate Unified Liquidity Score (0 to 100)
+  let score = 65;
+  if (imbalance.pressureState !== "BALANCED_DEPTH") score += 10;
+  if (vwapBands.bandPosition === "INSIDE_SIGMA_1") score += 10;
+  if (iceberg.isIcebergDetected) score += 10;
+  if (volumeVelocity.relativeBurstRatio >= 1.2 && volumeVelocity.relativeBurstRatio <= 3.0) score += 5;
+  if (!safetyLock19Passed) score -= 25;
+
+  const liquidityScore = Math.max(20, Math.min(100, score));
+
+  let liquidityState: InstitutionalLiquidityMatrixInfo["liquidityState"] = "ADEQUATE";
+  if (!safetyLock19Passed || liquidityScore < 45) {
+    liquidityState = "LIQUIDITY_ABYSS";
+  } else if (liquidityScore >= 80) {
+    liquidityState = "DEEP_INSTITUTIONAL";
+  } else if (liquidityScore < 60) {
+    liquidityState = "FRAGILE";
+  }
+
+  const isHighFrequencyAnomaly = volumeVelocity.relativeBurstRatio >= 3.5 || vwapBands.bandPosition === "EXTREME_SIGMA_3";
+  const phase4Readiness = activePillarsCount >= 19 ? "PHASE_4_ORDER_FLOW_ENGAGED" : "INITIALIZING";
+  const isSpreadClimaxRisk = isExtremeSigma3 || isHighFrequencyAnomaly;
+
+  const desc = !safetyLock19Passed
+    ? `🛡️ Safety Lock 19 [ACTIVATED]: ตรวจพบหลุมดำสภาพคล่อง (Liquidity Abyss) หรือราคาหลุดกรอบ ±3σ สุดโต่ง ระงับคำสั่งทันทีเพื่อป้องกันสลิปเพจมหาศาล`
+    : liquidityState === "DEEP_INSTITUTIONAL"
+    ? `🌊 Institutional Liquidity Matrix สภาพคล่องสถาบันหนาแน่นสมบูรณ์แบบ (คะแนน: ${liquidityScore}/100 | Phase 4 Gate: OPEN | ผ่าน Lock 19)`
+    : `🌊 Institutional Liquidity Matrix สภาพคล่องพร้อมรองรับออเดอร์ (คะแนน: ${liquidityScore}/100 | สถานะ: ${liquidityState})`;
+
+  return {
+    liquidityScore,
+    liquidityState,
+    activePillarsCount,
+    safetyLock19Passed,
+    isHighFrequencyAnomaly,
+    phase4Readiness,
+    isSpreadClimaxRisk,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -6002,6 +6398,20 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     20
   );
 
+  // Batch 16: Plans 76, 77, 78, 79, 80 (Order Book Imbalance, VWAP Variance Bands, Volume Velocity, Iceberg Orders & Safety Lock 19)
+  const orderBookImbalance = calculateOrderBookImbalance(cleanCandles, precision);
+  const vwapVarianceBands = calculateVWAPVarianceBands(cleanCandles, precision);
+  const volumeVelocity = calculateTickVolumeVelocity(cleanCandles);
+  const icebergOrders = detectIcebergOrders(cleanCandles, precision);
+  const liquidityMatrix = synthesizeInstitutionalLiquidityMatrix(
+    orderBookImbalance,
+    vwapVarianceBands,
+    volumeVelocity,
+    icebergOrders,
+    currentPrice,
+    19
+  );
+
   return {
     rsi14,
     atr14,
@@ -6084,5 +6494,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     rvi,
     frama,
     milestone75,
+    orderBookImbalance,
+    vwapVarianceBands,
+    volumeVelocity,
+    icebergOrders,
+    liquidityMatrix,
   };
 }
