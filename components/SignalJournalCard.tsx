@@ -323,7 +323,7 @@ export default function SignalJournalCard() {
               <thead>
                 <tr className="bg-surface-50 text-slate-400 border-b border-slate-800">
                   <th className="px-2.5 py-2 text-left font-semibold">คู่เงิน (Symbol)</th>
-                  <th className="px-2 py-2 text-center font-semibold">500 แท่ง</th>
+                  <th className="px-2 py-2 text-center font-semibold" title="จำนวนออเดอร์ที่เกิดขึ้นจริงจากการสแกนย้อนหลัง 500 แท่งเทียน">ออเดอร์ (จาก 500 แท่ง)</th>
                   <th className="px-2 py-2 text-center font-semibold">ชนะ</th>
                   <th className="px-2 py-2 text-center font-semibold">แพ้</th>
                   <th className="px-2 py-2 text-center font-semibold">Win Rate</th>
@@ -359,7 +359,7 @@ export default function SignalJournalCard() {
                         </div>
                         {ps.name && <span className="text-[9px] text-slate-500 font-normal block truncate max-w-[140px]">{ps.name}</span>}
                       </td>
-                      <td className="px-2 py-2 text-center text-slate-300">{ps.totalTrades}</td>
+                      <td className="px-2 py-2 text-center text-slate-300 font-medium">{ps.totalTrades} ไม้</td>
                       <td className="px-2 py-2 text-center text-emerald-400 font-bold">{ps.wins}</td>
                       <td className="px-2 py-2 text-center text-rose-400 font-bold">{ps.losses}</td>
                       <td className="px-2 py-2 text-center">
