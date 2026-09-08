@@ -10,6 +10,7 @@ import SignalJournalCard from "@/components/SignalJournalCard";
 import TelegramSettingsModal from "@/components/TelegramSettingsModal";
 import { Candle, IndicatorData, NewsItem, AnalysisResult } from "@/lib/types";
 import { calculateAllIndicators } from "@/lib/indicators";
+import { Bot, Radio, Zap, ShieldCheck, Activity } from "lucide-react";
 
 // Dynamically import MarketChart with SSR disabled for clean canvas lifecycle
 const MarketChart = dynamic(() => import("@/components/MarketChart"), {
@@ -53,6 +54,12 @@ export default function DashboardPage() {
 
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // ─── Autonomous AI Auto-Pilot State ───
+  const [isAutoPilot, setIsAutoPilot] = useState<boolean>(true);
+  const [activeBridgeOrders, setActiveBridgeOrders] = useState<any[]>([]);
+  const [latestTelemetry, setLatestTelemetry] = useState<string>("ระบบ AI ตัดสินใจอัตโนมัติทำงาน • Watchlist ซิงค์เรียลไทม์ 100%");
+  const [lastSyncTime, setLastSyncTime] = useState<string>("เพิ่งอัปเดต");
 
   // Fetch Market Candles & Technicals (Ultra-fresh with cache-busting)
   const loadMarketData = useCallback(async (symbol: string, tf: string, isSilent = false) => {
@@ -303,6 +310,41 @@ export default function DashboardPage() {
     };
   }, [selectedAsset, selectedTimeframe, loadMarketData, loadNews]);
 
+  // Continuous Real-Time Autonomous Scanner Loop (every 8 seconds)
+  useEffect(() => {
+    if (!isAutoPilot) return;
+
+    let isMounted = true;
+    const runAutonomousSync = async () => {
+      if (!isMounted) return;
+      try {
+        const res = await fetch(`/api/autonomous-scanner?scan=true&_t=${Date.now()}`);
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          if (data.success) {
+            if (data.activeOrders) setActiveBridgeOrders(data.activeOrders);
+            if (data.telemetryLogs && data.telemetryLogs.length > 0) {
+              setLatestTelemetry(data.telemetryLogs[0].message);
+            }
+            const now = new Date();
+            setLastSyncTime(now.toTimeString().split(" ")[0]);
+          }
+        }
+      } catch {
+        // Silently handle transient network issue
+      }
+    };
+
+    const initialTimer = setTimeout(runAutonomousSync, 2000);
+    const syncInterval = setInterval(runAutonomousSync, 8000);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(initialTimer);
+      clearInterval(syncInterval);
+    };
+  }, [isAutoPilot]);
+
   // Auto trigger AI analysis
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -328,6 +370,63 @@ export default function DashboardPage() {
 
       {/* Main Container */}
       <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-4 lg:py-6 space-y-4 lg:space-y-6">
+        {/* AI Autonomous Auto-Pilot Live HUD Banner */}
+        <div className="w-full bg-surface-100/90 border border-indigo-500/25 rounded-2xl p-3 sm:p-4 shadow-lg shadow-black/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
+                isAutoPilot
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-md shadow-emerald-500/10"
+                  : "bg-slate-800 border-slate-700 text-slate-400"
+              }`}
+            >
+              <Bot className={`w-5 h-5 ${isAutoPilot ? "animate-pulse" : ""}`} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-sm text-white flex items-center gap-1.5">
+                  AI Autonomous Decision Pilot
+                  {isAutoPilot && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      ULTRA REAL-TIME SYNC
+                    </span>
+                  )}
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  (ซิงค์สด {lastSyncTime})
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 truncate max-w-xl flex items-center gap-1.5 mt-0.5">
+                <Radio className={`w-3.5 h-3.5 shrink-0 ${isAutoPilot ? "text-cyan-400 animate-spin" : "text-slate-500"}`} />
+                <span className="truncate">{latestTelemetry}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 sm:gap-3 self-end md:self-center shrink-0">
+            {/* Active Bridge Orders Badge */}
+            <div className="px-2.5 py-1.5 rounded-xl bg-surface-50 border border-slate-800 flex items-center gap-1.5 text-xs font-mono">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-slate-400">MT Bridge:</span>
+              <span className="font-bold text-white">{activeBridgeOrders.length} ออเดอร์</span>
+            </div>
+
+            {/* Auto-Pilot Toggle Button */}
+            <button
+              onClick={() => setIsAutoPilot((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-sm ${
+                isAutoPilot
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/30 shadow-emerald-600/20"
+                  : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${isAutoPilot ? "bg-white animate-pulse" : "bg-slate-500"}`} />
+              {isAutoPilot ? "ระบบตัดสินใจอัตโนมัติ: เปิด" : "ระบบตัดสินใจอัตโนมัติ: ปิด"}
+            </button>
+          </div>
+        </div>
+
         {/* Asset & Timeframe Bar */}
         <AssetSelector
           selectedAsset={selectedAsset}

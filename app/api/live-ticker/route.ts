@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchTradingViewSpotQuote, getMarketCandles } from "@/lib/marketService";
+import { resolveOrdersAgainstLivePrice } from "@/lib/autonomousEngine";
+import { resolveOpenSignals } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (quote && quote.price > 0) {
+      // ─── Real-Time Autonomous Synchronization ───
+      // Resolve active MT bridge orders & Neon DB open signals against live tick price
+      try {
+        resolveOrdersAgainstLivePrice(symbol, quote.price);
+        resolveOpenSignals(symbol, quote.price).catch(() => {});
+      } catch (e) {
+        // Non-blocking background resolution
+      }
+
       return NextResponse.json(
         {
           success: true,

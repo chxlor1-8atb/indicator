@@ -1787,3 +1787,64 @@ export interface SovereignSingularityAlphaInfo {
   singularityRecommendation: "MAXIMAL_CONVICTION_EXECUTION" | "TACTICAL_PROBABILITY_PLAY" | "DEFENSIVE_CAPITAL_PRESERVATION";
   description: string;
 }
+
+// ─── AUTONOMOUS PILOT & MT-BRIDGE INTERFACES ───
+export interface AssetScannerSummary {
+  symbol: string;
+  name: string;
+  category: string;
+  price: number;
+  change24h: number;
+  high24h: number;
+  low24h: number;
+  confluenceScore: number;
+  setupGrade: string;
+  signal: "STRONG_BUY" | "BUY" | "WAIT" | "SELL" | "STRONG_SELL";
+  orderType: string;
+  regime: string;
+  isNewsFrozen: boolean;
+  pendingPrice?: number;
+  slPrice?: number;
+  tpPrice?: number;
+  distancePips: number;
+  updatedAt: number;
+}
+
+export interface MtBridgeOrder {
+  id: string;
+  symbol: string;
+  orderType: string;
+  price: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  lotSize: number;
+  confluenceScore: number;
+  setupGrade: string;
+  comment: string;
+  status: "PENDING" | "FILLED" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCELLED";
+  timestamp: number;
+  expiresAt: number;
+}
+
+export interface TelemetryLog {
+  id: string;
+  timestamp: string;
+  timeMs: number;
+  symbol: string;
+  type: "DECISION" | "ORDER" | "RESOLVE" | "VETO" | "SCAN";
+  message: string;
+  confluence?: number;
+  grade?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface AutonomousPilotConfig {
+  isEnabled: boolean;
+  autoDispatchTelegram: boolean;
+  autoFocusHighestConfluence: boolean;
+  minConfluenceThreshold: number;
+  riskPercentPerTrade: number;
+  accountType: "STANDARD" | "CENT";
+  scanIntervalMs: number;
+}
