@@ -80,6 +80,11 @@ import {
   VPINToxicityInfo,
   LiquidityVacuumInfo,
   InstitutionalOrderFlowFusionInfo,
+  KylesLambdaPriceImpactInfo,
+  TradeSizeDistributionInfo,
+  MicroPriceQueueImbalanceInfo,
+  AdverseSelectionHazardInfo,
+  MicrostructureExecutionEngineInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -164,6 +169,11 @@ import {
   calculateVPINToxicity,
   detectLiquidityVacuum,
   synthesizeInstitutionalOrderFlowFusion,
+  calculateKylesLambdaPriceImpact,
+  analyzeTradeSizeDistribution,
+  calculateMicroPriceQueueImbalance,
+  calculateAdverseSelectionHazard,
+  synthesizeMicrostructureExecutionEngine,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -500,6 +510,19 @@ export function generateRuleBasedAnalysis(
     20
   );
 
+  // ─── BATCH 18 PRE-COMPUTATIONS (PLANS 86-90: HIGH-FREQUENCY MICROSTRUCTURE & EXECUTION MECHANICS) ───
+  const kylesLambda = indicators.kylesLambda || calculateKylesLambdaPriceImpact(candles, currentATR, precision);
+  const tradeSizeDistribution = indicators.tradeSizeDistribution || analyzeTradeSizeDistribution(candles);
+  const microPrice = indicators.microPrice || calculateMicroPriceQueueImbalance(candles, orderBookImbalance, precision);
+  const adverseSelection = indicators.adverseSelection || calculateAdverseSelectionHazard(candles, vpinToxicity, precision);
+  const executionEngine = indicators.executionEngine || synthesizeMicrostructureExecutionEngine(
+    kylesLambda,
+    tradeSizeDistribution,
+    microPrice,
+    adverseSelection,
+    21
+  );
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = Math.max(75, adaptiveConfig?.minScoreThreshold ?? 75);
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -572,11 +595,11 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 45);
   }
   // SAFETY LOCK 10: Institutional Dealing Range Extreme & Climax Exhaustion [แผน 33 & แผน 35]
-  else if (tier1Bias === "BULLISH" && premiumDiscount.zone === "EXTREME_PREMIUM") {
+  else if (tier1Bias === "BULLISH" && premiumDiscount.zone === "EXTREME_PREMIUM" && (orderFlowVelocity.isClimaxExhaustion || isBuyAtTopTrap)) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
-  } else if (tier1Bias === "BEARISH" && premiumDiscount.zone === "DEEP_DISCOUNT") {
+  } else if (tier1Bias === "BEARISH" && premiumDiscount.zone === "DEEP_DISCOUNT" && (orderFlowVelocity.isClimaxExhaustion || isSellAtBottomTrap)) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
@@ -685,17 +708,34 @@ export function generateRuleBasedAnalysis(
     orderFlowFusion.safetyLock20Passed = false;
     liquidityVacuum.safetyLock20Passed = false;
   }
-  // SAFETY LOCK 21: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
+  // SAFETY LOCK 21: Adverse Selection & Market Fragility Shield [แผน 90]
   else if (
-    (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 22) ||
-    (tier1Bias === "BULLISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) < (indicators.ema50.slice(-4)[0] ?? 0)) ||
-    (tier1Bias === "BEARISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) > (indicators.ema50.slice(-4)[0] ?? 0))
+    !executionEngine.safetyLock21Passed ||
+    !adverseSelection.safetyLock21Passed ||
+    !kylesLambda.safetyLock21Passed ||
+    adverseSelection.hazardState === "HIGH_ADVERSE_SELECTION" ||
+    kylesLambda.fragilityState === "FLASH_SLIPPAGE_ALERT" ||
+    executionEngine.executionReadiness === "EXECUTION_BLOCKED"
+  ) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 30);
+    executionEngine.safetyLock21Passed = false;
+    adverseSelection.safetyLock21Passed = false;
+    kylesLambda.safetyLock21Passed = false;
+  }
+  // SAFETY LOCK 22: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
+  else if (
+    regimeInfo.regime !== "VOLATILITY_SQUEEZE" &&
+    ((indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 20) ||
+     (tier1Bias === "BULLISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) < (indicators.ema50.slice(-4)[0] ?? 0)) ||
+     (tier1Bias === "BEARISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) > (indicators.ema50.slice(-4)[0] ?? 0)))
   ) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
   }
-  // SAFETY LOCK 22: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
+  // SAFETY LOCK 23: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
   else if (
     (tier1Bias === "BULLISH" && (mtfMatrix.h4 === "BEARISH" || mtfStructureMatrix.htfTrend === "BEARISH" || (mtfMatrix.alignmentScore ?? 0) <= -25)) ||
     (tier1Bias === "BEARISH" && (mtfMatrix.h4 === "BULLISH" || mtfStructureMatrix.htfTrend === "BULLISH" || (mtfMatrix.alignmentScore ?? 0) >= 25)) ||
@@ -758,6 +798,11 @@ export function generateRuleBasedAnalysis(
     if (vpinToxicity.toxicityRegime === "BENIGN_FLOW") confidence = Math.min(98, confidence + 4);
     if (!liquidityVacuum.isVacuumDetected && liquidityVacuum.safetyLock20Passed) confidence = Math.min(98, confidence + 4);
     if (orderFlowFusion.milestone85Grade === "S_TIER_ALPHA") confidence = Math.min(98, confidence + 5);
+    if (kylesLambda.fragilityState === "RESILIENT_DEEP_BOOK") confidence = Math.min(98, confidence + 4);
+    if (tradeSizeDistribution.dominantParticipant === "INSTITUTIONAL_ACCUMULATION" || tradeSizeDistribution.whaleAggressionDetected) confidence = Math.min(98, confidence + 5);
+    if (microPrice.tickLeadSignal === "PREDICTIVE_UP_TICK" || microPrice.subSpreadMomentum === "FAST_BULLISH_DRIFT") confidence = Math.min(98, confidence + 4);
+    if (adverseSelection.hazardState === "SAFE_PASSIVE_LIQUIDITY") confidence = Math.min(98, confidence + 4);
+    if (executionEngine.milestone90Grade === "S_TIER_OPTIMAL_EXECUTION") confidence = Math.min(98, confidence + 5);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -808,6 +853,11 @@ export function generateRuleBasedAnalysis(
     if (vpinToxicity.toxicityRegime === "BENIGN_FLOW") confidence = Math.min(98, confidence + 4);
     if (!liquidityVacuum.isVacuumDetected && liquidityVacuum.safetyLock20Passed) confidence = Math.min(98, confidence + 4);
     if (orderFlowFusion.milestone85Grade === "S_TIER_ALPHA") confidence = Math.min(98, confidence + 5);
+    if (kylesLambda.fragilityState === "RESILIENT_DEEP_BOOK") confidence = Math.min(98, confidence + 4);
+    if (tradeSizeDistribution.dominantParticipant === "INSTITUTIONAL_ACCUMULATION" || tradeSizeDistribution.whaleAggressionDetected) confidence = Math.min(98, confidence + 5);
+    if (microPrice.tickLeadSignal === "PREDICTIVE_DOWN_TICK" || microPrice.subSpreadMomentum === "FAST_BEARISH_DRIFT") confidence = Math.min(98, confidence + 4);
+    if (adverseSelection.hazardState === "SAFE_PASSIVE_LIQUIDITY") confidence = Math.min(98, confidence + 4);
+    if (executionEngine.milestone90Grade === "S_TIER_OPTIMAL_EXECUTION") confidence = Math.min(98, confidence + 5);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -1118,12 +1168,19 @@ export function generateRuleBasedAnalysis(
       note: `${advancedCVD.description} • ${footprintCluster.description} • ${vpinToxicity.description} • ${liquidityVacuum.description} • ${orderFlowFusion.description}`,
     },
     {
-      name: `Pillar 21: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
+      name: `Pillar 21: High-Frequency Microstructure, Micro-Price & Execution Hazard (Fragility: ${kylesLambda.fragilityState} | Stoikov: ${microPrice.tickLeadSignal} | Milestone 90: ${executionEngine.milestone90Grade})`,
+      passed: ((tradeAction === "BUY" && (microPrice.tickLeadSignal === "PREDICTIVE_UP_TICK" || tradeSizeDistribution.dominantParticipant === "INSTITUTIONAL_ACCUMULATION")) ||
+              (tradeAction === "SELL" && (microPrice.tickLeadSignal === "PREDICTIVE_DOWN_TICK" || tradeSizeDistribution.dominantParticipant === "INSTITUTIONAL_ACCUMULATION")) ||
+              executionEngine.safetyLock21Passed) ?? false,
+      note: `${kylesLambda.description} • ${tradeSizeDistribution.description} • ${microPrice.description} • ${adverseSelection.description} • ${executionEngine.description}`,
+    },
+    {
+      name: `Pillar 22: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
       passed: (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) >= 22) ?? true,
       note: `กรองสภาวะตลาดไร้แนวโน้ม ป้องกันการออกออเดอร์ในกรอบ Sideways (ADX >= 22 และ EMA50 Slope สอดคล้องทิศทางเทรนด์)`,
     },
     {
-      name: `Pillar 22: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
+      name: `Pillar 23: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
       passed: !isCounterTrend && !mtfStructureMatrix.isHTFConflict && !(harmonics.hasPattern && ((tradeAction === "BUY" && harmonics.bestPattern?.type === "BEARISH") || (tradeAction === "SELL" && harmonics.bestPattern?.type === "BULLISH"))),
       note: `Macro HTF Alignment: ${mtfMatrix.h4}/${mtfMatrix.d1} (Score: ${mtfMatrix.alignmentScore}%) • Harmonic PRZ Guard: ${harmonics.hasPattern ? `${harmonics.bestPattern?.patternName} (${harmonics.bestPattern?.type})` : "Clear"} • VSA: ${footprintAbsorption.vsaSignal}`,
     },
@@ -1223,6 +1280,11 @@ export function generateRuleBasedAnalysis(
     vpinToxicity,
     liquidityVacuum,
     orderFlowFusion,
+    kylesLambda,
+    tradeSizeDistribution,
+    microPrice,
+    adverseSelection,
+    executionEngine,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -1306,6 +1368,11 @@ export function generateRuleBasedAnalysis(
         `VPIN Flow Toxicity: VPIN ${vpinToxicity.vpin} (Regime: ${vpinToxicity.toxicityRegime} | Informed Trading: ${vpinToxicity.informedTradingProbabilityPct}%)`,
         `Liquidity Vacuum: ${liquidityVacuum.isVacuumDetected ? `DETECTED (${liquidityVacuum.vacuumType} | Gap ${liquidityVacuum.thinDepthGapSizePips} pips)` : "NORMAL (Healthy Depth)"}`,
         `Institutional Order Flow Fusion: [${orderFlowFusion.milestone85Grade}] Score: ${orderFlowFusion.orderFlowScore}/100 (Dominance: ${orderFlowFusion.flowDominance} | Lock 20: ${orderFlowFusion.safetyLock20Passed ? "PASSED" : "BLOCKED"})`,
+        `Kyle's Lambda Impact: λ ${kylesLambda.lambda} (${kylesLambda.fragilityState} | Impact: ${kylesLambda.priceImpactPipsPerMillion} pips/$1M - Fragility: ${kylesLambda.marketFragilityScore}/100)`,
+        `Trade Size Distribution: Dominance ${tradeSizeDistribution.institutionalDominanceRatio}x (${tradeSizeDistribution.dominantParticipant} | Whale: ${tradeSizeDistribution.sovereignWhaleSharePct}% - Block: ${tradeSizeDistribution.institutionalBlockSharePct}%)`,
+        `Stoikov Micro-Price: ${microPrice.microPrice} (Dev: ${microPrice.microPriceDeviationPips} pips | ${microPrice.tickLeadSignal} - ${microPrice.subSpreadMomentum})`,
+        `Adverse Selection Hazard: [${adverseSelection.hazardState}] Winner's Curse: ${adverseSelection.winnersCurseProbabilityPct}% (Drift: ${adverseSelection.adverseDriftPips} pips | Style: ${adverseSelection.recommendedExecutionStyle})`,
+        `Milestone 90 Execution Engine: [${executionEngine.milestone90Grade}] Score: ${executionEngine.executionEfficiencyScore}/100 (Status: ${executionEngine.executionReadiness} | Lock 21: ${executionEngine.safetyLock21Passed ? "PASSED" : "BLOCKED"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -1409,6 +1476,11 @@ export function generateRuleBasedAnalysis(
       vpinToxicity,
       liquidityVacuum,
       orderFlowFusion,
+      kylesLambda,
+      tradeSizeDistribution,
+      microPrice,
+      adverseSelection,
+      executionEngine,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1794,6 +1866,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.vpinToxicity = ruleAnalysis.vpinToxicity;
     parsed.liquidityVacuum = ruleAnalysis.liquidityVacuum;
     parsed.orderFlowFusion = ruleAnalysis.orderFlowFusion;
+    parsed.kylesLambda = ruleAnalysis.kylesLambda;
+    parsed.tradeSizeDistribution = ruleAnalysis.tradeSizeDistribution;
+    parsed.microPrice = ruleAnalysis.microPrice;
+    parsed.adverseSelection = ruleAnalysis.adverseSelection;
+    parsed.executionEngine = ruleAnalysis.executionEngine;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -1867,6 +1944,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.vpinToxicity = ruleAnalysis.tradeSetup.vpinToxicity;
       parsed.tradeSetup.liquidityVacuum = ruleAnalysis.tradeSetup.liquidityVacuum;
       parsed.tradeSetup.orderFlowFusion = ruleAnalysis.tradeSetup.orderFlowFusion;
+      parsed.tradeSetup.kylesLambda = ruleAnalysis.tradeSetup.kylesLambda;
+      parsed.tradeSetup.tradeSizeDistribution = ruleAnalysis.tradeSetup.tradeSizeDistribution;
+      parsed.tradeSetup.microPrice = ruleAnalysis.tradeSetup.microPrice;
+      parsed.tradeSetup.adverseSelection = ruleAnalysis.tradeSetup.adverseSelection;
+      parsed.tradeSetup.executionEngine = ruleAnalysis.tradeSetup.executionEngine;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

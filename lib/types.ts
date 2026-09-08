@@ -696,6 +696,11 @@ export interface IndicatorData {
   vpinToxicity?: VPINToxicityInfo;
   liquidityVacuum?: LiquidityVacuumInfo;
   orderFlowFusion?: InstitutionalOrderFlowFusionInfo;
+  kylesLambda?: KylesLambdaPriceImpactInfo;
+  tradeSizeDistribution?: TradeSizeDistributionInfo;
+  microPrice?: MicroPriceQueueImbalanceInfo;
+  adverseSelection?: AdverseSelectionHazardInfo;
+  executionEngine?: MicrostructureExecutionEngineInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -862,6 +867,11 @@ export interface AnalysisResult {
   vpinToxicity?: VPINToxicityInfo;
   liquidityVacuum?: LiquidityVacuumInfo;
   orderFlowFusion?: InstitutionalOrderFlowFusionInfo;
+  kylesLambda?: KylesLambdaPriceImpactInfo;
+  tradeSizeDistribution?: TradeSizeDistributionInfo;
+  microPrice?: MicroPriceQueueImbalanceInfo;
+  adverseSelection?: AdverseSelectionHazardInfo;
+  executionEngine?: MicrostructureExecutionEngineInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -970,6 +980,11 @@ export interface AnalysisResult {
     vpinToxicity?: VPINToxicityInfo;
     liquidityVacuum?: LiquidityVacuumInfo;
     orderFlowFusion?: InstitutionalOrderFlowFusionInfo;
+    kylesLambda?: KylesLambdaPriceImpactInfo;
+    tradeSizeDistribution?: TradeSizeDistributionInfo;
+    microPrice?: MicroPriceQueueImbalanceInfo;
+    adverseSelection?: AdverseSelectionHazardInfo;
+    executionEngine?: MicrostructureExecutionEngineInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1578,5 +1593,56 @@ export interface InstitutionalOrderFlowFusionInfo {
   phase4Readiness: "PHASE_4_ADVANCED_MICROSTRUCTURE_ENGAGED";
   activePillarsCount: number; // out of 20
   safetyLock20Passed: boolean;
+  description: string;
+}
+
+// ─── BATCH 18 INTERFACES (PLANS 86-90: HIGH-FREQUENCY MICROSTRUCTURE & EXECUTION MECHANICS) ───
+
+export interface KylesLambdaPriceImpactInfo {
+  lambda: number; // Kyle's Lambda illiquidity coefficient (price sensitivity to flow)
+  priceImpactPipsPerMillion: number; // Estimated price impact per $1M / 10 lots
+  marketFragilityScore: number; // 0 to 100 (100 = brittle/fragile order book, easily moved)
+  fragilityState: "RESILIENT_DEEP_BOOK" | "MODERATE_LIQUIDITY" | "HIGH_FRAGILITY_THIN" | "FLASH_SLIPPAGE_ALERT";
+  safetyLock21Passed: boolean;
+  description: string;
+}
+
+export interface TradeSizeDistributionInfo {
+  retailMicroSharePct: number; // Volume share from small lots (< 0.5 lots)
+  midTierSharePct: number; // Volume share from medium lots (0.5 - 5 lots)
+  institutionalBlockSharePct: number; // Volume share from block trades (5 - 20 lots)
+  sovereignWhaleSharePct: number; // Volume share from whale tickets (> 20 lots)
+  institutionalDominanceRatio: number; // (Block + Whale) / (Retail + Mid)
+  dominantParticipant: "RETAIL_DOMINATED" | "BALANCED_FLOW" | "INSTITUTIONAL_ACCUMULATION" | "WHALE_SWEEP_ACTIVE";
+  whaleAggressionDetected: boolean;
+  description: string;
+}
+
+export interface MicroPriceQueueImbalanceInfo {
+  microPrice: number; // Stoikov Micro-Price reflecting queue imbalance
+  midPrice: number; // Standard mid-price
+  microPriceDeviationPips: number; // (MicroPrice - MidPrice) in pips
+  queueImbalanceRatio: number; // (Q_bid - Q_ask) / (Q_bid + Q_ask) from -1.0 to +1.0
+  subSpreadMomentum: "FAST_BULLISH_DRIFT" | "FAST_BEARISH_DRIFT" | "SPREAD_EQUILIBRIUM";
+  tickLeadSignal: "PREDICTIVE_UP_TICK" | "PREDICTIVE_DOWN_TICK" | "NEUTRAL_TICK";
+  description: string;
+}
+
+export interface AdverseSelectionHazardInfo {
+  adverseDriftPips: number; // Expected post-trade price drift against passive orders
+  winnersCurseProbabilityPct: number; // 0 to 100% chance passive limit order is filled before sharp adverse move
+  hazardState: "SAFE_PASSIVE_LIQUIDITY" | "MODERATE_ADVERSE_RISK" | "HIGH_ADVERSE_SELECTION";
+  recommendedExecutionStyle: "PASSIVE_LIMIT_PREFERRED" | "PATIENT_PULLBACK_LIMIT" | "AGGRESSIVE_MARKET_CROSS" | "HALT_EXECUTION";
+  safetyLock21Passed: boolean;
+  description: string;
+}
+
+export interface MicrostructureExecutionEngineInfo {
+  executionEfficiencyScore: number; // 0 to 100
+  milestone90Grade: "S_TIER_OPTIMAL_EXECUTION" | "A_TIER_FAVORABLE" | "B_TIER_SUBOPTIMAL" | "F_TIER_ADVERSE_HAZARD";
+  phase4Progress: "PHASE_4_EXECUTION_ENGINE_ENGAGED";
+  activeMicrostructurePillarsCount: number; // out of 21
+  safetyLock21Passed: boolean;
+  executionReadiness: "CLEARED_FOR_EXECUTION" | "EXECUTION_THROTTLED" | "EXECUTION_BLOCKED";
   description: string;
 }

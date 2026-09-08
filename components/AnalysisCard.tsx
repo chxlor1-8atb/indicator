@@ -154,6 +154,11 @@ export default function AnalysisCard({
     const vpin = analysis.tradeSetup.vpinToxicity || analysis.vpinToxicity;
     const vacuum = analysis.tradeSetup.liquidityVacuum || analysis.liquidityVacuum;
     const ofFusion = analysis.tradeSetup.orderFlowFusion || analysis.orderFlowFusion;
+    const kyles = analysis.tradeSetup.kylesLambda || analysis.kylesLambda;
+    const tSize = analysis.tradeSetup.tradeSizeDistribution || analysis.tradeSizeDistribution;
+    const uPrice = analysis.tradeSetup.microPrice || analysis.microPrice;
+    const advSel = analysis.tradeSetup.adverseSelection || analysis.adverseSelection;
+    const execEng = analysis.tradeSetup.executionEngine || analysis.executionEngine;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -162,6 +167,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (kyles ? `• 📐 Kyle's Lambda Impact: λ ${kyles.lambda} (${kyles.fragilityState} | Impact: ${kyles.priceImpactPipsPerMillion} pips/$1M - Fragility: ${kyles.marketFragilityScore}/100)\n` : "") +
+      (tSize ? `• 🐋 Trade Size Distribution: Dominance ${tSize.institutionalDominanceRatio}x (${tSize.dominantParticipant} | Whale: ${tSize.sovereignWhaleSharePct}% - Block: ${tSize.institutionalBlockSharePct}%)\n` : "") +
+      (uPrice ? `• ⏱️ Stoikov Micro-Price: ${uPrice.microPrice} (Dev: ${uPrice.microPriceDeviationPips} pips | ${uPrice.tickLeadSignal} - ${uPrice.subSpreadMomentum})\n` : "") +
+      (advSel ? `• ⚠️ Adverse Selection Hazard: [${advSel.hazardState}] Winner's Curse: ${advSel.winnersCurseProbabilityPct}% (Drift: ${advSel.adverseDriftPips} pips | ${advSel.recommendedExecutionStyle})\n` : "") +
+      (execEng ? `• 🏆 Grand Milestone 90 Execution Engine: [${execEng.milestone90Grade}] Score ${execEng.executionEfficiencyScore}/100 (Status: ${execEng.executionReadiness} | Lock 21: ${execEng.safetyLock21Passed ? "PASSED" : "BLOCKED"})\n` : "") +
       (advCVD ? `• 🌊 Advanced CVD Flow: ${advCVD.currentCVD} (Div: ${advCVD.divergenceType} | Flow: ${advCVD.dominantFlow})\n` : "") +
       (fpCluster ? `• 👣 Footprint Cluster: Delta ${fpCluster.deltaAtExtremes} (BidVol: ${fpCluster.lowWickBidVolume} vs AskVol: ${fpCluster.highWickAskVolume} | Side: ${fpCluster.clusterAbsorptionSide})\n` : "") +
       (vpin ? `• 🧪 VPIN Flow Toxicity: ${vpin.vpin} (Regime: ${vpin.toxicityRegime} | Informed Trading: ${vpin.informedTradingProbabilityPct}%)\n` : "") +
@@ -429,7 +439,7 @@ export default function AnalysisCard({
             }`}
           >
             <Cpu className="w-4 h-4" />
-            <span>คลังอินดิเคเตอร์ 85 ตัวเชิงลึก (Deep Quant Lab)</span>
+            <span>คลังอินดิเคเตอร์ 90 ตัวเชิงลึก (Deep Quant Lab)</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
               รันในพื้นหลัง
             </span>
@@ -439,7 +449,7 @@ export default function AnalysisCard({
         <span className="text-[11px] text-slate-500 hidden md:inline font-medium">
           {activeCardTab === "STRATEGY"
             ? "🛡️ คัดกรองกลยุทธ์ & ป้องกันสัญญาณตีกัน"
-            : "⚡ คำนวณเบื้องหลัง 85 เครื่องมือแบบเรียลไทม์"}
+            : "⚡ คำนวณเบื้องหลัง 90 เครื่องมือแบบเรียลไทม์"}
         </span>
       </div>
 
@@ -920,18 +930,18 @@ export default function AnalysisCard({
         </div>
       )}
 
-      {/* ─── TAB 2: DEEP QUANT LAB (85 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
+      {/* ─── TAB 2: DEEP QUANT LAB (90 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
       {activeCardTab === "DEEP_QUANT" && (
         <div className="space-y-5 animate-fadeIn">
           <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-purple-200">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
               <span>
-                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 85 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
+                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 90 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
               </span>
             </div>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              85 Pillars Active (รันในพื้นหลัง)
+              90 Pillars Active (รันในพื้นหลัง)
             </span>
           </div>
 
@@ -4404,6 +4414,214 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.orderFlowFusion.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5r. 🏛️ High-Frequency Microstructure, Micro-Price & Execution Hazard (Plans 86-90) */}
+      {(analysis.kylesLambda || analysis.tradeSizeDistribution || analysis.microPrice || analysis.adverseSelection || analysis.executionEngine) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-fuchsia-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30">
+                <Gauge className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>High-Frequency Microstructure, Micro-Price & Execution Hazard (แผน 86-90)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-500/20 to-pink-500/20 text-fuchsia-300 border border-fuchsia-500/30">
+                    🏛️ Grand Milestone 90
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  Kyle&apos;s Lambda วัดสภาพคล่องเปราะบางและ Price Impact, Trade Size Distribution แยกวอลุ่มวาฬ Sovereign, Stoikov Micro-Price คำนวณราคากลางชี้นำคิวคำสั่ง, Adverse Selection Hazard และ Institutional Execution Engine พร้อม Safety Lock 21
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Kyle's Lambda & Price Impact Coefficient (Plan 86) */}
+            {analysis.kylesLambda && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">📐 Kyle&apos;s Lambda Impact</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.kylesLambda.fragilityState === "FLASH_SLIPPAGE_ALERT"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                      : analysis.kylesLambda.fragilityState === "RESILIENT_DEEP_BOOK"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  }`}>
+                    {analysis.kylesLambda.fragilityState}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Lambda (λ):</span>
+                    <span className={`font-mono font-bold text-[10px] ${
+                      analysis.kylesLambda.lambda >= 0.75 ? "text-rose-400" : analysis.kylesLambda.lambda <= 0.35 ? "text-emerald-400" : "text-amber-300"
+                    }`}>
+                      λ {analysis.kylesLambda.lambda} (เปราะบาง {analysis.kylesLambda.marketFragilityScore}/100)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Impact / $1M:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.kylesLambda.priceImpactPipsPerMillion} pips
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Safety Lock 21:</span>
+                    <span className={`font-mono text-[10px] font-bold ${analysis.kylesLambda.safetyLock21Passed ? "text-emerald-400" : "text-rose-400"}`}>
+                      {analysis.kylesLambda.safetyLock21Passed ? "PASSED (Safe Depth)" : "BLOCKED (Flash Slippage)"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.kylesLambda.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Trade Size Distribution & Whale Aggregator (Plan 87) */}
+            {analysis.tradeSizeDistribution && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🐋 Whale Ticket Distribution</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.tradeSizeDistribution.dominantParticipant === "WHALE_SWEEP_ACTIVE"
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/30 animate-pulse"
+                      : analysis.tradeSizeDistribution.dominantParticipant === "INSTITUTIONAL_ACCUMULATION"
+                      ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                      : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                  }`}>
+                    {analysis.tradeSizeDistribution.dominantParticipant}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Inst. Dominance:</span>
+                    <span className="font-mono font-bold text-amber-300 text-[10px]">
+                      {analysis.tradeSizeDistribution.institutionalDominanceRatio}x (Whale {analysis.tradeSizeDistribution.sovereignWhaleSharePct}%)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Retail vs Inst Block:</span>
+                    <span className="font-mono text-[10px] font-bold text-white">
+                      <span className="text-slate-400">Micro {analysis.tradeSizeDistribution.retailMicroSharePct}%</span> vs <span className="text-cyan-400">Block {analysis.tradeSizeDistribution.institutionalBlockSharePct}%</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Whale Aggression:</span>
+                    <span className="font-mono text-emerald-400 text-[10px] font-bold">
+                      {analysis.tradeSizeDistribution.whaleAggressionDetected ? "DETECTED (Sweep Active)" : "NORMAL (Passive Flow)"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.tradeSizeDistribution.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Stoikov Micro-Price & Queue Imbalance Momentum (Plan 88) */}
+            {analysis.microPrice && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⏱️ Stoikov Micro-Price</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.microPrice.tickLeadSignal === "PREDICTIVE_UP_TICK"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.microPrice.tickLeadSignal === "PREDICTIVE_DOWN_TICK"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                  }`}>
+                    {analysis.microPrice.tickLeadSignal}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Stoikov Fair Value:</span>
+                    <span className="font-mono font-bold text-white text-[10px]">
+                      {analysis.microPrice.microPrice} (Mid: {analysis.microPrice.midPrice})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Deviation / Momentum:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.microPrice.microPriceDeviationPips >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}>
+                      {analysis.microPrice.microPriceDeviationPips >= 0 ? `+${analysis.microPrice.microPriceDeviationPips}` : analysis.microPrice.microPriceDeviationPips} pips ({analysis.microPrice.subSpreadMomentum})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Queue Imbalance:</span>
+                    <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                      {analysis.microPrice.queueImbalanceRatio >= 0 ? `+${analysis.microPrice.queueImbalanceRatio}` : analysis.microPrice.queueImbalanceRatio}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.microPrice.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Grand Milestone 90 Execution Engine & Safety Lock 21 (Plans 89 & 90) */}
+            {(analysis.executionEngine || analysis.adverseSelection) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🏆 Grand Milestone 90</span>
+                  {analysis.executionEngine && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.executionEngine.safetyLock21Passed
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                    }`}>
+                      {analysis.executionEngine.safetyLock21Passed ? "🛡️ LOCK 21 PASS" : "⛔ ADVERSE RISK"}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.executionEngine && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Execution Score:</span>
+                        <span className="font-mono font-bold text-amber-300 text-[10px]">
+                          {analysis.executionEngine.executionEfficiencyScore} / 100 [{analysis.executionEngine.milestone90Grade}]
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Execution Readiness:</span>
+                        <span className={`font-mono text-[10px] font-bold ${
+                          analysis.executionEngine.executionReadiness === "CLEARED_FOR_EXECUTION" ? "text-emerald-400" : analysis.executionEngine.executionReadiness === "EXECUTION_BLOCKED" ? "text-rose-400" : "text-amber-300"
+                        }`}>
+                          {analysis.executionEngine.executionReadiness}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Active Pillars:</span>
+                        <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                          {analysis.executionEngine.activeMicrostructurePillarsCount} / 21 เสาหลัก
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {analysis.adverseSelection && (
+                    <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-slate-800/60">
+                      <span className="text-slate-400">Adverse Hazard:</span>
+                      <span className="font-mono text-[10px] font-bold text-fuchsia-300">
+                        {analysis.adverseSelection.hazardState} ({analysis.adverseSelection.recommendedExecutionStyle})
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.executionEngine?.description || analysis.adverseSelection?.description}
                 </p>
               </div>
             )}

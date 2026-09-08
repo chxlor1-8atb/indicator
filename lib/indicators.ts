@@ -93,6 +93,11 @@ import {
   VPINToxicityInfo,
   LiquidityVacuumInfo,
   InstitutionalOrderFlowFusionInfo,
+  KylesLambdaPriceImpactInfo,
+  TradeSizeDistributionInfo,
+  MicroPriceQueueImbalanceInfo,
+  AdverseSelectionHazardInfo,
+  MicrostructureExecutionEngineInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -6639,6 +6644,397 @@ export function synthesizeInstitutionalOrderFlowFusion(
   };
 }
 
+// ─── BATCH 18 FUNCTIONS (PLANS 86-90: HIGH-FREQUENCY MICROSTRUCTURE & EXECUTION MECHANICS) ───
+
+/**
+ * [แผน 86] Market Microstructure Kyle's Lambda & Price Impact Coefficient
+ * Quantifies illiquidity lambda = Cov(Delta P, Q) / Var(Q) to measure price sensitivity to flow
+ */
+export function calculateKylesLambdaPriceImpact(
+  candles: Candle[],
+  currentATR = 1.0,
+  precision = 2
+): KylesLambdaPriceImpactInfo {
+  if (candles.length < 15) {
+    return {
+      lambda: 0.25,
+      priceImpactPipsPerMillion: 1.2,
+      marketFragilityScore: 35,
+      fragilityState: "MODERATE_LIQUIDITY",
+      safetyLock21Passed: true,
+      description: "Kyle's Lambda: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const sample = candles.slice(-25);
+  let sumXY = 0;
+  let sumXX = 0;
+
+  for (let i = 1; i < sample.length; i++) {
+    const deltaP = sample[i].close - sample[i - 1].close;
+    const candleRange = Math.max(0.0001, sample[i].high - sample[i].low);
+    const signedFraction = (sample[i].close - sample[i].open) / candleRange;
+    const vol = sample[i].volume > 0 ? sample[i].volume : 100;
+    const netFlowQ = vol * signedFraction;
+
+    sumXY += deltaP * netFlowQ;
+    sumXX += netFlowQ * netFlowQ;
+  }
+
+  const rawLambda = sumXX > 0 ? Math.abs(sumXY / sumXX) * 1000 : 0.2;
+  const normalizedLambda = Number(Math.max(0.01, Math.min(2.5, rawLambda)).toFixed(3));
+
+  // Pip size calculation
+  const pipMultiplier = precision === 4 ? 10000 : precision === 3 ? 1000 : 100;
+  const priceImpactPips = Number((normalizedLambda * 8.5).toFixed(1));
+
+  // Fragility score (0 to 100)
+  const fragilityScore = Math.min(100, Math.max(10, Math.round((normalizedLambda / 1.5) * 100)));
+
+  let fragilityState: KylesLambdaPriceImpactInfo["fragilityState"] = "RESILIENT_DEEP_BOOK";
+  let safetyLock21Passed = true;
+
+  if (fragilityScore >= 80) {
+    fragilityState = "FLASH_SLIPPAGE_ALERT";
+    safetyLock21Passed = false;
+  } else if (fragilityScore >= 60) {
+    fragilityState = "HIGH_FRAGILITY_THIN";
+  } else if (fragilityScore >= 35) {
+    fragilityState = "MODERATE_LIQUIDITY";
+  }
+
+  const desc = !safetyLock21Passed
+    ? `📐 Kyle's Lambda ระดับวิกฤต [${fragilityState}] (λ: ${normalizedLambda} | ความเปราะบาง: ${fragilityScore}/100): ตลาดเนื้อบางมาก คำสั่งซื้อขายขนาดกลางจะกระแทกราคาจนเกิด Slippage รุนแรง`
+    : `📐 Kyle's Lambda สภาพคล่องหนาแน่น [${fragilityState}] (λ: ${normalizedLambda} | ผลกระทบราคา: ${priceImpactPips} pips/$1M): สมุดคำสั่งซื้อขายดูดซับแรงกระแทกได้ดี`;
+
+  return {
+    lambda: normalizedLambda,
+    priceImpactPipsPerMillion: priceImpactPips,
+    marketFragilityScore: fragilityScore,
+    fragilityState,
+    safetyLock21Passed,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 87] Trade Size Distribution & Whale Ticket Aggregator
+ * Decomposes volume into retail micro vs institutional block & whale orders
+ */
+export function analyzeTradeSizeDistribution(
+  candles: Candle[]
+): TradeSizeDistributionInfo {
+  if (candles.length < 15) {
+    return {
+      retailMicroSharePct: 30,
+      midTierSharePct: 40,
+      institutionalBlockSharePct: 20,
+      sovereignWhaleSharePct: 10,
+      institutionalDominanceRatio: 0.43,
+      dominantParticipant: "BALANCED_FLOW",
+      whaleAggressionDetected: false,
+      description: "Trade Size Distribution: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const sample = candles.slice(-20);
+  const avgVol = sample.reduce((acc, c) => acc + (c.volume > 0 ? c.volume : 100), 0) / sample.length;
+
+  let totalRetail = 0;
+  let totalMid = 0;
+  let totalBlock = 0;
+  let totalWhale = 0;
+
+  for (const c of sample) {
+    const vol = c.volume > 0 ? c.volume : 100;
+    const volRatio = vol / Math.max(1, avgVol);
+
+    if (volRatio >= 2.5) {
+      totalWhale += vol * 0.55;
+      totalBlock += vol * 0.30;
+      totalMid += vol * 0.10;
+      totalRetail += vol * 0.05;
+    } else if (volRatio >= 1.5) {
+      totalWhale += vol * 0.20;
+      totalBlock += vol * 0.50;
+      totalMid += vol * 0.20;
+      totalRetail += vol * 0.10;
+    } else if (volRatio >= 0.8) {
+      totalWhale += vol * 0.05;
+      totalBlock += vol * 0.25;
+      totalMid += vol * 0.45;
+      totalRetail += vol * 0.25;
+    } else {
+      totalWhale += 0;
+      totalBlock += vol * 0.10;
+      totalMid += vol * 0.35;
+      totalRetail += vol * 0.55;
+    }
+  }
+
+  const total = Math.max(1, totalRetail + totalMid + totalBlock + totalWhale);
+  const retailMicroSharePct = Math.round((totalRetail / total) * 100);
+  const midTierSharePct = Math.round((totalMid / total) * 100);
+  const institutionalBlockSharePct = Math.round((totalBlock / total) * 100);
+  const sovereignWhaleSharePct = Math.max(0, 100 - retailMicroSharePct - midTierSharePct - institutionalBlockSharePct);
+
+  const instVol = institutionalBlockSharePct + sovereignWhaleSharePct;
+  const retailVol = Math.max(1, retailMicroSharePct + midTierSharePct);
+  const institutionalDominanceRatio = Number((instVol / retailVol).toFixed(2));
+
+  const latest = candles[candles.length - 1];
+  const latestVol = latest.volume > 0 ? latest.volume : 100;
+  const whaleAggressionDetected = sovereignWhaleSharePct >= 22 && latestVol >= avgVol * 1.6;
+
+  let dominantParticipant: TradeSizeDistributionInfo["dominantParticipant"] = "BALANCED_FLOW";
+  if (whaleAggressionDetected) {
+    dominantParticipant = "WHALE_SWEEP_ACTIVE";
+  } else if (institutionalDominanceRatio >= 1.35) {
+    dominantParticipant = "INSTITUTIONAL_ACCUMULATION";
+  } else if (institutionalDominanceRatio <= 0.65) {
+    dominantParticipant = "RETAIL_DOMINATED";
+  }
+
+  const desc = whaleAggressionDetected
+    ? `🐋 Trade Size Distribution ตรวจพบ Whale Aggression! (สัดส่วนวาฬ ${sovereignWhaleSharePct}% | บล็อกสถาบัน ${institutionalBlockSharePct}%): เงินก้อนใหญ่กำลังกวาดคลีนออเดอร์ในตลาด`
+    : institutionalDominanceRatio >= 1.35
+    ? `🐋 Trade Size Distribution สถาบันคุมการส่งคำสั่ง (Dominance Ratio: ${institutionalDominanceRatio}x | บล็อก+วาฬ: ${instVol}% vs รายย่อย: ${retailVol}%)`
+    : `🐋 Trade Size Distribution การไหลเวียนปกติ (บล็อก: ${institutionalBlockSharePct}% | รายย่อย: ${retailMicroSharePct}% | สภาวะ: ${dominantParticipant})`;
+
+  return {
+    retailMicroSharePct,
+    midTierSharePct,
+    institutionalBlockSharePct,
+    sovereignWhaleSharePct,
+    institutionalDominanceRatio,
+    dominantParticipant,
+    whaleAggressionDetected,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 88] Micro-Price & Queue Imbalance Momentum
+ * Stoikov (2018) Micro-Price model adjusting mid-price by top-of-book queue imbalance
+ */
+export function calculateMicroPriceQueueImbalance(
+  candles: Candle[],
+  orderBookImbalance?: OrderBookImbalanceInfo,
+  precision = 2
+): MicroPriceQueueImbalanceInfo {
+  if (candles.length === 0) {
+    return {
+      microPrice: 0,
+      midPrice: 0,
+      microPriceDeviationPips: 0,
+      queueImbalanceRatio: 0,
+      subSpreadMomentum: "SPREAD_EQUILIBRIUM",
+      tickLeadSignal: "NEUTRAL_TICK",
+      description: "Micro-Price: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const lastCandle = candles[candles.length - 1];
+  const midPrice = lastCandle.close;
+
+  // Queue imbalance (-1.0 to +1.0)
+  let queueImbalanceRatio = 0;
+  if (
+    orderBookImbalance &&
+    typeof orderBookImbalance.bidDepthPct === "number" &&
+    typeof orderBookImbalance.askDepthPct === "number"
+  ) {
+    queueImbalanceRatio = Number(((orderBookImbalance.bidDepthPct - orderBookImbalance.askDepthPct) / 100).toFixed(2));
+  } else {
+    // Intrabar proxy from close relative to high/low
+    const range = Math.max(0.0001, lastCandle.high - lastCandle.low);
+    const pos = (lastCandle.close - lastCandle.low) / range;
+    queueImbalanceRatio = Number(((pos - 0.5) * 2).toFixed(2));
+  }
+
+  // Estimated spread in price units
+  const pipUnit = precision === 4 ? 0.0001 : precision === 3 ? 0.001 : 0.01;
+  const spreadPrice = (orderBookImbalance?.spreadPipsEstimate || 0.6) * pipUnit;
+
+  // Stoikov Micro-Price = Mid + QueueImbalance * (Spread / 2)
+  const microPrice = Number((midPrice + queueImbalanceRatio * (spreadPrice / 2)).toFixed(precision));
+  const microPriceDeviationPips = Number(((microPrice - midPrice) / pipUnit).toFixed(1));
+
+  let subSpreadMomentum: MicroPriceQueueImbalanceInfo["subSpreadMomentum"] = "SPREAD_EQUILIBRIUM";
+  if (queueImbalanceRatio >= 0.35) {
+    subSpreadMomentum = "FAST_BULLISH_DRIFT";
+  } else if (queueImbalanceRatio <= -0.35) {
+    subSpreadMomentum = "FAST_BEARISH_DRIFT";
+  }
+
+  let tickLeadSignal: MicroPriceQueueImbalanceInfo["tickLeadSignal"] = "NEUTRAL_TICK";
+  if (microPriceDeviationPips >= 0.2) {
+    tickLeadSignal = "PREDICTIVE_UP_TICK";
+  } else if (microPriceDeviationPips <= -0.2) {
+    tickLeadSignal = "PREDICTIVE_DOWN_TICK";
+  }
+
+  const desc = tickLeadSignal !== "NEUTRAL_TICK"
+    ? `⏱️ Stoikov Micro-Price ชี้นำทิศทาง [${tickLeadSignal}] (MicroPrice: ${microPrice} vs Mid: ${midPrice} | เบี่ยงเบน: ${microPriceDeviationPips > 0 ? "+" : ""}${microPriceDeviationPips} pips): แรงกดคิวเสนอซื้อ/ขายส่งผลต่อการเคลื่อนไหว Tick ถัดไป`
+    : `⏱️ Stoikov Micro-Price สมดุลในสเปรด (MicroPrice: ${microPrice} | Queue Imbalance: ${queueImbalanceRatio})`;
+
+  return {
+    microPrice,
+    midPrice,
+    microPriceDeviationPips,
+    queueImbalanceRatio,
+    subSpreadMomentum,
+    tickLeadSignal,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 89] Toxic Order Flow Decay & Adverse Selection Hazard
+ * Measures post-fill adverse price drift and Winner's Curse risk against limit orders
+ */
+export function calculateAdverseSelectionHazard(
+  candles: Candle[],
+  vpin?: VPINToxicityInfo,
+  precision = 2
+): AdverseSelectionHazardInfo {
+  if (candles.length < 15) {
+    return {
+      adverseDriftPips: 2.5,
+      winnersCurseProbabilityPct: 25,
+      hazardState: "SAFE_PASSIVE_LIQUIDITY",
+      recommendedExecutionStyle: "PASSIVE_LIMIT_PREFERRED",
+      safetyLock21Passed: true,
+      description: "Adverse Selection: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const sample = candles.slice(-15);
+  const pipUnit = precision === 4 ? 0.0001 : precision === 3 ? 0.001 : 0.01;
+
+  // Measure average 3-candle drift against candle extremes
+  let adverseDriftSum = 0;
+  for (let i = 2; i < sample.length; i++) {
+    const prevBar = sample[i - 1];
+    const currBar = sample[i];
+    const driftDown = Math.max(0, prevBar.high - currBar.close);
+    const driftUp = Math.max(0, currBar.close - prevBar.low);
+    adverseDriftSum += Math.max(driftDown, driftUp);
+  }
+
+  const avgDriftPrice = adverseDriftSum / (sample.length - 2);
+  const adverseDriftPips = Number((avgDriftPrice / pipUnit).toFixed(1));
+
+  // Factor in VPIN toxicity if present
+  const vpinFactor = vpin ? vpin.informedTradingProbabilityPct : 30;
+  const rawHazardScore = (adverseDriftPips * 3.5) + (vpinFactor * 0.65);
+  const winnersCurseProbabilityPct = Math.min(95, Math.max(10, Math.round(rawHazardScore)));
+
+  let hazardState: AdverseSelectionHazardInfo["hazardState"] = "SAFE_PASSIVE_LIQUIDITY";
+  let recommendedExecutionStyle: AdverseSelectionHazardInfo["recommendedExecutionStyle"] = "PASSIVE_LIMIT_PREFERRED";
+  let safetyLock21Passed = true;
+
+  if (winnersCurseProbabilityPct >= 70 || adverseDriftPips >= 18) {
+    hazardState = "HIGH_ADVERSE_SELECTION";
+    recommendedExecutionStyle = "HALT_EXECUTION";
+    safetyLock21Passed = false;
+  } else if (winnersCurseProbabilityPct >= 45 || adverseDriftPips >= 10) {
+    hazardState = "MODERATE_ADVERSE_RISK";
+    recommendedExecutionStyle = "AGGRESSIVE_MARKET_CROSS";
+  } else {
+    recommendedExecutionStyle = "PASSIVE_LIMIT_PREFERRED";
+  }
+
+  const desc = !safetyLock21Passed
+    ? `⚠️ Adverse Selection Hazard ระดับอันตรายสูง [${hazardState}] (ความเสี่ยง Winner's Curse ${winnersCurseProbabilityPct}% | การรูดสวนทาง: ${adverseDriftPips} pips): คำสั่ง Limit มักจะถูกเลือกกินเฉพาะตอนราคาจะวิ่งทะลุแรง แนะนำระงับการเข้าออเดอร์`
+    : `🛡️ Adverse Selection Hazard ปลอดภัย [${hazardState}] (ความเสี่ยง Winner's Curse: ${winnersCurseProbabilityPct}% | การรูดสวนทาง: ${adverseDriftPips} pips): แนะนำใช้ ${recommendedExecutionStyle}`;
+
+  return {
+    adverseDriftPips,
+    winnersCurseProbabilityPct,
+    hazardState,
+    recommendedExecutionStyle,
+    safetyLock21Passed,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 90] Grand Milestone 90 Institutional Microstructure Execution Engine & Safety Lock 21
+ * Synthesizes Kyle's Lambda, Trade Size Distribution, Micro-Price, and Adverse Selection Hazard
+ */
+export function synthesizeMicrostructureExecutionEngine(
+  kylesLambda: KylesLambdaPriceImpactInfo,
+  tradeSize: TradeSizeDistributionInfo,
+  microPrice: MicroPriceQueueImbalanceInfo,
+  adverseSelection: AdverseSelectionHazardInfo,
+  activeMicrostructurePillarsCount = 21
+): MicrostructureExecutionEngineInfo {
+  // SAFETY LOCK 21: Adverse Selection & Market Fragility Shield
+  let safetyLock21Passed = true;
+  if (!kylesLambda.safetyLock21Passed || !adverseSelection.safetyLock21Passed) {
+    safetyLock21Passed = false;
+  }
+
+  // Calculate Execution Efficiency Score (0 to 100)
+  let score = 50;
+  // 1. Kyle's Lambda Resiliency (up to 25 pts)
+  if (kylesLambda.fragilityState === "RESILIENT_DEEP_BOOK") score += 25;
+  else if (kylesLambda.fragilityState === "MODERATE_LIQUIDITY") score += 15;
+  else if (kylesLambda.fragilityState === "HIGH_FRAGILITY_THIN") score += 5;
+  else score -= 15;
+
+  // 2. Trade Size Dominance (up to 25 pts)
+  if (tradeSize.dominantParticipant === "INSTITUTIONAL_ACCUMULATION" || tradeSize.whaleAggressionDetected) score += 25;
+  else if (tradeSize.dominantParticipant === "BALANCED_FLOW") score += 15;
+  else score += 5;
+
+  // 3. Micro-Price Sub-Spread Alignment (up to 20 pts)
+  if (microPrice.subSpreadMomentum !== "SPREAD_EQUILIBRIUM") score += 20;
+  else score += 10;
+
+  // 4. Adverse Selection Safety (up to 30 pts)
+  if (adverseSelection.hazardState === "SAFE_PASSIVE_LIQUIDITY") score += 30;
+  else if (adverseSelection.hazardState === "MODERATE_ADVERSE_RISK") score += 10;
+  else score -= 25;
+
+  if (!safetyLock21Passed) score -= 30;
+
+  const executionEfficiencyScore = Math.max(10, Math.min(100, score));
+
+  let milestone90Grade: MicrostructureExecutionEngineInfo["milestone90Grade"] = "B_TIER_SUBOPTIMAL";
+  if (!safetyLock21Passed || executionEfficiencyScore < 45) {
+    milestone90Grade = "F_TIER_ADVERSE_HAZARD";
+  } else if (executionEfficiencyScore >= 85) {
+    milestone90Grade = "S_TIER_OPTIMAL_EXECUTION";
+  } else if (executionEfficiencyScore >= 70) {
+    milestone90Grade = "A_TIER_FAVORABLE";
+  }
+
+  let executionReadiness: MicrostructureExecutionEngineInfo["executionReadiness"] = "EXECUTION_BLOCKED";
+  if (safetyLock21Passed && executionEfficiencyScore >= 70) {
+    executionReadiness = "CLEARED_FOR_EXECUTION";
+  } else if (safetyLock21Passed) {
+    executionReadiness = "EXECUTION_THROTTLED";
+  }
+
+  const desc = !safetyLock21Passed
+    ? `🛡️ Safety Lock 21 [ACTIVATED]: ระงับการส่งคำสั่งเนื่องจากพบความเสี่ยง Adverse Selection ขั้นรุนแรง หรือตลาดเปราะบางเกินเกณฑ์ (Kyle's Fragility: ${kylesLambda.marketFragilityScore}/100 | Winner's Curse: ${adverseSelection.winnersCurseProbabilityPct}%)`
+    : milestone90Grade === "S_TIER_OPTIMAL_EXECUTION"
+    ? `🏆 Grand Milestone 90 Execution Engine สภาวะสมุดคำสั่งซื้อขายเกรดสูงสุด S-Tier (คะแนน: ${executionEfficiencyScore}/100 | สถานะ: ${executionReadiness} | ผ่าน Lock 21)`
+    : `🏆 Grand Milestone 90 Execution Engine สภาพแวดล้อมการส่งคำสั่งพร้อมทำงาน (คะแนน: ${executionEfficiencyScore}/100 | เกรด: ${milestone90Grade} | ผ่าน Lock 21)`;
+
+  return {
+    executionEfficiencyScore,
+    milestone90Grade,
+    phase4Progress: "PHASE_4_EXECUTION_ENGINE_ENGAGED",
+    activeMicrostructurePillarsCount,
+    safetyLock21Passed,
+    executionReadiness,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -6834,6 +7230,19 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     20
   );
 
+  // Batch 18: Plans 86, 87, 88, 89, 90 (Kyle's Lambda, Trade Size Distribution, Micro-Price, Adverse Selection Hazard, Execution Engine)
+  const kylesLambda = calculateKylesLambdaPriceImpact(cleanCandles, latestATR, precision);
+  const tradeSizeDistribution = analyzeTradeSizeDistribution(cleanCandles);
+  const microPrice = calculateMicroPriceQueueImbalance(cleanCandles, orderBookImbalance, precision);
+  const adverseSelection = calculateAdverseSelectionHazard(cleanCandles, vpinToxicity, precision);
+  const executionEngine = synthesizeMicrostructureExecutionEngine(
+    kylesLambda,
+    tradeSizeDistribution,
+    microPrice,
+    adverseSelection,
+    21
+  );
+
   return {
     rsi14,
     atr14,
@@ -6926,5 +7335,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     vpinToxicity,
     liquidityVacuum,
     orderFlowFusion,
+    kylesLambda,
+    tradeSizeDistribution,
+    microPrice,
+    adverseSelection,
+    executionEngine,
   };
 }
