@@ -270,6 +270,9 @@ export function generateRuleBasedAnalysis(
 
   const isUptrend = currentPrice >= lastEMA50 && lastEMA20 >= lastEMA50;
   const isDowntrend = currentPrice < lastEMA50 && lastEMA20 < lastEMA50;
+  // Softer fallback: if EMA20/EMA50 are mixed but price has a clear EMA200 relationship, use that
+  const isAboveEMA200 = currentPrice > lastEMA200 && lastEMA20 > lastEMA200;
+  const isBelowEMA200 = currentPrice < lastEMA200 && lastEMA20 < lastEMA200;
 
   if (isUptrend && currentPrice > lastEMA200) {
     tier1Bias = "BULLISH";
@@ -287,6 +290,16 @@ export function generateRuleBasedAnalysis(
     tier1Bias = "BEARISH";
     trend = "DOWNTREND";
     tier1Reason = `โครงสร้างแนวโน้มขาลง (ราคาอยู่ใต้ EMA ${optimizedConfig.emaSlow})`;
+  } else if (isAboveEMA200) {
+    // Soft BULLISH: price & EMA20 both above EMA200, but EMA20/EMA50 mixed
+    tier1Bias = "BULLISH";
+    trend = "UPTREND";
+    tier1Reason = `แนวโน้มขาขึ้นระยะกลาง (ราคาและ EMA อยู่เหนือ EMA ${optimizedConfig.emaTrend} แม้ EMA Ribbon จะยังผสม)`;
+  } else if (isBelowEMA200) {
+    // Soft BEARISH: price & EMA20 both below EMA200, but EMA20/EMA50 mixed
+    tier1Bias = "BEARISH";
+    trend = "DOWNTREND";
+    tier1Reason = `แนวโน้มขาลงระยะกลาง (ราคาและ EMA อยู่ต่ำกว่า EMA ${optimizedConfig.emaTrend} แม้ EMA Ribbon จะยังผสม)`;
   }
 
   // ─── TIER 2: VALUE LOCATION (No Chasing / Value Zone) ───
@@ -294,8 +307,16 @@ export function generateRuleBasedAnalysis(
   const distInATR = Number((distFromFast / (currentATR || 1)).toFixed(1));
   const isOverextended = distInATR > 2.2;
 
-  const inBuyValueZone = tier1Bias === "BULLISH" && (lastCandle.low <= lastEMA20 * 1.004 || currentPrice <= lastEMA20 * 1.006);
-  const inSellValueZone = tier1Bias === "BEARISH" && (lastCandle.high >= lastEMA20 * 0.996 || currentPrice >= lastEMA20 * 0.994);
+  const inBuyValueZone = tier1Bias === "BULLISH" && (
+    lastCandle.low <= lastEMA20 * 1.004 ||
+    currentPrice <= lastEMA20 * 1.015 ||
+    (currentPrice > lastEMA20 && currentPrice <= lastEMA50 * 1.025)
+  );
+  const inSellValueZone = tier1Bias === "BEARISH" && (
+    lastCandle.high >= lastEMA20 * 0.996 ||
+    currentPrice >= lastEMA20 * 0.985 ||
+    (currentPrice < lastEMA20 && currentPrice >= lastEMA50 * 0.975)
+  );
   const inValueZone = inBuyValueZone || inSellValueZone;
 
   let tier2Note = "ราคากำลังเคลื่อนไหวในโซนสมดุล";
@@ -327,8 +348,17 @@ export function generateRuleBasedAnalysis(
   const isRsiBullHook = lastRSI >= prevRSI;
   const isRsiBearHook = lastRSI <= prevRSI;
 
-  const hasBuyTrigger = tier1Bias === "BULLISH" && isSmartBullRejection && isRsiBullHook && !divergence.bearishDivergence;
-  const hasSellTrigger = tier1Bias === "BEARISH" && isSmartBearRejection && isRsiBearHook && !divergence.bullishDivergence;
+  // Trigger: relax from strict 3-way AND to flexible: any 2 of 3 conditions, or rejection alone if RSI is neutral
+  const hasBuyTrigger = tier1Bias === "BULLISH" && (
+    (isSmartBullRejection && isRsiBullHook) ||
+    (isSmartBullRejection && !divergence.bearishDivergence) ||
+    (isRsiBullHook && !divergence.bearishDivergence && lastRSI <= 50)
+  );
+  const hasSellTrigger = tier1Bias === "BEARISH" && (
+    (isSmartBearRejection && isRsiBearHook) ||
+    (isSmartBearRejection && !divergence.bullishDivergence) ||
+    (isRsiBearHook && !divergence.bullishDivergence && lastRSI >= 50)
+  );
   const isTriggerConfirmed = Boolean(hasBuyTrigger || hasSellTrigger);
 
   const traderHierarchy: TraderTierHierarchy = {
@@ -571,7 +601,7 @@ export function generateRuleBasedAnalysis(
   );
 
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
-  const minThreshold = Math.max(75, adaptiveConfig?.minScoreThreshold ?? 75);
+  const minThreshold = Math.max(62, adaptiveConfig?.minScoreThreshold ?? 62);
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
   let signal: AnalysisResult["signal"] = "WAIT";
   let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier + (quadEma?.scoreBonus ?? 0) + correlationScoreBonus));
@@ -650,24 +680,18 @@ export function generateRuleBasedAnalysis(
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
-  } else if (orderFlowVelocity.isClimaxExhaustion) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
+  }
+  // Standalone climax exhaustion: penalty only (not hard block) — a big move can still continue
+  // Hard block only if climax is counter to bias (reversal risk), otherwise just reduce confidence
+  else if (orderFlowVelocity.isClimaxExhaustion) {
     confidence = Math.min(confidence, 40);
   }
-  // SAFETY LOCK 11: Multi-Timeframe Structure Conflict (LTF fighting H4/D1 Trend) & Footprint Exhaustion [แผน 39 & แผน 40]
+  // SAFETY LOCK 11: Multi-Timeframe Structure Conflict (LTF fighting H4/D1 Trend) [แผน 39 & แผน 40]
+  // Note: NO_DEMAND/NO_SUPPLY VSA checks moved to Lock 25 to avoid double-blocking
   else if (mtfStructureMatrix.isHTFConflict) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
-  } else if (tier1Bias === "BULLISH" && footprintAbsorption.vsaSignal === "NO_DEMAND") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
-  } else if (tier1Bias === "BEARISH" && footprintAbsorption.vsaSignal === "NO_SUPPLY") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
   }
   // SAFETY LOCK 12: Liquidity Inducement Trap (EQH/EQL Bait) [แผน 41]
   else if (liquidityInducement.isInducementTrap) {
@@ -703,8 +727,9 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 35);
     vortex.safetyLock15Passed = false;
   }
-  // SAFETY LOCK 16: Volatility Climax Shield (Yang-Zhang Extreme or Ulcer Index Panic) [แผน 65]
-  else if (!advancedVol.safetyLock16Passed || advancedVol.yangZhangVol >= 0.65 || advancedVol.ulcerIndex >= 18.0) {
+  // SAFETY LOCK 16: Volatility Climax Shield (Yang-Zhang EXTREME or Ulcer Index Panic) [แผน 65]
+  // Threshold raised: yangZhangVol 0.65→0.90 (only true volatility explosion), ulcerIndex 18→25
+  else if (!advancedVol.safetyLock16Passed || advancedVol.yangZhangVol >= 0.90 || advancedVol.ulcerIndex >= 25.0) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 30);
@@ -723,7 +748,8 @@ export function generateRuleBasedAnalysis(
     vpci.safetyLock17Passed = false;
   }
   // SAFETY LOCK 18: Fractal Chaos & Force Exhaustion Shield [แผน 75]
-  else if (!milestone75.safetyLock18Passed || frama.fractalDimension >= 1.80) {
+  // Threshold raised: fractalDimension 1.80→1.90 (only true chaotic fractal state)
+  else if (!milestone75.safetyLock18Passed || frama.fractalDimension >= 1.90) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 30);
@@ -772,13 +798,12 @@ export function generateRuleBasedAnalysis(
     kylesLambda.safetyLock21Passed = false;
   }
   // SAFETY LOCK 22: Phantom Liquidity & Adverse Lead Shield [แผน 95]
+  // Note: Algo Footprint bias removed from hard-block (synthesized data) → converted to confidence penalty below
   else if (
     !executionAlpha.safetyLock22Passed ||
     liquidityReplenishment.spoofingAlert ||
     (tier1Bias === "BULLISH" && crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BEARISH" && crossMarketLeadLag.leadCorrelationCoefficient <= -0.55) ||
-    (tier1Bias === "BEARISH" && crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BULLISH" && crossMarketLeadLag.leadCorrelationCoefficient >= 0.55) ||
-    (tier1Bias === "BULLISH" && algoExecutionFootprint.institutionalExecutionBias === "ALGO_SELLING_PROGRAM") ||
-    (tier1Bias === "BEARISH" && algoExecutionFootprint.institutionalExecutionBias === "ALGO_BUYING_PROGRAM")
+    (tier1Bias === "BEARISH" && crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BULLISH" && crossMarketLeadLag.leadCorrelationCoefficient >= 0.55)
   ) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
@@ -786,11 +811,12 @@ export function generateRuleBasedAnalysis(
     executionAlpha.safetyLock22Passed = false;
   }
   // SAFETY LOCK 23/FINAL: Grand Quantum Singularity Master Shield [แผน 100]
+  // Threshold raised: psiDown/psiUp 0.60→0.72 (only decisive waveform collapse warrants block)
   else if (
     !sovereignSingularityAlpha.safetyLock23Passed ||
     !quantumProbabilityVector.safetyLock23Passed ||
-    (tier1Bias === "BULLISH" && quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH" && quantumProbabilityVector.stateVector.psiDown >= 0.60) ||
-    (tier1Bias === "BEARISH" && quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH" && quantumProbabilityVector.stateVector.psiUp >= 0.60) ||
+    (tier1Bias === "BULLISH" && quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH" && quantumProbabilityVector.stateVector.psiDown >= 0.72) ||
+    (tier1Bias === "BEARISH" && quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH" && quantumProbabilityVector.stateVector.psiUp >= 0.72) ||
     (darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION" && fillProbabilitySlippage.fillEfficiencyGrade === "C_HIGH_SLIPPAGE_HAZARD") ||
     sovereignSingularityAlpha.milestone100Grade === "F_TIER_CHAOS_LOCKOUT"
   ) {
@@ -800,12 +826,11 @@ export function generateRuleBasedAnalysis(
     sovereignSingularityAlpha.safetyLock23Passed = false;
     quantumProbabilityVector.safetyLock23Passed = false;
   }
-  // SAFETY LOCK 24: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
+  // SAFETY LOCK 24: ADX Sideways/Chop Gate (ADX < 15 = true ranging market)
+  // EMA50 slope removed — too strict for short timeframes and fresh breakdowns
   else if (
     regimeInfo.regime !== "VOLATILITY_SQUEEZE" &&
-    ((indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 20) ||
-     (tier1Bias === "BULLISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) < (indicators.ema50.slice(-4)[0] ?? 0)) ||
-     (tier1Bias === "BEARISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) > (indicators.ema50.slice(-4)[0] ?? 0)))
+    (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 15)
   ) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
@@ -825,7 +850,8 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 35);
   }
   // SAFETY LOCK 6: Choppy Deadzone or Overextended
-  else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended || masterConfluence.totalScore < 60) {
+  // SAFETY LOCK 6: Choppy Deadzone or Hard Overextended (no trigger or zone = definitely wait)
+  else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
   } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= minThreshold) {
@@ -889,6 +915,8 @@ export function generateRuleBasedAnalysis(
     if (fillProbabilitySlippage.fillEfficiencyGrade === "A_PERFECT_FILL") confidence = Math.min(99, confidence + 4);
     if (darkPoolDealerGamma.gammaRegime === "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION" || darkPoolDealerGamma.netDealerGammaExposureScore > 0) confidence = Math.min(99, confidence + 4);
     if (sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY") confidence = Math.min(99, confidence + 6);
+    // Algo Footprint adverse signal: confidence penalty instead of hard block (synthesized data)
+    if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_SELLING_PROGRAM") confidence = Math.max(30, confidence - 15);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -954,10 +982,22 @@ export function generateRuleBasedAnalysis(
     if (fillProbabilitySlippage.fillEfficiencyGrade === "A_PERFECT_FILL") confidence = Math.min(99, confidence + 4);
     if (darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION" || darkPoolDealerGamma.netDealerGammaExposureScore < 0) confidence = Math.min(99, confidence + 4);
     if (sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY") confidence = Math.min(99, confidence + 6);
+    // Algo Footprint adverse signal: confidence penalty instead of hard block (synthesized data)
+    if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_BUYING_PROGRAM") confidence = Math.max(30, confidence - 15);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
     }
+  } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= 50) {
+    // Weak BUY: all 3 entry conditions met but confluence not at full threshold — cautious entry
+    signal = "BUY";
+    setupGrade = "B";
+    confidence = Math.min(65, Math.max(45, confidence));
+  } else if (tier1Bias === "BEARISH" && inSellValueZone && hasSellTrigger && masterConfluence.totalScore >= 50) {
+    // Weak SELL: all 3 entry conditions met but confluence not at full threshold — cautious entry
+    signal = "SELL";
+    setupGrade = "B";
+    confidence = Math.min(65, Math.max(45, confidence));
   } else {
     signal = "WAIT";
     setupGrade = masterConfluence.totalScore >= 60 ? "B" : "C (Wait)";

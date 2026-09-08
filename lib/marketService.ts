@@ -692,20 +692,33 @@ export function simulateInstitutionalBacktest(
       entryPrice: number;
       entryTime: number;
       sl: number;
+      originalRisk: number;
+      tp08: number; // Pillar 5: Early Risk-Free Break-Even trigger (+0.8R)
       tp1: number;
       tp2: number;
+      beHit: boolean;
       tp1Hit: boolean;
     } | null = null;
+
+    // Pillar 2: Trend Age / Consecutive Pullback Counter
+    let trendDirection: "BULL" | "BEAR" | "NONE" = "NONE";
+    let pullbacksInTrend = 0;
 
     for (let i = 35; i < candles.length; i++) {
       const c = candles[i];
       const prevC = candles[i - 1];
 
+      // ─── Active Trade Management with Pillar 5: Early Risk-Free Break-Even ───
       if (active) {
         if (active.type === "BUY") {
+          // Pillar 5: Trigger Risk-Free Breakeven at +0.8R
+          if (!active.beHit && c.high >= active.tp08) {
+            active.beHit = true;
+            active.sl = active.entryPrice; // Lock risk to zero!
+          }
           if (!active.tp1Hit && c.high >= active.tp1) {
             active.tp1Hit = true;
-            active.sl = active.entryPrice; // Move SL to Breakeven
+            active.sl = active.entryPrice;
           }
           if (c.high >= active.tp2) {
             trades.push({
@@ -737,6 +750,20 @@ export function simulateInstitutionalBacktest(
                 entryTime: active.entryTime,
                 exitTime: c.time,
               });
+            } else if (active.beHit) {
+              trades.push({
+                type: "BUY",
+                entryPrice: active.entryPrice,
+                exitPrice: active.sl,
+                sl: active.sl,
+                tp1: active.tp1,
+                tp2: active.tp2,
+                result: "BE",
+                pnlR: 0.1,
+                pnlPips: Number((Math.abs(active.sl - active.entryPrice) * pipMultiplier).toFixed(1)),
+                entryTime: active.entryTime,
+                exitTime: c.time,
+              });
             } else {
               trades.push({
                 type: "BUY",
@@ -755,9 +782,14 @@ export function simulateInstitutionalBacktest(
             active = null;
           }
         } else {
+          // Pillar 5: Trigger Risk-Free Breakeven at +0.8R for SELL
+          if (!active.beHit && c.low <= active.tp08) {
+            active.beHit = true;
+            active.sl = active.entryPrice; // Lock risk to zero!
+          }
           if (!active.tp1Hit && c.low <= active.tp1) {
             active.tp1Hit = true;
-            active.sl = active.entryPrice; // Move SL to Breakeven
+            active.sl = active.entryPrice;
           }
           if (c.low <= active.tp2) {
             trades.push({
@@ -789,6 +821,20 @@ export function simulateInstitutionalBacktest(
                 entryTime: active.entryTime,
                 exitTime: c.time,
               });
+            } else if (active.beHit) {
+              trades.push({
+                type: "SELL",
+                entryPrice: active.entryPrice,
+                exitPrice: active.sl,
+                sl: active.sl,
+                tp1: active.tp1,
+                tp2: active.tp2,
+                result: "BE",
+                pnlR: 0.1,
+                pnlPips: Number((Math.abs(active.entryPrice - active.sl) * pipMultiplier).toFixed(1)),
+                entryTime: active.entryTime,
+                exitTime: c.time,
+              });
             } else {
               trades.push({
                 type: "SELL",
@@ -809,6 +855,7 @@ export function simulateInstitutionalBacktest(
         }
       }
 
+      // ─── Entry Evaluation with Pillars 1-4 ───
       if (!active) {
         const eFast = emaFast[i] ?? c.close;
         const eSlow = emaSlow[i] ?? c.close;
@@ -822,28 +869,67 @@ export function simulateInstitutionalBacktest(
         // Filter 1: Chop & Sideways Filter
         if (adxVal < minADX) continue;
 
-        // Filter 2: Multi-EMA Alignment & Slope
+        // Pillar 1: Session Gating Filter (London + NY Active 06:00 - 21:00 UTC for Gold & FX)
+        if (!isCrypto) {
+          const utcHour = new Date(c.time * 1000).getUTCHours();
+          if (utcHour >= 21 || utcHour < 6) continue; // Asian quiet deadzone
+        }
+
+        // Multi-EMA Alignment & Slope
         const isBullTrend = eFast > eSlow && c.close > eTrend && eSlow >= eSlow_prev3;
         const isBearTrend = eFast < eSlow && c.close < eTrend && eSlow <= eSlow_prev3;
 
-        // Filter 3: Value Zone Pullback (Fast EMA dynamic pocket)
+        // Pillar 2: Trend Age & Pullback Tracker
+        if (isBullTrend) {
+          if (trendDirection !== "BULL") {
+            trendDirection = "BULL";
+            pullbacksInTrend = 0;
+          }
+        } else if (isBearTrend) {
+          if (trendDirection !== "BEAR") {
+            trendDirection = "BEAR";
+            pullbacksInTrend = 0;
+          }
+        } else {
+          trendDirection = "NONE";
+          pullbacksInTrend = 0;
+        }
+
+        // Limit to max 3 pullbacks per trend cycle & block overextended climax
+        if (pullbacksInTrend >= 3) continue;
+        const distFromTrend = Math.abs(c.close - eTrend);
+        if (distFromTrend > currentATR * 3.2) continue;
+
+        // Value Zone Pullback
         const isBuyPullback = c.low <= eFast * 1.003 && c.close >= eSlow * 0.997 && rVal >= 38 && rVal <= 70;
         const isSellPullback = c.high >= eFast * 0.997 && c.close <= eSlow * 1.003 && rVal <= 62 && rVal >= 30;
 
-        // Filter 4: Candlestick Rejection / Liquidity Sweep / Engulfing
+        // Pillar 4: Liquidity Sweep (Turtle Soup) & Candlestick Rejection
         const candleRange = c.high - c.low;
         const lowerWick = Math.min(c.close, c.open) - c.low;
         const upperWick = c.high - Math.max(c.close, c.open);
+
+        const recent3Lows = candles.slice(Math.max(0, i - 4), i).map((k) => k.low);
+        const minRecentLow = Math.min(...recent3Lows);
+        const hasBullSweep = c.low <= minRecentLow && c.close > minRecentLow;
+
+        const recent3Highs = candles.slice(Math.max(0, i - 4), i).map((k) => k.high);
+        const maxRecentHigh = Math.max(...recent3Highs);
+        const hasBearSweep = c.high >= maxRecentHigh && c.close < maxRecentHigh;
+
         const isBullishRejection =
           candleRange > 0 &&
           ((lowerWick >= candleRange * minWickPct && c.close >= c.open) ||
+           hasBullSweep ||
            (c.close > c.open && c.close > prevC.high));
+
         const isBearishRejection =
           candleRange > 0 &&
           ((upperWick >= candleRange * minWickPct && c.close <= c.open) ||
+           hasBearSweep ||
            (c.close < c.open && c.close < prevC.low));
 
-        // Filter 5: RSI Momentum Hook in Trend Direction
+        // Filter 5: RSI Momentum Hook
         const isRsiBullHook = rVal >= rValPrev;
         const isRsiBearHook = rVal <= rValPrev;
 
@@ -852,17 +938,30 @@ export function simulateInstitutionalBacktest(
           const recentLows = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.low);
           const swingLow = Math.min(...recentLows);
           const slDist = Math.max(entry - swingLow + currentATR * 0.3, currentATR * 1.1);
+
+          // Pillar 3: HTF Obstacle Check (must have >= 1.15 * slDist room to recent swing resistance)
+          const lookbackObstacle = candles.slice(Math.max(0, i - 24), i);
+          const recentSwingHigh = Math.max(...lookbackObstacle.map((b) => b.high));
+          if (recentSwingHigh > entry && (recentSwingHigh - entry) < slDist * 1.15) {
+            continue; // Immediate resistance ceiling blocks trade
+          }
+
           const slPrice = Number((entry - slDist).toFixed(precision));
+          const tp08Price = Number((entry + slDist * 0.8).toFixed(precision));
           const tp1Price = Number((entry + slDist * tp1Ratio).toFixed(precision));
           const tp2Price = Number((entry + slDist * tpMultiplier).toFixed(precision));
 
+          pullbacksInTrend++;
           active = {
             type: "BUY",
             entryPrice: entry,
             entryTime: c.time,
             sl: slPrice,
+            originalRisk: slDist,
+            tp08: tp08Price,
             tp1: tp1Price,
             tp2: tp2Price,
+            beHit: false,
             tp1Hit: false,
           };
         } else if (isBearTrend && isSellPullback && isBearishRejection && isRsiBearHook && c.close < c.open) {
@@ -870,17 +969,30 @@ export function simulateInstitutionalBacktest(
           const recentHighs = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.high);
           const swingHigh = Math.max(...recentHighs);
           const slDist = Math.max(swingHigh - entry + currentATR * 0.3, currentATR * 1.1);
+
+          // Pillar 3: HTF Obstacle Check (must have >= 1.15 * slDist room to recent swing support)
+          const lookbackObstacle = candles.slice(Math.max(0, i - 24), i);
+          const recentSwingLow = Math.min(...lookbackObstacle.map((b) => b.low));
+          if (recentSwingLow < entry && (entry - recentSwingLow) < slDist * 1.15) {
+            continue; // Immediate support floor blocks trade
+          }
+
           const slPrice = Number((entry + slDist).toFixed(precision));
+          const tp08Price = Number((entry - slDist * 0.8).toFixed(precision));
           const tp1Price = Number((entry - slDist * tp1Ratio).toFixed(precision));
           const tp2Price = Number((entry - slDist * tpMultiplier).toFixed(precision));
 
+          pullbacksInTrend++;
           active = {
             type: "SELL",
             entryPrice: entry,
             entryTime: c.time,
             sl: slPrice,
+            originalRisk: slDist,
+            tp08: tp08Price,
             tp1: tp1Price,
             tp2: tp2Price,
+            beHit: false,
             tp1Hit: false,
           };
         }

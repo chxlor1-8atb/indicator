@@ -1089,27 +1089,41 @@ export function calculateBreakevenRules(
   const bufferVal = 2.5 / pipMultiplier;
 
   let breakevenPrice = entryPrice;
+  const riskDist = Math.abs(entryPrice - stopLoss);
+  let earlyBETriggerPrice = entryPrice;
+  let earlyBEPrice = entryPrice;
+
   if (action === "BUY") {
     breakevenPrice = Number((entryPrice + bufferVal).toFixed(precision));
+    earlyBETriggerPrice = Number((entryPrice + riskDist * 0.8).toFixed(precision));
+    earlyBEPrice = Number((entryPrice + bufferVal * 0.5).toFixed(precision));
   } else if (action === "SELL") {
     breakevenPrice = Number((entryPrice - bufferVal).toFixed(precision));
+    earlyBETriggerPrice = Number((entryPrice - riskDist * 0.8).toFixed(precision));
+    earlyBEPrice = Number((entryPrice - bufferVal * 0.5).toFixed(precision));
   }
 
   let status: "PENDING_TP1" | "READY_FOR_BREAKEVEN" | "RISK_FREE" = "PENDING_TP1";
   if (action === "BUY") {
     if (currentPrice >= takeProfit1) {
       status = "READY_FOR_BREAKEVEN";
+    } else if (currentPrice >= earlyBETriggerPrice) {
+      status = "RISK_FREE";
     }
   } else if (action === "SELL") {
     if (currentPrice <= takeProfit1) {
       status = "READY_FOR_BREAKEVEN";
+    } else if (currentPrice <= earlyBETriggerPrice) {
+      status = "RISK_FREE";
     }
   }
 
   const actionText =
     status === "READY_FOR_BREAKEVEN"
-      ? `ราคาชนเป้า TP1 แล้ว! เลื่อนจุดตัดขาดทุน (SL) มาที่ ${breakevenPrice} ทันทีเพื่อล็อคความเสี่ยงเป็นศูนย์ (Zero-Risk Trade)`
-      : `เมื่อราคาไปถึง TP1 (${takeProfit1}) ให้ปิดทำกำไร 50% และเลื่อน SL มาที่ ${breakevenPrice} เพื่อความปลอดภัย 100%`;
+      ? `ราคาชนเป้า TP1 (${takeProfit1}) แล้ว! เลื่อนจุดตัดขาดทุน (SL) มาที่ ${breakevenPrice} ทันทีเพื่อล็อคความเสี่ยงเป็นศูนย์ (Zero-Risk Trade)`
+      : status === "RISK_FREE"
+      ? `ราคาบวกถึง 0.8R (${earlyBETriggerPrice}) แล้ว! แนะนำเลื่อน SL มาบังหน้าทุนที่ ${earlyBEPrice} เพื่อความปลอดภัยสูงสุด (Pillar 5)`
+      : `เมื่อราคาไปถึง 0.8R (${earlyBETriggerPrice}) เลื่อน SL บังทุนที่ ${earlyBEPrice}, และเมื่อถึง TP1 (${takeProfit1}) ปิดทำกำไร 50% และถือต่อด้วย SL ทุน`;
 
   return {
     targetTP1: takeProfit1,
@@ -1117,6 +1131,8 @@ export function calculateBreakevenRules(
     bufferPips: 2.5,
     status,
     actionText,
+    earlyBETriggerPrice,
+    earlyBEPrice,
   };
 }
 

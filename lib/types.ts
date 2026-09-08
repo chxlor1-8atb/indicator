@@ -127,6 +127,8 @@ export interface BreakevenAdvice {
   bufferPips: number;
   status: "PENDING_TP1" | "READY_FOR_BREAKEVEN" | "RISK_FREE";
   actionText: string;
+  earlyBETriggerPrice?: number; // Pillar 5: +0.8R early risk-free trigger price
+  earlyBEPrice?: number;        // Level to move SL to at +0.8R
 }
 
 export interface RoundLevelInfo {
