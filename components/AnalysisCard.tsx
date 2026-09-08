@@ -159,6 +159,11 @@ export default function AnalysisCard({
     const uPrice = analysis.tradeSetup.microPrice || analysis.microPrice;
     const advSel = analysis.tradeSetup.adverseSelection || analysis.adverseSelection;
     const execEng = analysis.tradeSetup.executionEngine || analysis.executionEngine;
+    const leadLag = analysis.tradeSetup.crossMarketLeadLag || analysis.crossMarketLeadLag;
+    const liqRepl = analysis.tradeSetup.liquidityReplenishment || analysis.liquidityReplenishment;
+    const permImpact = analysis.tradeSetup.permanentPriceImpact || analysis.permanentPriceImpact;
+    const algoFoot = analysis.tradeSetup.algoExecutionFootprint || analysis.algoExecutionFootprint;
+    const execAlpha = analysis.tradeSetup.executionAlpha || analysis.executionAlpha;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -167,6 +172,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (leadLag ? `• 🌐 Cross-Market Lead-Lag: [${leadLag.leadState}] (Lag: ${leadLag.leadLagLagPeriods} bars | r: ${leadLag.leadCorrelationCoefficient} | Lead: +${leadLag.predictiveLeadPips} pips)\n` : "") +
+      (liqRepl ? `• ⚡ Liquidity Replenishment: [${liqRepl.liquidityStickiness}] Velocity: ${liqRepl.replenishmentVelocityScore}/100 (Cancel: ${liqRepl.cancellationRatePct}% | Half-life: ${liqRepl.replenishmentHalfLifeSeconds}s)\n` : "") +
+      (permImpact ? `• 🏛️ Hasbrouck Permanent Impact: [${permImpact.priceDiscoveryRegime}] (Permanent: ${(permImpact.permanentImpactRatio * 100).toFixed(0)}% | Informed: ${permImpact.informationAsymmetryPct}% - Reversion: ${permImpact.transitoryReversionPips} pips)\n` : "") +
+      (algoFoot ? `• 🤖 Algorithmic Footprint: [${algoFoot.algoType}] (Bias: ${algoFoot.institutionalExecutionBias} | Cadence: ${algoFoot.cadenceRegularityScore}/100 | Remaining: ~${algoFoot.estimatedRemainingBars} bars)\n` : "") +
+      (execAlpha ? `• 🏆 Grand Milestone 95 Execution Alpha: [${execAlpha.milestone95Grade}] Score ${execAlpha.executionAlphaScore}/100 (Rec: ${execAlpha.executionAlphaRecommendation} | Lock 22: ${execAlpha.safetyLock22Passed ? "PASSED" : "BLOCKED"})\n` : "") +
       (kyles ? `• 📐 Kyle's Lambda Impact: λ ${kyles.lambda} (${kyles.fragilityState} | Impact: ${kyles.priceImpactPipsPerMillion} pips/$1M - Fragility: ${kyles.marketFragilityScore}/100)\n` : "") +
       (tSize ? `• 🐋 Trade Size Distribution: Dominance ${tSize.institutionalDominanceRatio}x (${tSize.dominantParticipant} | Whale: ${tSize.sovereignWhaleSharePct}% - Block: ${tSize.institutionalBlockSharePct}%)\n` : "") +
       (uPrice ? `• ⏱️ Stoikov Micro-Price: ${uPrice.microPrice} (Dev: ${uPrice.microPriceDeviationPips} pips | ${uPrice.tickLeadSignal} - ${uPrice.subSpreadMomentum})\n` : "") +
@@ -439,7 +449,7 @@ export default function AnalysisCard({
             }`}
           >
             <Cpu className="w-4 h-4" />
-            <span>คลังอินดิเคเตอร์ 90 ตัวเชิงลึก (Deep Quant Lab)</span>
+            <span>คลังอินดิเคเตอร์ 95 ตัวเชิงลึก (Deep Quant Lab)</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
               รันในพื้นหลัง
             </span>
@@ -449,7 +459,7 @@ export default function AnalysisCard({
         <span className="text-[11px] text-slate-500 hidden md:inline font-medium">
           {activeCardTab === "STRATEGY"
             ? "🛡️ คัดกรองกลยุทธ์ & ป้องกันสัญญาณตีกัน"
-            : "⚡ คำนวณเบื้องหลัง 90 เครื่องมือแบบเรียลไทม์"}
+            : "⚡ คำนวณเบื้องหลัง 95 เครื่องมือแบบเรียลไทม์"}
         </span>
       </div>
 
@@ -930,18 +940,18 @@ export default function AnalysisCard({
         </div>
       )}
 
-      {/* ─── TAB 2: DEEP QUANT LAB (90 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
+      {/* ─── TAB 2: DEEP QUANT LAB (95 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
       {activeCardTab === "DEEP_QUANT" && (
         <div className="space-y-5 animate-fadeIn">
           <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-purple-200">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
               <span>
-                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 90 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
+                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 95 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
               </span>
             </div>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              90 Pillars Active (รันในพื้นหลัง)
+              95 Pillars Active (รันในพื้นหลัง)
             </span>
           </div>
 
@@ -4622,6 +4632,222 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.executionEngine?.description || analysis.adverseSelection?.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5s. ⚡ Institutional Execution Alpha & Lead-Lag Microstructure (Plans 91-95) */}
+      {(analysis.crossMarketLeadLag || analysis.liquidityReplenishment || analysis.permanentPriceImpact || analysis.algoExecutionFootprint || analysis.executionAlpha) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-emerald-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Institutional Execution Alpha & Lead-Lag Microstructure (แผน 91-95)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-emerald-300 border border-emerald-500/30">
+                    🏛️ Grand Milestone 95
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  Cross-Market Lead-Lag ตรวจจับสินทรัพย์ชี้นำ, Liquidity Replenishment & Velocity วัดการเติมสภาพคล่องและดักจับการ Spoofing, Hasbrouck Permanent Impact วัดผลกระทบถาวร, Algorithmic Footprint แกะรอย TWAP/VWAP และ Grand Milestone 95 พร้อม Safety Lock 22
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Cross-Market Lead-Lag & Asynchronous Correlation (Plan 91) */}
+            {analysis.crossMarketLeadLag && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌐 Cross-Market Lead-Lag</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BULLISH"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BEARISH"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                  }`}>
+                    {analysis.crossMarketLeadLag.leadState}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Predictive Lead:</span>
+                    <span className={`font-mono font-bold text-[10px] ${
+                      analysis.crossMarketLeadLag.predictiveLeadPips >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}>
+                      {analysis.crossMarketLeadLag.predictiveLeadPips >= 0 ? `+${analysis.crossMarketLeadLag.predictiveLeadPips}` : analysis.crossMarketLeadLag.predictiveLeadPips} pips ({analysis.crossMarketLeadLag.leadLagLagPeriods} bars lag)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Lead Correlation (r):</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      r = {analysis.crossMarketLeadLag.leadCorrelationCoefficient.toFixed(2)} ({analysis.crossMarketLeadLag.crossAssetBenchmark})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Safety Lock 22:</span>
+                    <span className={`font-mono text-[10px] font-bold ${analysis.crossMarketLeadLag.safetyLock22Passed ? "text-emerald-400" : "text-rose-400"}`}>
+                      {analysis.crossMarketLeadLag.safetyLock22Passed ? "PASSED (Safe Lead)" : "ADVERSE LEAD RISK"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.crossMarketLeadLag.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Liquidity Replenishment & Cancellation Velocity (Plan 92) */}
+            {analysis.liquidityReplenishment && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">⚡ Replenishment Velocity</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.liquidityReplenishment.liquidityStickiness === "STICKY_COMMITTED_DEPTH"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.liquidityReplenishment.liquidityStickiness === "HIGH_PHANTOM_SPOOFING"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                      : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  }`}>
+                    {analysis.liquidityReplenishment.liquidityStickiness}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Velocity Score:</span>
+                    <span className="font-mono font-bold text-amber-300 text-[10px]">
+                      {analysis.liquidityReplenishment.replenishmentVelocityScore} / 100
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Half-Life / Cancel:</span>
+                    <span className="font-mono text-[10px] font-bold text-white">
+                      <span className="text-cyan-400">{analysis.liquidityReplenishment.replenishmentHalfLifeSeconds}s</span> / <span className="text-rose-400">Cancel {analysis.liquidityReplenishment.cancellationRatePct}%</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Spoofing Detection:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.liquidityReplenishment.spoofingAlert ? "text-rose-400 animate-pulse" : "text-emerald-400"
+                    }`}>
+                      {analysis.liquidityReplenishment.spoofingAlert ? "⛔ HIGH SPOOFING ALERT" : "CLEAN COMMITTED DEPTH"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.liquidityReplenishment.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: Algorithmic TWAP/VWAP Tracker & Hasbrouck Permanent Impact (Plans 93 & 94) */}
+            {(analysis.algoExecutionFootprint || analysis.permanentPriceImpact) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🤖 Algo Footprint & Impact</span>
+                  {analysis.algoExecutionFootprint && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.algoExecutionFootprint.algoType !== "NONE"
+                        ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                        : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                    }`}>
+                      {analysis.algoExecutionFootprint.algoType}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.algoExecutionFootprint && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Algo Bias / Cadence:</span>
+                        <span className={`font-mono text-[10px] font-bold ${
+                          analysis.algoExecutionFootprint.institutionalExecutionBias === "ALGO_BUYING_PROGRAM"
+                            ? "text-emerald-400"
+                            : analysis.algoExecutionFootprint.institutionalExecutionBias === "ALGO_SELLING_PROGRAM"
+                            ? "text-rose-400"
+                            : "text-slate-400"
+                        }`}>
+                          {analysis.algoExecutionFootprint.institutionalExecutionBias} (Cadence {analysis.algoExecutionFootprint.cadenceRegularityScore}/100)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Remaining / Part. Rate:</span>
+                        <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                          ~{analysis.algoExecutionFootprint.estimatedRemainingBars} bars (Part: {analysis.algoExecutionFootprint.participationRatePct}%)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {analysis.permanentPriceImpact && (
+                    <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-slate-800/60">
+                      <span className="text-slate-400">Hasbrouck Impact:</span>
+                      <span className="font-mono text-[10px] font-bold text-amber-300">
+                        Permanent {(analysis.permanentPriceImpact.permanentImpactRatio * 100).toFixed(0)}% (Informed {analysis.permanentPriceImpact.informationAsymmetryPct}%)
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.algoExecutionFootprint?.description || analysis.permanentPriceImpact?.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Grand Milestone 95 Institutional Execution Alpha & Safety Lock 22 (Plan 95) */}
+            {analysis.executionAlpha && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🏆 Grand Milestone 95</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.executionAlpha.safetyLock22Passed
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                  }`}>
+                    {analysis.executionAlpha.safetyLock22Passed ? "🛡️ LOCK 22 PASS" : "⛔ PHANTOM / ADVERSE LEAD"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Execution Alpha:</span>
+                    <span className="font-mono font-bold text-amber-300 text-[10px]">
+                      {analysis.executionAlpha.executionAlphaScore} / 100 [{analysis.executionAlpha.milestone95Grade}]
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Recommendation:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.executionAlpha.executionAlphaRecommendation === "AGGRESSIVE_FRONT_RUN_ALGO"
+                        ? "text-emerald-400"
+                        : analysis.executionAlpha.executionAlphaRecommendation === "HALT_SPOOFING_ALERT"
+                        ? "text-rose-400"
+                        : "text-amber-300"
+                    }`}>
+                      {analysis.executionAlpha.executionAlphaRecommendation}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Active Pillars:</span>
+                    <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                      {analysis.executionAlpha.activeMicrostructurePillarsCount} / 22 เสาหลัก
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-0.5 border-t border-slate-800/60">
+                    <span className="text-slate-400">Progress:</span>
+                    <span className="font-mono text-[10px] font-bold text-fuchsia-300">
+                      {analysis.executionAlpha.phase4Progress}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.executionAlpha.description}
                 </p>
               </div>
             )}

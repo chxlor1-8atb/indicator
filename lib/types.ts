@@ -701,6 +701,11 @@ export interface IndicatorData {
   microPrice?: MicroPriceQueueImbalanceInfo;
   adverseSelection?: AdverseSelectionHazardInfo;
   executionEngine?: MicrostructureExecutionEngineInfo;
+  crossMarketLeadLag?: CrossMarketLeadLagInfo;
+  liquidityReplenishment?: LiquidityReplenishmentVelocityInfo;
+  permanentPriceImpact?: PermanentPriceImpactInfo;
+  algoExecutionFootprint?: AlgorithmicExecutionFootprintInfo;
+  executionAlpha?: InstitutionalExecutionAlphaInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -872,6 +877,11 @@ export interface AnalysisResult {
   microPrice?: MicroPriceQueueImbalanceInfo;
   adverseSelection?: AdverseSelectionHazardInfo;
   executionEngine?: MicrostructureExecutionEngineInfo;
+  crossMarketLeadLag?: CrossMarketLeadLagInfo;
+  liquidityReplenishment?: LiquidityReplenishmentVelocityInfo;
+  permanentPriceImpact?: PermanentPriceImpactInfo;
+  algoExecutionFootprint?: AlgorithmicExecutionFootprintInfo;
+  executionAlpha?: InstitutionalExecutionAlphaInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -985,6 +995,11 @@ export interface AnalysisResult {
     microPrice?: MicroPriceQueueImbalanceInfo;
     adverseSelection?: AdverseSelectionHazardInfo;
     executionEngine?: MicrostructureExecutionEngineInfo;
+    crossMarketLeadLag?: CrossMarketLeadLagInfo;
+    liquidityReplenishment?: LiquidityReplenishmentVelocityInfo;
+    permanentPriceImpact?: PermanentPriceImpactInfo;
+    algoExecutionFootprint?: AlgorithmicExecutionFootprintInfo;
+    executionAlpha?: InstitutionalExecutionAlphaInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1644,5 +1659,55 @@ export interface MicrostructureExecutionEngineInfo {
   activeMicrostructurePillarsCount: number; // out of 21
   safetyLock21Passed: boolean;
   executionReadiness: "CLEARED_FOR_EXECUTION" | "EXECUTION_THROTTLED" | "EXECUTION_BLOCKED";
+  description: string;
+}
+
+// ─── BATCH 19 INTERFACES (PLANS 91-95: CROSS-MARKET LEAD-LAG & EXECUTION ALPHA) ───
+
+export interface CrossMarketLeadLagInfo {
+  leadLagLagPeriods: number; // Optimal lag tau (-3 to +3)
+  leadCorrelationCoefficient: number; // Pearson r at optimal lag (-1.0 to +1.0)
+  leadState: "BENCHMARK_LEADING_BULLISH" | "BENCHMARK_LEADING_BEARISH" | "ASSET_IS_LEADER" | "SYNCHRONOUS_NO_LEAD";
+  predictiveLeadPips: number; // Anticipated catch-up move
+  crossAssetBenchmark: string; // e.g. "DXY_INVERSE" | "US10Y" | "BTC_BETA"
+  safetyLock22Passed: boolean;
+  description: string;
+}
+
+export interface LiquidityReplenishmentVelocityInfo {
+  replenishmentVelocityScore: number; // 0 to 100 (speed of post-trade limit order replenishment)
+  cancellationRatePct: number; // 0 to 100% (rate of quote cancellations without trade)
+  liquidityStickiness: "STICKY_COMMITTED_DEPTH" | "NORMAL_CHURN" | "HIGH_PHANTOM_SPOOFING";
+  spoofingAlert: boolean; // True if cancellation rate > 75%
+  replenishmentHalfLifeSeconds: number; // Estimated seconds to refill top of book
+  description: string;
+}
+
+export interface PermanentPriceImpactInfo {
+  permanentImpactRatio: number; // 0.0 to 1.0 (Hasbrouck permanent vs transitory ratio)
+  informationAsymmetryPct: number; // 0 to 100% (share of volume driven by informed traders)
+  priceDiscoveryRegime: "INFORMED_INSTITUTIONAL_DRIVE" | "TRANSITORY_NOISE_CHOP" | "BALANCED_DISCOVERY";
+  transitoryReversionPips: number; // Estimated mean reversion from temporary liquidity shocks
+  hasbrouckLambda: number; // Informed price revision coefficient
+  description: string;
+}
+
+export interface AlgorithmicExecutionFootprintInfo {
+  isAlgoActive: boolean; // True if systematic slicing algorithm detected
+  algoType: "TWAP_SLICING" | "VWAP_ACCUMULATION" | "POV_PARTICIPATION" | "ICEBERG_DISCRETIONARY" | "NONE";
+  participationRatePct: number; // 0 to 100% (target execution participation rate)
+  estimatedRemainingBars: number; // Estimated bars until institutional parent order completes
+  institutionalExecutionBias: "ALGO_BUYING_PROGRAM" | "ALGO_SELLING_PROGRAM" | "INACTIVE";
+  cadenceRegularityScore: number; // 0 to 100 (rhythmicity score of order slicing)
+  description: string;
+}
+
+export interface InstitutionalExecutionAlphaInfo {
+  executionAlphaScore: number; // 0 to 100
+  milestone95Grade: "S_TIER_ALPHA_SNIPER" | "A_TIER_FAVORABLE_EXECUTION" | "B_TIER_NEUTRAL" | "F_TIER_PHANTOM_HAZARD";
+  phase4Progress: "PHASE_4_EXECUTION_ALPHA_ACTIVE";
+  activeMicrostructurePillarsCount: number; // out of 22
+  safetyLock22Passed: boolean;
+  executionAlphaRecommendation: "AGGRESSIVE_FRONT_RUN_ALGO" | "PATIENT_LIQUIDITY_CAPTURE" | "HALT_SPOOFING_ALERT";
   description: string;
 }
