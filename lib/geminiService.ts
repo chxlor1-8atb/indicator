@@ -75,6 +75,11 @@ import {
   TickVolumeVelocityInfo,
   IcebergOrderInfo,
   InstitutionalLiquidityMatrixInfo,
+  AdvancedCVDDivergenceInfo,
+  BidAskFootprintClusterInfo,
+  VPINToxicityInfo,
+  LiquidityVacuumInfo,
+  InstitutionalOrderFlowFusionInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -154,6 +159,11 @@ import {
   calculateTickVolumeVelocity,
   detectIcebergOrders,
   synthesizeInstitutionalLiquidityMatrix,
+  calculateAdvancedCVDDivergence,
+  calculateBidAskFootprintCluster,
+  calculateVPINToxicity,
+  detectLiquidityVacuum,
+  synthesizeInstitutionalOrderFlowFusion,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -477,6 +487,19 @@ export function generateRuleBasedAnalysis(
     19
   );
 
+  // ─── BATCH 17 PRE-COMPUTATIONS (PLANS 81-85: ADVANCED ORDER FLOW & MICROSTRUCTURE) ───
+  const advancedCVD = indicators.advancedCVD || calculateAdvancedCVDDivergence(candles);
+  const footprintCluster = indicators.footprintCluster || calculateBidAskFootprintCluster(candles, precision);
+  const vpinToxicity = indicators.vpinToxicity || calculateVPINToxicity(candles);
+  const liquidityVacuum = indicators.liquidityVacuum || detectLiquidityVacuum(candles, precision);
+  const orderFlowFusion = indicators.orderFlowFusion || synthesizeInstitutionalOrderFlowFusion(
+    advancedCVD,
+    footprintCluster,
+    vpinToxicity,
+    liquidityVacuum,
+    20
+  );
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = Math.max(75, adaptiveConfig?.minScoreThreshold ?? 75);
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -648,7 +671,21 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 30);
     liquidityMatrix.safetyLock19Passed = false;
   }
-  // SAFETY LOCK 20: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
+  // SAFETY LOCK 20: VPIN Toxic Flow & Liquidity Vacuum Shield [แผน 85]
+  else if (
+    !orderFlowFusion.safetyLock20Passed ||
+    vpinToxicity.isToxicFlowAlert ||
+    vpinToxicity.toxicityRegime === "FLASH_CRASH_RISK" ||
+    !liquidityVacuum.safetyLock20Passed ||
+    (liquidityVacuum.isVacuumDetected && liquidityVacuum.ghostQuoteWithdrawalRate >= 60)
+  ) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 30);
+    orderFlowFusion.safetyLock20Passed = false;
+    liquidityVacuum.safetyLock20Passed = false;
+  }
+  // SAFETY LOCK 21: Strict ADX Trend & EMA50 Slope Gating (Anti-Sideways/Chop)
   else if (
     (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 22) ||
     (tier1Bias === "BULLISH" && indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) < (indicators.ema50.slice(-4)[0] ?? 0)) ||
@@ -658,7 +695,7 @@ export function generateRuleBasedAnalysis(
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 35);
   }
-  // SAFETY LOCK 21: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
+  // SAFETY LOCK 22: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
   else if (
     (tier1Bias === "BULLISH" && (mtfMatrix.h4 === "BEARISH" || mtfStructureMatrix.htfTrend === "BEARISH" || (mtfMatrix.alignmentScore ?? 0) <= -25)) ||
     (tier1Bias === "BEARISH" && (mtfMatrix.h4 === "BULLISH" || mtfStructureMatrix.htfTrend === "BULLISH" || (mtfMatrix.alignmentScore ?? 0) >= 25)) ||
@@ -716,6 +753,11 @@ export function generateRuleBasedAnalysis(
     if (volumeVelocity.burstDirection === "BULLISH_BURST") confidence = Math.min(98, confidence + 4);
     if (icebergOrders.isIcebergDetected && icebergOrders.icebergSide === "BUY_ICEBERG") confidence = Math.min(98, confidence + 5);
     if (liquidityMatrix.liquidityState === "DEEP_INSTITUTIONAL") confidence = Math.min(98, confidence + 5);
+    if (advancedCVD.divergenceType === "REGULAR_BULLISH" || advancedCVD.dominantFlow === "ACCUMULATION_FLOW") confidence = Math.min(98, confidence + 5);
+    if (footprintCluster.clusterAbsorptionSide === "BUY_ABSORPTION" || footprintCluster.lowWickBidVolume > footprintCluster.highWickAskVolume) confidence = Math.min(98, confidence + 4);
+    if (vpinToxicity.toxicityRegime === "BENIGN_FLOW") confidence = Math.min(98, confidence + 4);
+    if (!liquidityVacuum.isVacuumDetected && liquidityVacuum.safetyLock20Passed) confidence = Math.min(98, confidence + 4);
+    if (orderFlowFusion.milestone85Grade === "S_TIER_ALPHA") confidence = Math.min(98, confidence + 5);
     if (isQuadGoldenLong) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -761,6 +803,11 @@ export function generateRuleBasedAnalysis(
     if (volumeVelocity.burstDirection === "BEARISH_BURST") confidence = Math.min(98, confidence + 4);
     if (icebergOrders.isIcebergDetected && icebergOrders.icebergSide === "SELL_ICEBERG") confidence = Math.min(98, confidence + 5);
     if (liquidityMatrix.liquidityState === "DEEP_INSTITUTIONAL") confidence = Math.min(98, confidence + 5);
+    if (advancedCVD.divergenceType === "REGULAR_BEARISH" || advancedCVD.dominantFlow === "DISTRIBUTION_FLOW") confidence = Math.min(98, confidence + 5);
+    if (footprintCluster.clusterAbsorptionSide === "SELL_ABSORPTION" || footprintCluster.highWickAskVolume > footprintCluster.lowWickBidVolume) confidence = Math.min(98, confidence + 4);
+    if (vpinToxicity.toxicityRegime === "BENIGN_FLOW") confidence = Math.min(98, confidence + 4);
+    if (!liquidityVacuum.isVacuumDetected && liquidityVacuum.safetyLock20Passed) confidence = Math.min(98, confidence + 4);
+    if (orderFlowFusion.milestone85Grade === "S_TIER_ALPHA") confidence = Math.min(98, confidence + 5);
     if (isQuadDeathShort) {
       confidence = Math.min(98, confidence + 5);
       setupGrade = "A+";
@@ -1064,12 +1111,19 @@ export function generateRuleBasedAnalysis(
       note: `${orderBookImbalance.description} • ${vwapVarianceBands.description} • ${volumeVelocity.description} • ${icebergOrders.description} • ${liquidityMatrix.description}`,
     },
     {
-      name: `Pillar 20: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
+      name: `Pillar 20: Microstructural Toxicity, CVD Divergence & Order Flow Fusion (CVD: ${advancedCVD.divergenceType} | VPIN: ${vpinToxicity.vpin} | Fusion: ${orderFlowFusion.milestone85Grade})`,
+      passed: ((tradeAction === "BUY" && (advancedCVD.divergenceType === "REGULAR_BULLISH" || advancedCVD.dominantFlow === "ACCUMULATION_FLOW" || footprintCluster.clusterAbsorptionSide === "BUY_ABSORPTION")) ||
+              (tradeAction === "SELL" && (advancedCVD.divergenceType === "REGULAR_BEARISH" || advancedCVD.dominantFlow === "DISTRIBUTION_FLOW" || footprintCluster.clusterAbsorptionSide === "SELL_ABSORPTION")) ||
+              orderFlowFusion.safetyLock20Passed) ?? false,
+      note: `${advancedCVD.description} • ${footprintCluster.description} • ${vpinToxicity.description} • ${liquidityVacuum.description} • ${orderFlowFusion.description}`,
+    },
+    {
+      name: `Pillar 21: ADX Trend Rigor & EMA50 Slope Gating (ADX: ${(indicators.adx?.slice(-1)[0] ?? 25).toFixed(1)} | Slope: ${indicators.ema50 && indicators.ema50.length >= 4 && (indicators.ema50.slice(-1)[0] ?? 0) >= (indicators.ema50.slice(-4)[0] ?? 0) ? "RISING" : "FALLING"})`,
       passed: (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) >= 22) ?? true,
       note: `กรองสภาวะตลาดไร้แนวโน้ม ป้องกันการออกออเดอร์ในกรอบ Sideways (ADX >= 22 และ EMA50 Slope สอดคล้องทิศทางเทรนด์)`,
     },
     {
-      name: `Pillar 21: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
+      name: `Pillar 22: Higher-Timeframe Macro Dominance & VSA Effort-Result Matrix (H4: ${mtfMatrix.h4} | VSA: ${footprintAbsorption.vsaSignal})`,
       passed: !isCounterTrend && !mtfStructureMatrix.isHTFConflict && !(harmonics.hasPattern && ((tradeAction === "BUY" && harmonics.bestPattern?.type === "BEARISH") || (tradeAction === "SELL" && harmonics.bestPattern?.type === "BULLISH"))),
       note: `Macro HTF Alignment: ${mtfMatrix.h4}/${mtfMatrix.d1} (Score: ${mtfMatrix.alignmentScore}%) • Harmonic PRZ Guard: ${harmonics.hasPattern ? `${harmonics.bestPattern?.patternName} (${harmonics.bestPattern?.type})` : "Clear"} • VSA: ${footprintAbsorption.vsaSignal}`,
     },
@@ -1164,6 +1218,11 @@ export function generateRuleBasedAnalysis(
     volumeVelocity,
     icebergOrders,
     liquidityMatrix,
+    advancedCVD,
+    footprintCluster,
+    vpinToxicity,
+    liquidityVacuum,
+    orderFlowFusion,
     timeframeMatrix: mtfMatrix,
     technicalAnalysis: {
       trend,
@@ -1242,6 +1301,11 @@ export function generateRuleBasedAnalysis(
         `Tick Volume Velocity: Velocity ${volumeVelocity.velocityRatio}x | Accel ${volumeVelocity.accelerationRatio}x (${volumeVelocity.burstDirection} - Climax: ${volumeVelocity.isVolumeClimax ? "YES" : "NO"})`,
         `Iceberg Hidden Liquidity: ${icebergOrders.isIcebergDetected ? `DETECTED (${icebergOrders.icebergSide} | Ratio ${icebergOrders.anomalyRatio}x)` : "None"}`,
         `Institutional Liquidity Matrix: [${liquidityMatrix.liquidityState}] Score: ${liquidityMatrix.liquidityScore}/100 (Lock 19: ${liquidityMatrix.safetyLock19Passed ? "PASSED" : "BLOCKED"} | Spread Climax: ${liquidityMatrix.isSpreadClimaxRisk ? "YES" : "NO"})`,
+        `Advanced CVD Flow: ${advancedCVD.currentCVD} (Slope: ${advancedCVD.slopeDivergenceScore} | Div: ${advancedCVD.divergenceType} - ${advancedCVD.dominantFlow})`,
+        `Footprint Cluster: Delta ${footprintCluster.deltaAtExtremes} (BidVol: ${footprintCluster.lowWickBidVolume} vs AskVol: ${footprintCluster.highWickAskVolume} | Side: ${footprintCluster.clusterAbsorptionSide})`,
+        `VPIN Flow Toxicity: VPIN ${vpinToxicity.vpin} (Regime: ${vpinToxicity.toxicityRegime} | Informed Trading: ${vpinToxicity.informedTradingProbabilityPct}%)`,
+        `Liquidity Vacuum: ${liquidityVacuum.isVacuumDetected ? `DETECTED (${liquidityVacuum.vacuumType} | Gap ${liquidityVacuum.thinDepthGapSizePips} pips)` : "NORMAL (Healthy Depth)"}`,
+        `Institutional Order Flow Fusion: [${orderFlowFusion.milestone85Grade}] Score: ${orderFlowFusion.orderFlowScore}/100 (Dominance: ${orderFlowFusion.flowDominance} | Lock 20: ${orderFlowFusion.safetyLock20Passed ? "PASSED" : "BLOCKED"})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -1340,6 +1404,11 @@ export function generateRuleBasedAnalysis(
       volumeVelocity,
       icebergOrders,
       liquidityMatrix,
+      advancedCVD,
+      footprintCluster,
+      vpinToxicity,
+      liquidityVacuum,
+      orderFlowFusion,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1720,6 +1789,11 @@ Respond ONLY with valid JSON matching this schema:
     parsed.volumeVelocity = ruleAnalysis.volumeVelocity;
     parsed.icebergOrders = ruleAnalysis.icebergOrders;
     parsed.liquidityMatrix = ruleAnalysis.liquidityMatrix;
+    parsed.advancedCVD = ruleAnalysis.advancedCVD;
+    parsed.footprintCluster = ruleAnalysis.footprintCluster;
+    parsed.vpinToxicity = ruleAnalysis.vpinToxicity;
+    parsed.liquidityVacuum = ruleAnalysis.liquidityVacuum;
+    parsed.orderFlowFusion = ruleAnalysis.orderFlowFusion;
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -1788,6 +1862,11 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.volumeVelocity = ruleAnalysis.tradeSetup.volumeVelocity;
       parsed.tradeSetup.icebergOrders = ruleAnalysis.tradeSetup.icebergOrders;
       parsed.tradeSetup.liquidityMatrix = ruleAnalysis.tradeSetup.liquidityMatrix;
+      parsed.tradeSetup.advancedCVD = ruleAnalysis.tradeSetup.advancedCVD;
+      parsed.tradeSetup.footprintCluster = ruleAnalysis.tradeSetup.footprintCluster;
+      parsed.tradeSetup.vpinToxicity = ruleAnalysis.tradeSetup.vpinToxicity;
+      parsed.tradeSetup.liquidityVacuum = ruleAnalysis.tradeSetup.liquidityVacuum;
+      parsed.tradeSetup.orderFlowFusion = ruleAnalysis.tradeSetup.orderFlowFusion;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

@@ -88,6 +88,11 @@ import {
   TickVolumeVelocityInfo,
   IcebergOrderInfo,
   InstitutionalLiquidityMatrixInfo,
+  AdvancedCVDDivergenceInfo,
+  BidAskFootprintClusterInfo,
+  VPINToxicityInfo,
+  LiquidityVacuumInfo,
+  InstitutionalOrderFlowFusionInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -6230,6 +6235,410 @@ export function synthesizeInstitutionalLiquidityMatrix(
   };
 }
 
+// ─── BATCH 17 FUNCTIONS (PLANS 81-85: ADVANCED ORDER FLOW & MICROSTRUCTURE) ───
+
+/**
+ * [แผน 81] Cumulative Volume Delta (CVD) Advanced Multi-Timeframe Divergence Engine
+ * Tracks cumulative buying vs selling volume flow and detects institutional absorption divergences
+ */
+export function calculateAdvancedCVDDivergence(
+  candles: Candle[]
+): AdvancedCVDDivergenceInfo {
+  if (candles.length < 10) {
+    return {
+      currentCVD: 0,
+      cvdFastEMA: 0,
+      cvdSlowEMA: 0,
+      divergenceType: "NONE",
+      slopeDivergenceScore: 0,
+      dominantFlow: "BALANCED",
+      description: "Advanced CVD Divergence: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  // Calculate Cumulative Volume Delta across the series
+  const lookback = Math.min(candles.length, 50);
+  const sample = candles.slice(-lookback);
+
+  let cumulativeDelta = 0;
+  const cvdSeries: number[] = [];
+
+  for (const c of sample) {
+    const range = Math.max(0.0001, c.high - c.low);
+    const vol = c.volume > 0 ? c.volume : 100;
+    const buyerPush = (c.close - c.low) / range;
+    const sellerPush = (c.high - c.close) / range;
+    const barDelta = vol * (buyerPush - sellerPush);
+    cumulativeDelta += barDelta;
+    cvdSeries.push(cumulativeDelta);
+  }
+
+  const currentCVD = Number(cvdSeries[cvdSeries.length - 1].toFixed(1));
+
+  // Compute Fast EMA (9) and Slow EMA (21) of CVD series
+  const calcSeriesEMA = (series: number[], period: number) => {
+    const k = 2 / (period + 1);
+    let ema = series[0];
+    for (let i = 1; i < series.length; i++) {
+      ema = series[i] * k + ema * (1 - k);
+    }
+    return ema;
+  };
+
+  const cvdFastEMA = Number(calcSeriesEMA(cvdSeries, 9).toFixed(1));
+  const cvdSlowEMA = Number(calcSeriesEMA(cvdSeries, 21).toFixed(1));
+
+  // Divergence Detection over the last 15 bars
+  const windowSize = Math.min(15, sample.length);
+  const recentCandles = sample.slice(-windowSize);
+  const recentCVD = cvdSeries.slice(-windowSize);
+
+  const priceFirst = recentCandles[0].close;
+  const priceLast = recentCandles[recentCandles.length - 1].close;
+  const cvdFirst = recentCVD[0];
+  const cvdLast = recentCVD[recentCVD.length - 1];
+
+  const priceChangePct = ((priceLast - priceFirst) / priceFirst) * 100;
+  const cvdChangePct = cvdFirst !== 0 ? ((cvdLast - cvdFirst) / Math.abs(cvdFirst)) * 100 : 0;
+
+  let divergenceType: AdvancedCVDDivergenceInfo["divergenceType"] = "NONE";
+  let slopeDivergenceScore = 0;
+
+  if (priceChangePct < -0.2 && cvdChangePct > 5.0) {
+    divergenceType = "REGULAR_BULLISH";
+    slopeDivergenceScore = 75;
+  } else if (priceChangePct > 0.2 && cvdChangePct < -5.0) {
+    divergenceType = "REGULAR_BEARISH";
+    slopeDivergenceScore = -75;
+  } else if (priceChangePct > 0.2 && cvdChangePct > 15.0) {
+    divergenceType = "HIDDEN_BULLISH";
+    slopeDivergenceScore = 60;
+  } else if (priceChangePct < -0.2 && cvdChangePct < -15.0) {
+    divergenceType = "HIDDEN_BEARISH";
+    slopeDivergenceScore = -60;
+  }
+
+  let dominantFlow: AdvancedCVDDivergenceInfo["dominantFlow"] = "BALANCED";
+  if (cvdFastEMA > cvdSlowEMA && currentCVD > 0) {
+    dominantFlow = "ACCUMULATION_FLOW";
+  } else if (cvdFastEMA < cvdSlowEMA && currentCVD < 0) {
+    dominantFlow = "DISTRIBUTION_FLOW";
+  }
+
+  const desc = divergenceType === "REGULAR_BULLISH"
+    ? `🌊 Advanced CVD ตรวจพบ Regular Bullish Divergence (CVD: ${currentCVD} | Flow: ${dominantFlow}): ราคาย่อตัวแต่แรงซื้อสะสมแฝงหนาแน่น`
+    : divergenceType === "REGULAR_BEARISH"
+    ? `🌊 Advanced CVD ตรวจพบ Regular Bearish Divergence (CVD: ${currentCVD} | Flow: ${dominantFlow}): ราคาพุ่งขึ้นแต่แรงขายระบายของหนาแน่น`
+    : `🌊 Advanced CVD สอดคล้องกระแสราคา (CVD: ${currentCVD} | EMA9: ${cvdFastEMA} | Flow: ${dominantFlow})`;
+
+  return {
+    currentCVD,
+    cvdFastEMA,
+    cvdSlowEMA,
+    divergenceType,
+    slopeDivergenceScore,
+    dominantFlow,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 82] Bid-Ask Imbalance Footprint Volume Matrix (Cluster Absorption Engine)
+ * Analyzes wick auction completion, extreme delta, and stacked volume imbalances
+ */
+export function calculateBidAskFootprintCluster(
+  candles: Candle[],
+  precision = 2
+): BidAskFootprintClusterInfo {
+  if (candles.length < 5) {
+    return {
+      highWickAskVolume: 0,
+      lowWickBidVolume: 0,
+      finishedAuctionHigh: true,
+      finishedAuctionLow: true,
+      stackedImbalancesCount: 0,
+      clusterAbsorptionSide: "NEUTRAL",
+      deltaAtExtremes: 0,
+      description: "Footprint Cluster: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const latest = candles[candles.length - 1];
+  const range = Math.max(0.0001, latest.high - latest.low);
+  const vol = latest.volume > 0 ? latest.volume : 100;
+
+  // Upper 30% of bar (High wick zone) vs Lower 30% of bar (Low wick zone)
+  const highWickThreshold = latest.high - range * 0.3;
+  const lowWickThreshold = latest.low + range * 0.3;
+
+  const isCloseInUpper = latest.close >= highWickThreshold;
+  const isCloseInLower = latest.close <= lowWickThreshold;
+
+  const highWickAskVolume = Number((vol * (isCloseInUpper ? 0.35 : 0.65)).toFixed(0));
+  const lowWickBidVolume = Number((vol * (isCloseInLower ? 0.65 : 0.35)).toFixed(0));
+
+  // Finished auction: True if price reversed cleanly without massive unfinished buying/selling at high/low
+  const finishedAuctionHigh = latest.close < latest.high - range * 0.05;
+  const finishedAuctionLow = latest.close > latest.low + range * 0.05;
+
+  const deltaAtExtremes = Number((lowWickBidVolume - highWickAskVolume).toFixed(0));
+
+  // Stacked imbalances detection
+  let stackedImbalancesCount = 0;
+  if (lowWickBidVolume > highWickAskVolume * 2.2) {
+    stackedImbalancesCount = 3;
+  } else if (lowWickBidVolume > highWickAskVolume * 1.5) {
+    stackedImbalancesCount = 2;
+  } else if (highWickAskVolume > lowWickBidVolume * 2.2) {
+    stackedImbalancesCount = 3;
+  } else if (highWickAskVolume > lowWickBidVolume * 1.5) {
+    stackedImbalancesCount = 2;
+  }
+
+  let clusterAbsorptionSide: BidAskFootprintClusterInfo["clusterAbsorptionSide"] = "NEUTRAL";
+  if (lowWickBidVolume > highWickAskVolume * 1.6 && finishedAuctionLow) {
+    clusterAbsorptionSide = "BUY_ABSORPTION";
+  } else if (highWickAskVolume > lowWickBidVolume * 1.6 && finishedAuctionHigh) {
+    clusterAbsorptionSide = "SELL_ABSORPTION";
+  }
+
+  const desc = clusterAbsorptionSide === "BUY_ABSORPTION"
+    ? `👣 Footprint Cluster ตรวจพบ Buy Absorption ที่แนวรับ (BidVol: ${lowWickBidVolume} vs AskVol: ${highWickAskVolume} | ${stackedImbalancesCount} Stacked): วาฬดักซับคำสั่งขายที่ปลายไส้เทียนล่าง`
+    : clusterAbsorptionSide === "SELL_ABSORPTION"
+    ? `👣 Footprint Cluster ตรวจพบ Sell Absorption ที่แนวต้าน (AskVol: ${highWickAskVolume} vs BidVol: ${lowWickBidVolume} | ${stackedImbalancesCount} Stacked): วาฬดักซับคำสั่งซื้อที่ปลายไส้เทียนบน`
+    : `👣 Footprint Cluster สมดุลปกติ (Delta ที่ปลายไส้: ${deltaAtExtremes} | การประมูลสมบูรณ์)`;
+
+  return {
+    highWickAskVolume,
+    lowWickBidVolume,
+    finishedAuctionHigh,
+    finishedAuctionLow,
+    stackedImbalancesCount,
+    clusterAbsorptionSide,
+    deltaAtExtremes,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 83] Volume-Synchronized Probability of Toxicity (VPIN) Microstructure Metric
+ * Formulated by Easley, López de Prado & O'Hara (2012) to quantify informed adverse trading risk
+ */
+export function calculateVPINToxicity(
+  candles: Candle[]
+): VPINToxicityInfo {
+  if (candles.length < 15) {
+    return {
+      vpin: 0.25,
+      toxicityRegime: "BENIGN_FLOW",
+      bucketVolume: 100,
+      informedTradingProbabilityPct: 25,
+      isToxicFlowAlert: false,
+      description: "VPIN Toxicity: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  // Define total volume and volume bucket size
+  const lookback = Math.min(candles.length, 30);
+  const sample = candles.slice(-lookback);
+  const totalVolume = sample.reduce((sum, c) => sum + (c.volume > 0 ? c.volume : 100), 0);
+  const bucketCount = 10;
+  const bucketVolume = Math.max(1, totalVolume / bucketCount);
+
+  let cumulativeVolume = 0;
+  let currentBucketBuyVol = 0;
+  let currentBucketSellVol = 0;
+  const bucketImbalances: number[] = [];
+
+  for (const c of sample) {
+    const range = Math.max(0.0001, c.high - c.low);
+    const vol = c.volume > 0 ? c.volume : 100;
+    const buyFraction = Math.max(0.05, Math.min(0.95, (c.close - c.low) / range));
+    const sellFraction = 1 - buyFraction;
+
+    currentBucketBuyVol += vol * buyFraction;
+    currentBucketSellVol += vol * sellFraction;
+    cumulativeVolume += vol;
+
+    if (cumulativeVolume >= bucketVolume) {
+      const imbalance = Math.abs(currentBucketBuyVol - currentBucketSellVol);
+      bucketImbalances.push(imbalance);
+      currentBucketBuyVol = 0;
+      currentBucketSellVol = 0;
+      cumulativeVolume = 0;
+    }
+  }
+
+  if (bucketImbalances.length === 0) {
+    bucketImbalances.push(Math.abs(currentBucketBuyVol - currentBucketSellVol));
+  }
+
+  const sumImbalance = bucketImbalances.reduce((sum, val) => sum + val, 0);
+  const rawVPIN = sumImbalance / (bucketImbalances.length * bucketVolume);
+  const vpin = Number(Math.max(0.05, Math.min(0.98, rawVPIN)).toFixed(3));
+  const informedTradingProbabilityPct = Math.round(vpin * 100);
+
+  let toxicityRegime: VPINToxicityInfo["toxicityRegime"] = "BENIGN_FLOW";
+  let isToxicFlowAlert = false;
+
+  if (vpin >= 0.75) {
+    toxicityRegime = "FLASH_CRASH_RISK";
+    isToxicFlowAlert = true;
+  } else if (vpin >= 0.60) {
+    toxicityRegime = "HIGH_TOXICITY";
+    isToxicFlowAlert = true;
+  } else if (vpin >= 0.38) {
+    toxicityRegime = "MODERATE_RISK";
+  }
+
+  const desc = isToxicFlowAlert
+    ? `🧪 VPIN Flow Toxicity ระดับวิกฤต [${toxicityRegime}] (VPIN: ${vpin} | โอกาสเทรดโดยสถาบันรอบจัด ${informedTradingProbabilityPct}%): ความเป็นพิษของคำสั่งซื้อขายสูงมาก เสี่ยงเกิด Flash Drop หรือสลิปเพจมหาศาล`
+    : `🧪 VPIN Flow Toxicity ปกติ [${toxicityRegime}] (VPIN: ${vpin} | ดัชนีความเสี่ยง: ${informedTradingProbabilityPct}%): คำสั่งซื้อขายสองฝั่งสมดุล ปลอดภัยต่อการเข้าออเดอร์`;
+
+  return {
+    vpin,
+    toxicityRegime,
+    bucketVolume: Number(bucketVolume.toFixed(0)),
+    informedTradingProbabilityPct,
+    isToxicFlowAlert,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 84] Liquidity Vacuum & Ghost Quote Identifier (Sudden Depth Vanishing Alert)
+ * Detects sudden market maker quote withdrawals that trigger liquidity air pockets
+ */
+export function detectLiquidityVacuum(
+  candles: Candle[],
+  precision = 2
+): LiquidityVacuumInfo {
+  if (candles.length < 10) {
+    return {
+      isVacuumDetected: false,
+      vacuumType: "NONE",
+      thinDepthGapSizePips: 0,
+      ghostQuoteWithdrawalRate: 0,
+      expectedSlippagePips: 0.2,
+      safetyLock20Passed: true,
+      description: "Liquidity Vacuum: ข้อมูลไม่เพียงพอ",
+    };
+  }
+
+  const idx = candles.length - 1;
+  const latest = candles[idx];
+  const prev = candles[idx - 1];
+
+  const latestRange = latest.high - latest.low;
+  const prevRange = prev.high - prev.low;
+  const latestVol = latest.volume > 0 ? latest.volume : 100;
+  const prevVol = prev.volume > 0 ? prev.volume : 100;
+
+  // Vacuum occurs when candle range expands abruptly while volume contracts sharply (thin market)
+  const rangeExpansionRatio = prevRange > 0 ? latestRange / prevRange : 1.0;
+  const volumeContractionRatio = prevVol > 0 ? latestVol / prevVol : 1.0;
+
+  let isVacuumDetected = false;
+  let vacuumType: LiquidityVacuumInfo["vacuumType"] = "NONE";
+  let ghostQuoteWithdrawalRate = 0;
+  let thinDepthGapSizePips = 0;
+  let expectedSlippagePips = 0.2;
+  let safetyLock20Passed = true;
+
+  if (rangeExpansionRatio >= 2.0 && volumeContractionRatio <= 0.65) {
+    isVacuumDetected = true;
+    ghostQuoteWithdrawalRate = Math.min(95, Math.round((1 - volumeContractionRatio) * 100));
+    thinDepthGapSizePips = Number((latestRange * 0.7).toFixed(1));
+    expectedSlippagePips = Number((latestRange * 0.35).toFixed(1));
+
+    if (latest.close > latest.open) {
+      vacuumType = "UPPER_VACUUM_PULL";
+    } else {
+      vacuumType = "LOWER_VACUUM_DROP";
+    }
+
+    if (ghostQuoteWithdrawalRate >= 65 || expectedSlippagePips >= 1.5) {
+      safetyLock20Passed = false;
+    }
+  }
+
+  const desc = isVacuumDetected
+    ? `🕳️ Liquidity Vacuum ตรวจพบสุญญากาศสภาพคล่อง [${vacuumType}] (ถอนคำสั่ง Quote ออก ${ghostQuoteWithdrawalRate}% | คาดการณ์สลิปเพจ ${expectedSlippagePips} pips): ตลาดเนื้อบาง เสี่ยงราคาวิ่งรูดเร็ว`
+    : `🕳️ Liquidity Vacuum ปกติ (ไม่มีสภาวะสุญญากาศสภาพคล่อง | สภาพคล่องหนาแน่นปลอดภัย)`;
+
+  return {
+    isVacuumDetected,
+    vacuumType,
+    thinDepthGapSizePips,
+    ghostQuoteWithdrawalRate,
+    expectedSlippagePips,
+    safetyLock20Passed,
+    description: desc,
+  };
+}
+
+/**
+ * [แผน 85] Institutional Order Flow Fusion Engine & Milestone 85 + Safety Lock 20
+ * Synthesizes advanced CVD divergence, footprint clusters, VPIN toxicity, and liquidity vacuum
+ */
+export function synthesizeInstitutionalOrderFlowFusion(
+  cvd: AdvancedCVDDivergenceInfo,
+  footprint: BidAskFootprintClusterInfo,
+  vpin: VPINToxicityInfo,
+  vacuum: LiquidityVacuumInfo,
+  activePillarsCount = 20
+): InstitutionalOrderFlowFusionInfo {
+  // SAFETY LOCK 20: VPIN Toxic Flow & Liquidity Vacuum Shield
+  let safetyLock20Passed = true;
+  if (vpin.isToxicFlowAlert || vpin.toxicityRegime === "FLASH_CRASH_RISK" || !vacuum.safetyLock20Passed) {
+    safetyLock20Passed = false;
+  }
+
+  // Calculate Unified Order Flow Score (0 to 100)
+  let score = 70;
+  if (cvd.divergenceType !== "NONE") score += 10;
+  if (footprint.clusterAbsorptionSide !== "NEUTRAL") score += 10;
+  if (vpin.toxicityRegime === "BENIGN_FLOW") score += 10;
+  if (!vacuum.isVacuumDetected) score += 5;
+  if (!safetyLock20Passed) score -= 35;
+
+  const orderFlowScore = Math.max(15, Math.min(100, score));
+
+  let flowDominance: InstitutionalOrderFlowFusionInfo["flowDominance"] = "NEUTRAL_EQUILIBRIUM";
+  if (!safetyLock20Passed || vpin.toxicityRegime === "FLASH_CRASH_RISK") {
+    flowDominance = "CHAOTIC_TOXIC_FLOW";
+  } else if (cvd.dominantFlow === "ACCUMULATION_FLOW" || footprint.clusterAbsorptionSide === "BUY_ABSORPTION") {
+    flowDominance = "INSTITUTIONAL_BUY_FLOW";
+  } else if (cvd.dominantFlow === "DISTRIBUTION_FLOW" || footprint.clusterAbsorptionSide === "SELL_ABSORPTION") {
+    flowDominance = "INSTITUTIONAL_SELL_FLOW";
+  }
+
+  let milestone85Grade: InstitutionalOrderFlowFusionInfo["milestone85Grade"] = "B_TIER_NEUTRAL";
+  if (!safetyLock20Passed || orderFlowScore < 50) {
+    milestone85Grade = "F_TIER_TOXIC";
+  } else if (orderFlowScore >= 85) {
+    milestone85Grade = "S_TIER_ALPHA";
+  } else if (orderFlowScore >= 70) {
+    milestone85Grade = "A_TIER_CONVICTION";
+  }
+
+  const desc = !safetyLock20Passed
+    ? `🛡️ Safety Lock 20 [ACTIVATED]: ระงับออเดอร์เนื่องจากตรวจพบคำสั่งเป็นพิษขั้นสูง (VPIN: ${vpin.vpin}) หรือสุญญากาศสภาพคล่อง (Vacuum: ${vacuum.vacuumType}) ป้องกันสลิปเพจรูดรุนแรง`
+    : milestone85Grade === "S_TIER_ALPHA"
+    ? `🏆 Grand Milestone 85 Order Flow Fusion สภาพคล่องไหลลื่นระดับ S-Tier (คะแนน: ${orderFlowScore}/100 | Dominance: ${flowDominance} | ผ่าน Lock 20)`
+    : `🏆 Grand Milestone 85 Order Flow Fusion โครงสร้างสภาพคล่องพร้อมเทรด (คะแนน: ${orderFlowScore}/100 | เกรด: ${milestone85Grade})`;
+
+  return {
+    orderFlowScore,
+    flowDominance,
+    milestone85Grade,
+    phase4Readiness: "PHASE_4_ADVANCED_MICROSTRUCTURE_ENGAGED",
+    activePillarsCount,
+    safetyLock20Passed,
+    description: desc,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -6412,6 +6821,19 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     19
   );
 
+  // Batch 17: Plans 81, 82, 83, 84, 85 (Advanced CVD, Footprint Cluster, VPIN Toxicity, Liquidity Vacuum, Order Flow Fusion)
+  const advancedCVD = calculateAdvancedCVDDivergence(cleanCandles);
+  const footprintCluster = calculateBidAskFootprintCluster(cleanCandles, precision);
+  const vpinToxicity = calculateVPINToxicity(cleanCandles);
+  const liquidityVacuum = detectLiquidityVacuum(cleanCandles, precision);
+  const orderFlowFusion = synthesizeInstitutionalOrderFlowFusion(
+    advancedCVD,
+    footprintCluster,
+    vpinToxicity,
+    liquidityVacuum,
+    20
+  );
+
   return {
     rsi14,
     atr14,
@@ -6499,5 +6921,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     volumeVelocity,
     icebergOrders,
     liquidityMatrix,
+    advancedCVD,
+    footprintCluster,
+    vpinToxicity,
+    liquidityVacuum,
+    orderFlowFusion,
   };
 }

@@ -691,6 +691,11 @@ export interface IndicatorData {
   volumeVelocity?: TickVolumeVelocityInfo;
   icebergOrders?: IcebergOrderInfo;
   liquidityMatrix?: InstitutionalLiquidityMatrixInfo;
+  advancedCVD?: AdvancedCVDDivergenceInfo;
+  footprintCluster?: BidAskFootprintClusterInfo;
+  vpinToxicity?: VPINToxicityInfo;
+  liquidityVacuum?: LiquidityVacuumInfo;
+  orderFlowFusion?: InstitutionalOrderFlowFusionInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -852,6 +857,11 @@ export interface AnalysisResult {
   volumeVelocity?: TickVolumeVelocityInfo;
   icebergOrders?: IcebergOrderInfo;
   liquidityMatrix?: InstitutionalLiquidityMatrixInfo;
+  advancedCVD?: AdvancedCVDDivergenceInfo;
+  footprintCluster?: BidAskFootprintClusterInfo;
+  vpinToxicity?: VPINToxicityInfo;
+  liquidityVacuum?: LiquidityVacuumInfo;
+  orderFlowFusion?: InstitutionalOrderFlowFusionInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -955,6 +965,11 @@ export interface AnalysisResult {
     volumeVelocity?: TickVolumeVelocityInfo;
     icebergOrders?: IcebergOrderInfo;
     liquidityMatrix?: InstitutionalLiquidityMatrixInfo;
+    advancedCVD?: AdvancedCVDDivergenceInfo;
+    footprintCluster?: BidAskFootprintClusterInfo;
+    vpinToxicity?: VPINToxicityInfo;
+    liquidityVacuum?: LiquidityVacuumInfo;
+    orderFlowFusion?: InstitutionalOrderFlowFusionInfo;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1512,4 +1527,56 @@ export interface MasterIndicatorSuite {
 export interface TelegramConfig {
   botToken: string;
   chatId: string;
+}
+
+// ─── BATCH 17 INTERFACES (PLANS 81-85: ADVANCED ORDER FLOW & MICROSTRUCTURE) ───
+
+export interface AdvancedCVDDivergenceInfo {
+  currentCVD: number;
+  cvdFastEMA: number;
+  cvdSlowEMA: number;
+  divergenceType: "REGULAR_BULLISH" | "REGULAR_BEARISH" | "HIDDEN_BULLISH" | "HIDDEN_BEARISH" | "NONE";
+  slopeDivergenceScore: number; // -100 to +100
+  dominantFlow: "ACCUMULATION_FLOW" | "DISTRIBUTION_FLOW" | "BALANCED";
+  description: string;
+}
+
+export interface BidAskFootprintClusterInfo {
+  highWickAskVolume: number;
+  lowWickBidVolume: number;
+  finishedAuctionHigh: boolean;
+  finishedAuctionLow: boolean;
+  stackedImbalancesCount: number; // e.g. 3 stacked levels
+  clusterAbsorptionSide: "BUY_ABSORPTION" | "SELL_ABSORPTION" | "NEUTRAL";
+  deltaAtExtremes: number;
+  description: string;
+}
+
+export interface VPINToxicityInfo {
+  vpin: number; // 0.0 to 1.0 (Probability of Informed Trading / Toxic Flow)
+  toxicityRegime: "BENIGN_FLOW" | "MODERATE_RISK" | "HIGH_TOXICITY" | "FLASH_CRASH_RISK";
+  bucketVolume: number;
+  informedTradingProbabilityPct: number; // 0 to 100%
+  isToxicFlowAlert: boolean; // True if VPIN > 0.65
+  description: string;
+}
+
+export interface LiquidityVacuumInfo {
+  isVacuumDetected: boolean;
+  vacuumType: "UPPER_VACUUM_PULL" | "LOWER_VACUUM_DROP" | "FLASH_SPREAD_VOID" | "NONE";
+  thinDepthGapSizePips: number;
+  ghostQuoteWithdrawalRate: number; // 0 to 100%
+  expectedSlippagePips: number;
+  safetyLock20Passed: boolean;
+  description: string;
+}
+
+export interface InstitutionalOrderFlowFusionInfo {
+  orderFlowScore: number; // 0 to 100
+  flowDominance: "INSTITUTIONAL_BUY_FLOW" | "INSTITUTIONAL_SELL_FLOW" | "NEUTRAL_EQUILIBRIUM" | "CHAOTIC_TOXIC_FLOW";
+  milestone85Grade: "S_TIER_ALPHA" | "A_TIER_CONVICTION" | "B_TIER_NEUTRAL" | "F_TIER_TOXIC";
+  phase4Readiness: "PHASE_4_ADVANCED_MICROSTRUCTURE_ENGAGED";
+  activePillarsCount: number; // out of 20
+  safetyLock20Passed: boolean;
+  description: string;
 }

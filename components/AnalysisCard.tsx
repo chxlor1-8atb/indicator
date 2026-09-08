@@ -149,6 +149,11 @@ export default function AnalysisCard({
     const volVel = analysis.tradeSetup.volumeVelocity || analysis.volumeVelocity;
     const iceberg = analysis.tradeSetup.icebergOrders || analysis.icebergOrders;
     const liqMatrix = analysis.tradeSetup.liquidityMatrix || analysis.liquidityMatrix;
+    const advCVD = analysis.tradeSetup.advancedCVD || analysis.advancedCVD;
+    const fpCluster = analysis.tradeSetup.footprintCluster || analysis.footprintCluster;
+    const vpin = analysis.tradeSetup.vpinToxicity || analysis.vpinToxicity;
+    const vacuum = analysis.tradeSetup.liquidityVacuum || analysis.liquidityVacuum;
+    const ofFusion = analysis.tradeSetup.orderFlowFusion || analysis.orderFlowFusion;
     const iq = (analysis as any)?.institutionalQuant;
 
     const text = `📊 [INSTITUTIONAL QUANT PLAN: ${analysis.symbol} (${analysis.timeframe.toUpperCase()})]\n` +
@@ -157,6 +162,11 @@ export default function AnalysisCard({
       `• Session Timing: ${sess?.sessionBadge.text || "NORMAL"} (${sess?.thaiTimeStr || ""})\n` +
       `• Market Regime: ${reg?.title || "NORMAL"}\n` +
       `• OTE Golden Pocket: ${analysis.tradeSetup.entryZone.min} - ${analysis.tradeSetup.entryZone.max} (Sweet Spot: ${analysis.tradeSetup.pendingPrice})\n` +
+      (advCVD ? `• 🌊 Advanced CVD Flow: ${advCVD.currentCVD} (Div: ${advCVD.divergenceType} | Flow: ${advCVD.dominantFlow})\n` : "") +
+      (fpCluster ? `• 👣 Footprint Cluster: Delta ${fpCluster.deltaAtExtremes} (BidVol: ${fpCluster.lowWickBidVolume} vs AskVol: ${fpCluster.highWickAskVolume} | Side: ${fpCluster.clusterAbsorptionSide})\n` : "") +
+      (vpin ? `• 🧪 VPIN Flow Toxicity: ${vpin.vpin} (Regime: ${vpin.toxicityRegime} | Informed Trading: ${vpin.informedTradingProbabilityPct}%)\n` : "") +
+      (vacuum && vacuum.isVacuumDetected ? `• 🕳️ Liquidity Vacuum: DETECTED (${vacuum.vacuumType} | Gap ${vacuum.thinDepthGapSizePips} pips)\n` : "") +
+      (ofFusion ? `• 🏆 Grand Milestone 85 Order Flow Fusion: [${ofFusion.milestone85Grade}] Score ${ofFusion.orderFlowScore}/100 (Dominance: ${ofFusion.flowDominance} | Lock 20: ${ofFusion.safetyLock20Passed ? "PASSED" : "BLOCKED"})\n` : "") +
       (obi ? `• 🌊 Order Book Imbalance: OBI ${obi.imbalanceRatio.toFixed(2)} (${obi.pressureState} | Bid: ${obi.bidDepthPct}% vs Ask: ${obi.askDepthPct}%)\n` : "") +
       (vwapBands ? `• 🎯 VWAP Variance Envelopes: VWAP ${vwapBands.vwap} (Pos: ${vwapBands.bandPosition} | Reversion: ${vwapBands.isMeanReversionZone ? "ACTIVE" : "NO"})\n` : "") +
       (volVel ? `• ⚡ Volume Velocity: ${volVel.velocityRatio}x | Accel ${volVel.accelerationRatio}x (${volVel.burstDirection} | Climax: ${volVel.isVolumeClimax ? "YES" : "NO"})\n` : "") +
@@ -419,7 +429,7 @@ export default function AnalysisCard({
             }`}
           >
             <Cpu className="w-4 h-4" />
-            <span>คลังอินดิเคเตอร์ 80 ตัวเชิงลึก (Deep Quant Lab)</span>
+            <span>คลังอินดิเคเตอร์ 85 ตัวเชิงลึก (Deep Quant Lab)</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
               รันในพื้นหลัง
             </span>
@@ -429,7 +439,7 @@ export default function AnalysisCard({
         <span className="text-[11px] text-slate-500 hidden md:inline font-medium">
           {activeCardTab === "STRATEGY"
             ? "🛡️ คัดกรองกลยุทธ์ & ป้องกันสัญญาณตีกัน"
-            : "⚡ คำนวณเบื้องหลัง 80 เครื่องมือแบบเรียลไทม์"}
+            : "⚡ คำนวณเบื้องหลัง 85 เครื่องมือแบบเรียลไทม์"}
         </span>
       </div>
 
@@ -910,18 +920,18 @@ export default function AnalysisCard({
         </div>
       )}
 
-      {/* ─── TAB 2: DEEP QUANT LAB (80 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
+      {/* ─── TAB 2: DEEP QUANT LAB (85 อินดิเคเตอร์รันในพื้นหลัง) ─── */}
       {activeCardTab === "DEEP_QUANT" && (
         <div className="space-y-5 animate-fadeIn">
           <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 flex flex-wrap items-center justify-between gap-2 text-xs text-purple-200">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
               <span>
-                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 80 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
+                <strong>Deep Quant Background Engine:</strong> อินดิเคเตอร์ทั้ง 85 ตัวและ 5 ควอนต์เลเยอร์คำนวณในพื้นหลังตลอดเวลาเพื่อป้อนข้อมูลให้ระบบ
               </span>
             </div>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              80 Pillars Active (รันในพื้นหลัง)
+              85 Pillars Active (รันในพื้นหลัง)
             </span>
           </div>
 
@@ -4184,6 +4194,216 @@ export default function AnalysisCard({
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.liquidityMatrix.description}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5q. ⚡ Advanced Order Flow, Footprint Clusters & Toxic Flow Shield (Plans 81-85) */}
+      {(analysis.advancedCVD || analysis.footprintCluster || analysis.vpinToxicity || analysis.liquidityVacuum || analysis.orderFlowFusion) && (
+        <div className="p-4 rounded-xl bg-surface-100 border border-violet-500/40 space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                <Cpu className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Advanced Order Flow, Footprint Clusters & Toxic Flow Shield (แผน 81-85)</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-300 border border-violet-500/30">
+                    ⚡ Grand Milestone 85
+                  </span>
+                </h5>
+                <p className="text-[10px] text-slate-400">
+                  Cumulative Volume Delta (CVD) Divergence ข้าม Timeframe, Footprint Volume Clusters ตรวจ Bid/Ask Absorption, VPIN Microstructural Toxicity วัดความน่าจะเป็นของ Informed Trading, สแกน Liquidity Vacuum และผสานพลัง Order Flow Fusion พร้อม Safety Lock 20
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Card 1: Multi-Timeframe CVD Divergence (Plan 81) */}
+            {analysis.advancedCVD && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🌊 Multi-TF CVD Divergence</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.advancedCVD.divergenceType === "REGULAR_BULLISH" || analysis.advancedCVD.divergenceType === "HIDDEN_BULLISH"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.advancedCVD.divergenceType === "REGULAR_BEARISH" || analysis.advancedCVD.divergenceType === "HIDDEN_BEARISH"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                  }`}>
+                    {analysis.advancedCVD.divergenceType}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Current CVD Delta:</span>
+                    <span className={`font-mono font-bold text-[10px] ${
+                      analysis.advancedCVD.currentCVD >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}>
+                      {analysis.advancedCVD.currentCVD >= 0 ? `+${analysis.advancedCVD.currentCVD}` : analysis.advancedCVD.currentCVD}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Dominant Flow:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.advancedCVD.dominantFlow === "ACCUMULATION_FLOW" ? "text-emerald-400" : analysis.advancedCVD.dominantFlow === "DISTRIBUTION_FLOW" ? "text-rose-400" : "text-amber-300"
+                    }`}>
+                      {analysis.advancedCVD.dominantFlow}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">EMA Fast / Slow:</span>
+                    <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                      {analysis.advancedCVD.cvdFastEMA} / {analysis.advancedCVD.cvdSlowEMA} (Slope: {analysis.advancedCVD.slopeDivergenceScore})
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.advancedCVD.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 2: Bid-Ask Imbalance Footprint Volume Matrix (Plan 82) */}
+            {analysis.footprintCluster && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">👣 Footprint Volume Cluster</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.footprintCluster.clusterAbsorptionSide === "BUY_ABSORPTION"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : analysis.footprintCluster.clusterAbsorptionSide === "SELL_ABSORPTION"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-slate-700/50 text-slate-300 border border-slate-600/30"
+                  }`}>
+                    {analysis.footprintCluster.clusterAbsorptionSide}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Bid / Ask Extremes:</span>
+                    <span className="font-mono font-bold text-white text-[10px]">
+                      <span className="text-emerald-400">Bid {analysis.footprintCluster.lowWickBidVolume}</span> vs <span className="text-rose-400">Ask {analysis.footprintCluster.highWickAskVolume}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Delta / Stacked:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.footprintCluster.deltaAtExtremes >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}>
+                      {analysis.footprintCluster.deltaAtExtremes >= 0 ? `+${analysis.footprintCluster.deltaAtExtremes}` : analysis.footprintCluster.deltaAtExtremes} ({analysis.footprintCluster.stackedImbalancesCount} Levels)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Finished Auction:</span>
+                    <span className="font-mono text-[10px] font-bold text-slate-300">
+                      High: {analysis.footprintCluster.finishedAuctionHigh ? "✅" : "❌"} | Low: {analysis.footprintCluster.finishedAuctionLow ? "✅" : "❌"}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.footprintCluster.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 3: VPIN Microstructural Toxicity & Liquidity Vacuum (Plans 83 & 84) */}
+            {(analysis.vpinToxicity || analysis.liquidityVacuum) && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🧪 VPIN & Liquidity Vacuum</span>
+                  {analysis.vpinToxicity && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                      analysis.vpinToxicity.isToxicFlowAlert
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                        : analysis.vpinToxicity.toxicityRegime === "BENIGN_FLOW"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                    }`}>
+                      {analysis.vpinToxicity.toxicityRegime}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.vpinToxicity && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">VPIN Metric:</span>
+                        <span className={`font-mono font-bold text-[10px] ${
+                          analysis.vpinToxicity.vpin >= 0.65 ? "text-rose-400" : analysis.vpinToxicity.vpin <= 0.35 ? "text-emerald-400" : "text-amber-300"
+                        }`}>
+                          {analysis.vpinToxicity.vpin} ({analysis.vpinToxicity.informedTradingProbabilityPct}% Informed)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {analysis.liquidityVacuum && (
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Vacuum Status:</span>
+                        <span className={`font-mono text-[10px] font-bold ${
+                          analysis.liquidityVacuum.isVacuumDetected ? "text-rose-400 animate-pulse" : "text-slate-300"
+                        }`}>
+                          {analysis.liquidityVacuum.isVacuumDetected ? `🕳️ ${analysis.liquidityVacuum.vacuumType}` : "NORMAL DEPTH"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Thin Gap / Ghost Quote:</span>
+                        <span className="font-mono text-cyan-300 font-bold text-[10px]">
+                          {analysis.liquidityVacuum.thinDepthGapSizePips} pips ({analysis.liquidityVacuum.ghostQuoteWithdrawalRate}%)
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.vpinToxicity?.description || analysis.liquidityVacuum?.description}
+                </p>
+              </div>
+            )}
+
+            {/* Card 4: Grand Milestone 85 Order Flow Fusion & Safety Lock 20 (Plan 85) */}
+            {analysis.orderFlowFusion && (
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold">
+                  <span className="text-slate-300">🏆 Grand Milestone 85 Fusion</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold ${
+                    analysis.orderFlowFusion.safetyLock20Passed
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse"
+                  }`}>
+                    {analysis.orderFlowFusion.safetyLock20Passed ? "🛡️ LOCK 20 PASS" : "⛔ TOXIC FLOW"}
+                  </span>
+                </div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Order Flow Score:</span>
+                    <span className="font-mono font-bold text-amber-300 text-[10px]">
+                      {analysis.orderFlowFusion.orderFlowScore} / 100 [{analysis.orderFlowFusion.milestone85Grade}]
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Flow Dominance:</span>
+                    <span className={`font-mono text-[10px] font-bold ${
+                      analysis.orderFlowFusion.flowDominance === "INSTITUTIONAL_BUY_FLOW" ? "text-emerald-400" : analysis.orderFlowFusion.flowDominance === "INSTITUTIONAL_SELL_FLOW" ? "text-rose-400" : "text-slate-300"
+                    }`}>
+                      {analysis.orderFlowFusion.flowDominance}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-400">Active Order Flow Pillars:</span>
+                    <span className="font-mono text-cyan-300 text-[10px] font-bold">
+                      {analysis.orderFlowFusion.activePillarsCount} / 20 เสาหลัก
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                  {analysis.orderFlowFusion.description}
                 </p>
               </div>
             )}
