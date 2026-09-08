@@ -95,6 +95,7 @@ import {
   FillProbabilitySlippageInfo,
   DarkPoolDealerGammaExposureInfo,
   SovereignSingularityAlphaInfo,
+  ClassicTrioInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -194,6 +195,7 @@ import {
   forecastFillProbabilityAndSlippage,
   calculateDarkPoolDealerGammaExposure,
   synthesizeSovereignSingularityQuantAlpha,
+  calculateClassicTrio,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -600,6 +602,15 @@ export function generateRuleBasedAnalysis(
     23
   );
 
+  // ─── CLASSIC TRIO PRE-COMPUTATION (MA 20 • MA 50 • RSI 14 CONFLUENCE ENGINE) ───
+  const classicTrio = indicators.classicTrio || calculateClassicTrio(
+    candles,
+    precision,
+    indicators.ema20,
+    indicators.ema50,
+    indicators.rsi14
+  );
+
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = Math.max(62, adaptiveConfig?.minScoreThreshold ?? 62);
   const correlationScoreBonus = correlationShield.shieldStatus === "PROTECTED" ? 5 : correlationShield.shieldStatus === "HEDGE_ALERT" ? -15 : 0;
@@ -607,8 +618,22 @@ export function generateRuleBasedAnalysis(
   let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier + (quadEma?.scoreBonus ?? 0) + correlationScoreBonus));
   let setupGrade: AnalysisResult["setupGrade"] = masterConfluence.grade;
 
+  // ─── ANTI-CLASH STRATEGY ORCHESTRATION & VETO GATING ───
+  const orchestrator = orchestrateStrategyDecision({
+    candles,
+    indicators,
+    regimeInfo,
+    userPreset: "AUTO_REGIME",
+  });
+
+  // SAFETY LOCK 0: Anti-Clash Strategy Orchestrator Veto Shield
+  if (orchestrator.vetoTriggered) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  }
   // SAFETY LOCK 1: Red Folder News Freeze (30m before, 15m after)
-  if (!calendarSafety.tradeAllowed) {
+  else if (!calendarSafety.tradeAllowed) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = 30;
@@ -1003,6 +1028,27 @@ export function generateRuleBasedAnalysis(
     setupGrade = masterConfluence.totalScore >= 60 ? "B" : "C (Wait)";
   }
 
+  // ─── ANTI-CLASH DIRECTIONAL HARMONIZATION ───
+  if (signal === "STRONG_BUY" || signal === "BUY") {
+    if (orchestrator.unifiedSignal === "SELL") {
+      // Counter-trend conflict detected by Anti-Clash Orchestrator (e.g. Bearish Order Block or Bearish MSS)
+      signal = "WAIT";
+      setupGrade = "C (Wait)";
+      confidence = Math.min(confidence, 35);
+    } else if (orchestrator.unifiedSignal === "BUY") {
+      confidence = Math.min(99, confidence + 5);
+    }
+  } else if (signal === "STRONG_SELL" || signal === "SELL") {
+    if (orchestrator.unifiedSignal === "BUY") {
+      // Counter-trend conflict detected by Anti-Clash Orchestrator (e.g. Bullish Order Block or Bullish MSS)
+      signal = "WAIT";
+      setupGrade = "C (Wait)";
+      confidence = Math.min(confidence, 35);
+    } else if (orchestrator.unifiedSignal === "SELL") {
+      confidence = Math.min(99, confidence + 5);
+    }
+  }
+
   // ─── BATCH 3 QUANT CALIBRATION (PLANS 11-15) ───
   // [แผน 11] Institutional Optimal Trade Entry (OTE - Fibonacci 61.8% – 78.6% Golden Pocket)
   const oteZone = indicators.oteZone || calculateOTEZones(candles, tier1Bias === "BEARISH" ? "BEARISH" : "BULLISH", precision);
@@ -1338,6 +1384,8 @@ export function generateRuleBasedAnalysis(
 
   const prefixReason = !calendarSafety.tradeAllowed
     ? `[${calendarSafety.badgeText}] ${calendarSafety.freezeReason} `
+    : orchestrator.vetoTriggered
+    ? `[🛡️ ANTI-CLASH VETO] ${orchestrator.vetoReason} `
     : "";
 
   return {
@@ -1671,11 +1719,7 @@ export function generateRuleBasedAnalysis(
         ? `หากราคาหลุดแนวรับสวิง ${structuralSL.swingRefPrice} (Stop Loss: ${stopLoss}) ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`
         : `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`,
     },
-    orchestrator: orchestrateStrategyDecision({
-      candles,
-      indicators,
-      regimeInfo,
-    }),
+    orchestrator,
   };
 }
 

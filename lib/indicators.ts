@@ -108,6 +108,7 @@ import {
   FillProbabilitySlippageInfo,
   DarkPoolDealerGammaExposureInfo,
   SovereignSingularityAlphaInfo,
+  ClassicTrioInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -7918,6 +7919,124 @@ export function synthesizeSovereignSingularityQuantAlpha(
   };
 }
 
+/**
+ * [แผน Confluence เสริม] Classic Trio Engine: MA(20) • MA(50) • RSI(14)
+ * Triple-confirmation trend, momentum, and pullback retest filter.
+ * - Bullish Alignment: Price >= MA20 >= MA50 and RSI in [48, 74] and RSI expanding up (+7.5% WR)
+ * - Bearish Alignment: Price <= MA20 <= MA50 and RSI in [26, 52] and RSI expanding down (+7.5% WR)
+ * - Pullback Retest: Price pulling back to retest MA20/MA50 with trend intact (+5.0% WR)
+ */
+export function calculateClassicTrio(
+  candles: Candle[],
+  precision: number = 2,
+  ema20?: (number | null)[],
+  ema50?: (number | null)[],
+  rsi14?: (number | null)[]
+): ClassicTrioInfo {
+  if (!candles || candles.length === 0) {
+    return {
+      ma20: 0,
+      ma50: 0,
+      rsi14: 50,
+      prevRsi14: 50,
+      alignment: "DIVERGENT",
+      isAligned: false,
+      alignmentScore: 0,
+      winRateBonus: 0,
+      signalBias: "NEUTRAL",
+      summary: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการคำนวณ Classic Trio",
+    };
+  }
+
+  const currentPrice = candles[candles.length - 1].close;
+
+  const ma20Series = ema20 || calculateEMA(candles, 20);
+  const ma50Series = ema50 || calculateEMA(candles, 50);
+  const rsiSeries = rsi14 || calculateRSI(candles, 14);
+
+  const validMA20 = ma20Series.filter((v): v is number => v !== null && !isNaN(v));
+  const validMA50 = ma50Series.filter((v): v is number => v !== null && !isNaN(v));
+  const validRSI = rsiSeries.filter((v): v is number => v !== null && !isNaN(v));
+
+  const lastMA20 = validMA20.length > 0 ? Number(validMA20[validMA20.length - 1].toFixed(precision)) : currentPrice;
+  const lastMA50 = validMA50.length > 0 ? Number(validMA50[validMA50.length - 1].toFixed(precision)) : currentPrice;
+  const lastRSI = validRSI.length > 0 ? Number(validRSI[validRSI.length - 1].toFixed(2)) : 50;
+  const prevRSI = validRSI.length > 1 ? Number(validRSI[validRSI.length - 2].toFixed(2)) : lastRSI;
+
+  const isBullStack = currentPrice >= lastMA20 && lastMA20 >= lastMA50;
+  const isBearStack = currentPrice <= lastMA20 && lastMA20 <= lastMA50;
+
+  // Bullish Trio: Price >= MA20 >= MA50, RSI 48-74 & expanding up
+  const isBullTrio = isBullStack && lastRSI >= 48 && lastRSI <= 74 && lastRSI >= prevRSI;
+
+  // Bearish Trio: Price <= MA20 <= MA50, RSI 26-52 & expanding down
+  const isBearTrio = isBearStack && lastRSI >= 26 && lastRSI <= 52 && lastRSI <= prevRSI;
+
+  // Pullback Retest: Price near MA20/MA50 while trend is intact
+  const isBullPullback = lastMA20 > lastMA50 && currentPrice <= lastMA20 * 1.002 && currentPrice >= lastMA50 * 0.998 && lastRSI >= 42;
+  const isBearPullback = lastMA20 < lastMA50 && currentPrice >= lastMA20 * 0.998 && currentPrice <= lastMA50 * 1.002 && lastRSI <= 58;
+
+  let alignment: "FULL_BULLISH_TRIO" | "FULL_BEARISH_TRIO" | "PULLBACK_RETEST" | "DIVERGENT" = "DIVERGENT";
+  let isAligned = false;
+  let alignmentScore = 30;
+  let winRateBonus = 0;
+  let signalBias: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
+  let summary = `MA20 (${lastMA20}) | MA50 (${lastMA50}) | RSI14 (${lastRSI}) - ตลาดยังแกว่งตัวไซด์เวย์ รอการเรียงตัวสมบูรณ์`;
+
+  if (isBullTrio) {
+    alignment = "FULL_BULLISH_TRIO";
+    isAligned = true;
+    alignmentScore = 95;
+    winRateBonus = 7.5;
+    signalBias = "BULLISH";
+    summary = `Classic Bullish Trio: ราคา (${currentPrice}) > MA20 (${lastMA20}) > MA50 (${lastMA50}) และ RSI (${lastRSI}) งัดขึ้น (+7.5% WR Boost)`;
+  } else if (isBearTrio) {
+    alignment = "FULL_BEARISH_TRIO";
+    isAligned = true;
+    alignmentScore = 95;
+    winRateBonus = 7.5;
+    signalBias = "BEARISH";
+    summary = `Classic Bearish Trio: ราคา (${currentPrice}) < MA20 (${lastMA20}) < MA50 (${lastMA50}) และ RSI (${lastRSI}) ปักหัวลง (+7.5% WR Boost)`;
+  } else if (isBullPullback) {
+    alignment = "PULLBACK_RETEST";
+    isAligned = true;
+    alignmentScore = 80;
+    winRateBonus = 5.0;
+    signalBias = "BULLISH";
+    summary = `Bullish Pullback Retest: ราคาย่อตัวทดสอบโซน MA20/MA50 ในแนวโน้มขาขึ้น RSI (${lastRSI}) (+5.0% WR Boost)`;
+  } else if (isBearPullback) {
+    alignment = "PULLBACK_RETEST";
+    isAligned = true;
+    alignmentScore = 80;
+    winRateBonus = 5.0;
+    signalBias = "BEARISH";
+    summary = `Bearish Pullback Retest: ราคาย่อทดสอบโซน MA20/MA50 ในแนวโน้มขาลง RSI (${lastRSI}) (+5.0% WR Boost)`;
+  } else if (isBullStack) {
+    alignmentScore = 65;
+    winRateBonus = 2.5;
+    signalBias = "BULLISH";
+    summary = `MA20 > MA50 ขาขึ้น แต่ RSI (${lastRSI}) กำลังสะสมพลัง`;
+  } else if (isBearStack) {
+    alignmentScore = 65;
+    winRateBonus = 2.5;
+    signalBias = "BEARISH";
+    summary = `MA20 < MA50 ขาลง แต่ RSI (${lastRSI}) กำลังสะสมพลัง`;
+  }
+
+  return {
+    ma20: lastMA20,
+    ma50: lastMA50,
+    rsi14: lastRSI,
+    prevRsi14: prevRSI,
+    alignment,
+    isAligned,
+    alignmentScore,
+    winRateBonus,
+    signalBias,
+    summary,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -8153,6 +8272,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     23
   );
 
+  // Classic Trio Engine (MA 20 • MA 50 • RSI 14)
+  const classicTrio = calculateClassicTrio(cleanCandles, precision, ema20, ema50, rsi14);
+
   return {
     rsi14,
     atr14,
@@ -8260,5 +8382,6 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     fillProbabilitySlippage,
     darkPoolDealerGamma,
     sovereignSingularityAlpha,
+    classicTrio,
   };
 }

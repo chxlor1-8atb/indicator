@@ -1,18 +1,13 @@
 import {
   AssetScannerSummary,
   Candle,
-  IndicatorData,
   MtBridgeOrder,
   TelemetryLog,
   AutonomousPilotConfig,
-  AnalysisResult,
 } from "./types";
 import { calculateAllIndicators, calculateATR } from "./indicators";
-import { evaluateMasterConfluence } from "./confluenceEngine";
-import { classifyMarketRegime } from "./regimeClassifier";
-import { getNewsSafetyShieldStatus } from "./calendarEngine";
-import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { getMarketCandles, AVAILABLE_ASSETS } from "./marketService";
+import { generateRuleBasedAnalysis } from "./geminiService";
 
 // ─── IN-MEMORY AUTONOMOUS STATE BUS ───
 const activeOrdersStore = new Map<string, MtBridgeOrder>();
@@ -125,86 +120,31 @@ export async function evaluateAssetAutonomous(
   const high24h = Math.max(...candles.map((c) => c.high));
   const low24h = Math.min(...candles.map((c) => c.low));
 
-  // 1. Vectorized Indicators & Safety
+  // 1. Vectorized Indicators Calculation
   const indicators = calculateAllIndicators(candles, sym);
-  const regimeInfo = classifyMarketRegime(candles, indicators);
-  const calendarSafety = getNewsSafetyShieldStatus(sym);
 
-  // 2. Anti-Clash Strategy Orchestration
-  orchestrateStrategyDecision({
-    candles,
-    indicators,
-    regimeInfo,
-    userPreset: "AUTO_REGIME",
-  });
+  // 2. Execute Unified Institutional Rule-Based Analysis Core (Single Source of Truth)
+  // Evaluates all 100 indicators, 23 confluence pillars, 25 safety locks & Anti-Clash Orchestrator
+  const analysis = generateRuleBasedAnalysis(sym, timeframe, candles, indicators, []);
 
-  // 3. Directional Bias Determination
-  const ema20 = indicators.ema20.slice(-1)[0] ?? currentPrice;
-  const ema50 = indicators.ema50.slice(-1)[0] ?? currentPrice;
-  const ema200 = indicators.ema200.slice(-1)[0] ?? currentPrice;
-  const isBullishStructure = currentPrice > ema200 && ema20 >= ema50;
-  const isBearishStructure = currentPrice < ema200 && ema20 <= ema50;
-  const bias = isBullishStructure ? "BULLISH" : isBearishStructure ? "BEARISH" : "NEUTRAL";
+  const totalScore = analysis.masterConfluence?.totalScore ?? 50;
+  const setupGrade = analysis.setupGrade;
+  const signal = analysis.signal;
+  const regimeTitle = analysis.regimeInfo?.title || "NORMAL_MARKET_FLOW";
+  const isNewsFrozen = !analysis.calendarSafety?.tradeAllowed;
 
-  // 4. Master Confluence Score (0-100)
-  const masterConfluence = evaluateMasterConfluence(candles, indicators, bias);
-  const totalScore = masterConfluence.totalScore;
-  const setupGrade = masterConfluence.grade;
-
-  // Signal categorization
-  let signal: AssetScannerSummary["signal"] = "WAIT";
-  let orderType = "WAIT_NO_ORDER";
-
-  if (bias === "BULLISH" && totalScore >= 70) {
-    signal = totalScore >= 80 ? "STRONG_BUY" : "BUY";
-    orderType = "BUY_LIMIT";
-  } else if (bias === "BEARISH" && totalScore >= 70) {
-    signal = totalScore >= 80 ? "STRONG_SELL" : "SELL";
-    orderType = "SELL_LIMIT";
-  }
-
-  // Check News Safety Shield
-  const isNewsFrozen = !calendarSafety.tradeAllowed;
-  if (isNewsFrozen) {
-    signal = "WAIT";
-    orderType = "NEWS_FREEZE";
-  }
+  // Derive execution parameters directly from unified TradeSetup (OTE Golden Pocket & Structural SL)
+  const tradeSetup = analysis.tradeSetup;
+  const orderType = tradeSetup.orderType;
+  const pendingPrice = tradeSetup.pendingPrice;
+  const slPrice = tradeSetup.stopLoss;
+  const tp1Price = tradeSetup.takeProfit1;
+  const tp2Price = tradeSetup.takeProfit2;
 
   // Calculate Precision and Pip Size
   const isGold = sym.includes("XAU") || sym.includes("GOLD");
   const isJpy = sym.includes("JPY");
   const pipMultiplier = isGold ? 10 : isJpy ? 100 : sym.endsWith("USDT") ? 1 : 10000;
-  const precision = isGold || isJpy ? 2 : sym.endsWith("USDT") && currentPrice > 50 ? 2 : 4;
-
-  // Calculate ATR-based Pending Order Parameters
-  const atrList = calculateATR(candles, 14);
-  const currentAtr = atrList.slice(-1)[0] || (currentPrice * 0.005);
-  const slDistance = Math.max(currentAtr * 1.5, currentPrice * 0.0025);
-  const tp1Distance = slDistance * 1.0;
-  const tp2Distance = slDistance * 2.0;
-
-  // Optimal Entry Zone (Pullback to EMA20 / 38.2% discount)
-  let pendingPrice = currentPrice;
-  let slPrice = currentPrice;
-  let tp1Price = currentPrice;
-  let tp2Price = currentPrice;
-
-  if (orderType === "BUY_LIMIT") {
-    // Buy limit at slight discount (EMA20 or current - 0.15 ATR)
-    pendingPrice = Number((Math.min(currentPrice, ema20) - (currentAtr * 0.15)).toFixed(precision));
-    if (pendingPrice >= currentPrice) pendingPrice = Number((currentPrice - (currentAtr * 0.2)).toFixed(precision));
-    slPrice = Number((pendingPrice - slDistance).toFixed(precision));
-    tp1Price = Number((pendingPrice + tp1Distance).toFixed(precision));
-    tp2Price = Number((pendingPrice + tp2Distance).toFixed(precision));
-  } else if (orderType === "SELL_LIMIT") {
-    // Sell limit at slight premium (EMA20 or current + 0.15 ATR)
-    pendingPrice = Number((Math.max(currentPrice, ema20) + (currentAtr * 0.15)).toFixed(precision));
-    if (pendingPrice <= currentPrice) pendingPrice = Number((currentPrice + (currentAtr * 0.2)).toFixed(precision));
-    slPrice = Number((pendingPrice + slDistance).toFixed(precision));
-    tp1Price = Number((pendingPrice - tp1Distance).toFixed(precision));
-    tp2Price = Number((pendingPrice - tp2Distance).toFixed(precision));
-  }
-
   const distancePips = Math.abs(Number(((pendingPrice - currentPrice) * pipMultiplier).toFixed(1)));
 
   // Asset Info lookup
@@ -225,7 +165,7 @@ export async function evaluateAssetAutonomous(
     setupGrade,
     signal,
     orderType,
-    regime: regimeInfo.title,
+    regime: regimeTitle,
     isNewsFrozen,
     pendingPrice: orderType !== "WAIT_NO_ORDER" ? pendingPrice : undefined,
     slPrice: orderType !== "WAIT_NO_ORDER" ? slPrice : undefined,
@@ -234,21 +174,33 @@ export async function evaluateAssetAutonomous(
     updatedAt: Date.now(),
   };
 
-  // 5. Autonomous Decision Gate: High Confluence Trigger (>= 75 score & Grade A/A+)
+  // 3. Autonomous Decision Gate: High Confluence & Full Safety Lock Clearance
   let newOrder: MtBridgeOrder | undefined;
   let decisionTriggered = false;
+
+  const isSignalActionable =
+    (signal === "BUY" || signal === "STRONG_BUY" || signal === "SELL" || signal === "STRONG_SELL") &&
+    tradeSetup.action !== "NO_TRADE" &&
+    (orderType === "BUY_LIMIT" || orderType === "SELL_LIMIT" || orderType === "MARKET_EXECUTION");
 
   if (
     config.isEnabled &&
     !isNewsFrozen &&
-    totalScore >= config.minConfluenceThreshold &&
-    (signal === "BUY" || signal === "STRONG_BUY" || signal === "SELL" || signal === "STRONG_SELL") &&
-    (orderType === "BUY_LIMIT" || orderType === "SELL_LIMIT")
+    !analysis.orchestrator?.vetoTriggered &&
+    (setupGrade === "A+" || setupGrade === "A" || totalScore >= config.minConfluenceThreshold) &&
+    isSignalActionable
   ) {
+    const effectiveOrderType = orderType === "MARKET_EXECUTION"
+      ? (tradeSetup.action === "BUY" ? "BUY_LIMIT" : "SELL_LIMIT")
+      : orderType;
+
     // Check Deduplication against active orders
     const existingOrder = getActiveBridgeOrders(sym).find(
-      (o) => o.status === "PENDING" && o.orderType === orderType
+      (o) => o.status === "PENDING" && o.orderType === effectiveOrderType
     );
+
+    const atrList = calculateATR(candles, 14);
+    const currentAtr = atrList.slice(-1)[0] || (currentPrice * 0.005);
 
     // If no existing pending order or price moved sufficiently
     if (!existingOrder || Math.abs(existingOrder.price - pendingPrice) > (currentAtr * 0.5)) {
@@ -258,7 +210,7 @@ export async function evaluateAssetAutonomous(
       newOrder = {
         id: `ord_${sym}_${Date.now()}`,
         symbol: sym,
-        orderType,
+        orderType: effectiveOrderType,
         price: pendingPrice,
         stopLoss: slPrice,
         takeProfit1: tp1Price,
@@ -277,7 +229,7 @@ export async function evaluateAssetAutonomous(
       addTelemetryLog(
         sym,
         "DECISION",
-        `Autonomous Decision: ${orderType} @ ${pendingPrice} primed (Confluence ${totalScore}%, Grade ${setupGrade})`,
+        `Autonomous Decision: ${effectiveOrderType} @ ${pendingPrice} primed (Confluence ${totalScore}%, Grade ${setupGrade})`,
         totalScore,
         setupGrade,
         { price: pendingPrice, sl: slPrice, tp1: tp1Price }

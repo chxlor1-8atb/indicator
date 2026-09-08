@@ -713,6 +713,7 @@ export interface IndicatorData {
   fillProbabilitySlippage?: FillProbabilitySlippageInfo;
   darkPoolDealerGamma?: DarkPoolDealerGammaExposureInfo;
   sovereignSingularityAlpha?: SovereignSingularityAlphaInfo;
+  classicTrio?: ClassicTrioInfo;
   masterSuite?: MasterIndicatorSuite;
 }
 
@@ -894,6 +895,7 @@ export interface AnalysisResult {
   fillProbabilitySlippage?: FillProbabilitySlippageInfo;
   darkPoolDealerGamma?: DarkPoolDealerGammaExposureInfo;
   sovereignSingularityAlpha?: SovereignSingularityAlphaInfo;
+  classicTrio?: ClassicTrioInfo;
   timeframeMatrix: {
     m15: "BULLISH" | "BEARISH" | "NEUTRAL";
     h1: "BULLISH" | "BEARISH" | "NEUTRAL";
@@ -1847,4 +1849,17 @@ export interface AutonomousPilotConfig {
   riskPercentPerTrade: number;
   accountType: "STANDARD" | "CENT";
   scanIntervalMs: number;
+}
+
+export interface ClassicTrioInfo {
+  ma20: number;
+  ma50: number;
+  rsi14: number;
+  prevRsi14: number;
+  alignment: "FULL_BULLISH_TRIO" | "FULL_BEARISH_TRIO" | "PULLBACK_RETEST" | "DIVERGENT";
+  isAligned: boolean;
+  alignmentScore: number;
+  winRateBonus: number;
+  signalBias: "BULLISH" | "BEARISH" | "NEUTRAL";
+  summary: string;
 }
