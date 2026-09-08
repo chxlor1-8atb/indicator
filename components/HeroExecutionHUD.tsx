@@ -15,6 +15,7 @@ import {
   Clock,
   AlertOctagon,
   Layers,
+  Lock,
 } from "lucide-react";
 
 interface HeroExecutionHUDProps {
@@ -58,11 +59,13 @@ export default function HeroExecutionHUD({
   const distancePips = Math.abs(Number((entryPrice - currentPrice) * pipMultiplier)).toFixed(1);
 
   // Trigger Status Analysis
-  const isFreeze = cal && !cal.tradeAllowed;
-  const isVeto = orch?.vetoTriggered;
-  const isBuy = ts.orderType?.includes("BUY") || analysis.signal?.includes("BUY");
-  const isSell = ts.orderType?.includes("SELL") || analysis.signal?.includes("SELL");
-  const isLimit = ts.orderType?.includes("LIMIT");
+  const isFreeze = Boolean(cal && !cal.tradeAllowed);
+  const isVeto = Boolean(orch?.vetoTriggered);
+  const isWait = ts.orderType === "WAIT_NO_ORDER" || analysis.signal === "WAIT" || (!ts.orderType?.includes("BUY") && !ts.orderType?.includes("SELL"));
+  const isExecutionLocked = isFreeze || isVeto || isWait;
+  const isBuy = !isExecutionLocked && (ts.orderType?.includes("BUY") || analysis.signal?.includes("BUY"));
+  const isSell = !isExecutionLocked && (ts.orderType?.includes("SELL") || analysis.signal?.includes("SELL"));
+  const isLimit = !isExecutionLocked && ts.orderType?.includes("LIMIT");
 
   // Determine Trigger Text & Alert Style
   let triggerTitle = "จังหวะการเข้าเทรด";
@@ -77,6 +80,10 @@ export default function HeroExecutionHUD({
     triggerTitle = "⛔ คำสั่ง VETO ระงับสัญญาณชั่วคราว";
     triggerMessage = orch?.vetoReason || "พบกับดักสภาพคล่องหรือความขัดแย้งเชิงโครงสร้างใหญ่ ระบบระงับสัญญาณเพื่อปกป้องเงินทุน";
     triggerStatusIcon = <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />;
+  } else if (isWait) {
+    triggerTitle = "⚪ สถานะ: พักดูจังหวะ (ตลาดยังไม่ให้แต้มต่อ)";
+    triggerMessage = "ยังไม่มีความได้เปรียบทางสถิติที่ชัดเจน นั่งทับมือรอการย่อตัวหรือการเบรกเอาท์ที่สมบูรณ์";
+    triggerStatusIcon = <Clock className="w-5 h-5 text-slate-400 shrink-0" />;
   } else if (orch?.executionAdvice) {
     triggerTitle = isBuy
       ? (isLimit ? "⏳ จังหวะเข้า: ตั้งคำสั่ง BUY LIMIT รอราคาเกี่ยวที่แนวรับ" : "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด BUY ทันที")
@@ -96,6 +103,7 @@ export default function HeroExecutionHUD({
   } else {
     triggerTitle = "⚪ สถานะ: พักดูจังหวะ (ตลาดยังไม่ให้แต้มต่อ)";
     triggerMessage = "ยังไม่มีความได้เปรียบทางสถิติที่ชัดเจน นั่งทับมือรอการย่อตัวหรือการเบรกเอาท์ที่สมบูรณ์";
+    triggerStatusIcon = <Clock className="w-5 h-5 text-slate-400 shrink-0" />;
   }
 
   // Lot Calculator Variables
@@ -162,7 +170,11 @@ export default function HeroExecutionHUD({
         {/* Order Type & RR Badges */}
         <div className="flex flex-wrap items-center gap-2">
           <span className={`px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-black tracking-wide shadow-md ${
-            ts.orderType === "BUY_LIMIT"
+            isFreeze || isVeto
+              ? "bg-rose-500/20 text-rose-300 border-rose-500/50"
+              : isWait
+              ? "bg-surface-50 text-slate-400 border-slate-700"
+              : ts.orderType === "BUY_LIMIT"
               ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 glow-green"
               : ts.orderType === "SELL_LIMIT"
               ? "bg-rose-500/20 text-rose-300 border-rose-500/50 glow-red"
@@ -174,7 +186,13 @@ export default function HeroExecutionHUD({
               ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
               : "bg-surface-50 text-slate-400 border-slate-700"
           }`}>
-            {ts.orderType === "BUY_LIMIT"
+            {isFreeze
+              ? "⛔ ระงับคำสั่ง (NEWS FREEZE)"
+              : isVeto
+              ? "⛔ ระงับคำสั่ง (VETO LOCKED)"
+              : isWait
+              ? "⚪ พักดูจังหวะ (WAIT - ไม่เปิดออเดอร์)"
+              : ts.orderType === "BUY_LIMIT"
               ? "🟢 BUY LIMIT (ตั้งรับซื้อโซน OTE)"
               : ts.orderType === "SELL_LIMIT"
               ? "🔴 SELL LIMIT (ตั้งรอขายโซน OTE)"
@@ -220,97 +238,146 @@ export default function HeroExecutionHUD({
       </div>
 
       {/* ─── 3. THE 4 CORE COPYABLE EXECUTION CARDS (ใหญ่ ชัดเจน คลิกก๊อปปี้ได้ใน 1 วิ) ─── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-        {/* 1. Price */}
-        <div
-          onClick={() => onCopy(`${ts.pendingPrice || ts.entryZone.min}`, "price")}
-          className="p-3 sm:p-3.5 rounded-xl bg-surface-50/90 hover:bg-slate-800 border-2 border-slate-700 hover:border-amber-400/80 cursor-pointer transition-all group relative shadow-sm hover:shadow-amber-500/10 active:scale-95"
-        >
-          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-            <span className="font-bold text-slate-200">1. ราคาตั้งเปิด (Price)</span>
-            {copiedKey === "price" ? (
-              <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
-                <Check className="w-3 h-3" /> คัดลอกแล้ว
-              </span>
-            ) : (
-              <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 text-amber-400" />
-            )}
+      <div className="space-y-2">
+        {isExecutionLocked && (
+          <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs font-semibold shadow-sm">
+            <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              {isVeto
+                ? "🔒 คำสั่งถูกระงับ (VETO): พบคอนฟลิกต์หรือกับดักสภาพคล่อง ระดับราคาด้านล่างเป็นค่าอ้างอิงเพื่อเฝ้าระวัง ห้ามเปิดออเดอร์"
+                : isFreeze
+                ? "🔒 คำสั่งถูกระงับ (NEWS FREEZE): ตลาดอยู่ในช่วงข่าวกล่องแดง/ส้ม ห้ามส่งคำสั่งจนกว่าข่าวจะผ่านพ้น"
+                : "🔒 ระงับคำสั่ง (WAITING): ตลาดยังไม่เข้าเงื่อนไขแต้มต่อสถาบัน ระดับราคาด้านล่างใช้เพื่อสังเกตการณ์เท่านั้น"}
+            </span>
           </div>
-          <span className="text-base sm:text-xl font-mono font-black text-amber-300 block tracking-tight">
-            {ts.pendingPrice || ts.entryZone.min}
-          </span>
-          <span className="text-[10px] text-slate-400 font-sans block truncate mt-0.5">
-            {ts.oteZone ? `โซน OTE (${ts.entryZone.min} - ${ts.entryZone.max})` : "แตะเพื่อคัดลอกค่านี้"}
-          </span>
-        </div>
+        )}
 
-        {/* 2. Stop Loss */}
-        <div
-          onClick={() => onCopy(`${ts.stopLoss}`, "sl")}
-          className="p-3 sm:p-3.5 rounded-xl bg-surface-50/90 hover:bg-slate-800 border-2 border-slate-700 hover:border-rose-500/80 cursor-pointer transition-all group relative shadow-sm hover:shadow-rose-500/10 active:scale-95"
-        >
-          <div className="flex items-center justify-between text-[11px] text-rose-400 mb-1">
-            <span className="font-bold text-rose-300">2. จุดยอมแพ้ (Stop Loss)</span>
-            {copiedKey === "sl" ? (
-              <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
-                <Check className="w-3 h-3" /> คัดลอกแล้ว
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+          {/* 1. Price */}
+          <div
+            onClick={() => onCopy(`${ts.pendingPrice || ts.entryZone.min}`, "price")}
+            className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
+              isExecutionLocked
+                ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
+                : "bg-surface-50/90 hover:bg-slate-800 border-slate-700 hover:border-amber-400/80 cursor-pointer hover:shadow-amber-500/10 active:scale-95"
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+              <span className={`font-bold ${isExecutionLocked ? "text-slate-400" : "text-slate-200"}`}>
+                {isExecutionLocked ? "1. ราคาอ้างอิง (เฝ้าระวัง)" : "1. ราคาตั้งเปิด (Price)"}
               </span>
-            ) : (
-              <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 text-rose-400" />
-            )}
+              {copiedKey === "price" ? (
+                <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
+                  <Check className="w-3 h-3" /> คัดลอกแล้ว
+                </span>
+              ) : (
+                <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 text-amber-400" />
+              )}
+            </div>
+            <span className={`text-base sm:text-xl font-mono font-black block tracking-tight ${
+              isExecutionLocked ? "text-amber-400/70" : "text-amber-300"
+            }`}>
+              {ts.pendingPrice || ts.entryZone.min}
+            </span>
+            <span className="text-[10px] text-slate-400 font-sans block truncate mt-0.5">
+              {isExecutionLocked
+                ? "🔒 ระงับคำสั่ง (เฝ้าระวัง)"
+                : ts.oteZone ? `โซน OTE (${ts.entryZone.min} - ${ts.entryZone.max})` : "แตะเพื่อคัดลอกค่านี้"}
+            </span>
           </div>
-          <span className="text-base sm:text-xl font-mono font-black text-rose-400 block tracking-tight">
-            {ts.stopLoss}
-          </span>
-          <span className="text-[10px] text-rose-300/80 font-mono block truncate mt-0.5">
-            {ts.slPips ? `-${ts.slPips} pips` : "ซ่อนหลัง Swing"} {ts.structuralSL ? "• Liquidity Shield" : ""}
-          </span>
-        </div>
 
-        {/* 3. Take Profit 1 */}
-        <div
-          onClick={() => onCopy(`${ts.takeProfit1}`, "tp1")}
-          className="p-3 sm:p-3.5 rounded-xl bg-surface-50/90 hover:bg-slate-800 border-2 border-slate-700 hover:border-emerald-500/80 cursor-pointer transition-all group relative shadow-sm hover:shadow-emerald-500/10 active:scale-95"
-        >
-          <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-1">
-            <span className="font-bold text-emerald-300">3. กำไรเป้าแรก (TP1)</span>
-            {copiedKey === "tp1" ? (
-              <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
-                <Check className="w-3 h-3" /> คัดลอกแล้ว
+          {/* 2. Stop Loss */}
+          <div
+            onClick={() => onCopy(`${ts.stopLoss}`, "sl")}
+            className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
+              isExecutionLocked
+                ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
+                : "bg-surface-50/90 hover:bg-slate-800 border-slate-700 hover:border-rose-500/80 cursor-pointer hover:shadow-rose-500/10 active:scale-95"
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] text-rose-400 mb-1">
+              <span className={`font-bold ${isExecutionLocked ? "text-slate-400" : "text-rose-300"}`}>
+                {isExecutionLocked ? "2. SL อ้างอิง" : "2. จุดยอมแพ้ (Stop Loss)"}
               </span>
-            ) : (
-              <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 text-emerald-400" />
-            )}
+              {copiedKey === "sl" ? (
+                <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
+                  <Check className="w-3 h-3" /> คัดลอกแล้ว
+                </span>
+              ) : (
+                <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 text-rose-400" />
+              )}
+            </div>
+            <span className={`text-base sm:text-xl font-mono font-black block tracking-tight ${
+              isExecutionLocked ? "text-rose-400/70" : "text-rose-400"
+            }`}>
+              {ts.stopLoss}
+            </span>
+            <span className="text-[10px] text-rose-300/70 font-mono block truncate mt-0.5">
+              {ts.slPips ? `-${ts.slPips} pips` : "ซ่อนหลัง Swing"} {ts.structuralSL ? "• Liquidity Shield" : ""}
+            </span>
           </div>
-          <span className="text-base sm:text-xl font-mono font-black text-emerald-300 block tracking-tight">
-            {ts.takeProfit1}
-          </span>
-          <span className="text-[10px] text-emerald-300/80 font-mono block truncate mt-0.5">
-            +{ts.tp1Pips || 0} pips (ถึง TP1 เลื่อน SL บังทุน)
-          </span>
-        </div>
 
-        {/* 4. Take Profit 2 */}
-        <div
-          onClick={() => onCopy(`${ts.takeProfit2}`, "tp2")}
-          className="p-3 sm:p-3.5 rounded-xl bg-surface-50/90 hover:bg-slate-800 border-2 border-slate-700 hover:border-emerald-500/80 cursor-pointer transition-all group relative shadow-sm hover:shadow-emerald-500/10 active:scale-95"
-        >
-          <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-1">
-            <span className="font-bold text-emerald-300">4. กำไรเป้าใหญ่ (TP2)</span>
-            {copiedKey === "tp2" ? (
-              <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
-                <Check className="w-3 h-3" /> คัดลอกแล้ว
+          {/* 3. Take Profit 1 */}
+          <div
+            onClick={() => onCopy(`${ts.takeProfit1}`, "tp1")}
+            className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
+              isExecutionLocked
+                ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
+                : "bg-surface-50/90 hover:bg-slate-800 border-slate-700 hover:border-emerald-500/80 cursor-pointer hover:shadow-emerald-500/10 active:scale-95"
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-1">
+              <span className={`font-bold ${isExecutionLocked ? "text-slate-400" : "text-emerald-300"}`}>
+                {isExecutionLocked ? "3. TP1 อ้างอิง" : "3. กำไรเป้าแรก (TP1)"}
               </span>
-            ) : (
-              <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 text-emerald-400" />
-            )}
+              {copiedKey === "tp1" ? (
+                <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
+                  <Check className="w-3 h-3" /> คัดลอกแล้ว
+                </span>
+              ) : (
+                <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 text-emerald-400" />
+              )}
+            </div>
+            <span className={`text-base sm:text-xl font-mono font-black block tracking-tight ${
+              isExecutionLocked ? "text-emerald-400/70" : "text-emerald-300"
+            }`}>
+              {ts.takeProfit1}
+            </span>
+            <span className="text-[10px] text-emerald-300/70 font-mono block truncate mt-0.5">
+              +{ts.tp1Pips || 0} pips (ถึง TP1 เลื่อน SL บังทุน)
+            </span>
           </div>
-          <span className="text-base sm:text-xl font-mono font-black text-emerald-300 block tracking-tight">
-            {ts.takeProfit2}
-          </span>
-          <span className="text-[10px] text-emerald-300/80 font-mono block truncate mt-0.5">
-            +{ts.tp2Pips || 0} pips (รันเทรนด์โครงสร้างใหญ่)
-          </span>
+
+          {/* 4. Take Profit 2 */}
+          <div
+            onClick={() => onCopy(`${ts.takeProfit2}`, "tp2")}
+            className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
+              isExecutionLocked
+                ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
+                : "bg-surface-50/90 hover:bg-slate-800 border-slate-700 hover:border-emerald-500/80 cursor-pointer hover:shadow-emerald-500/10 active:scale-95"
+            }`}
+          >
+            <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-1">
+              <span className={`font-bold ${isExecutionLocked ? "text-slate-400" : "text-emerald-300"}`}>
+                {isExecutionLocked ? "4. TP2 อ้างอิง" : "4. กำไรเป้าใหญ่ (TP2)"}
+              </span>
+              {copiedKey === "tp2" ? (
+                <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
+                  <Check className="w-3 h-3" /> คัดลอกแล้ว
+                </span>
+              ) : (
+                <Copy className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 text-emerald-400" />
+              )}
+            </div>
+            <span className={`text-base sm:text-xl font-mono font-black block tracking-tight ${
+              isExecutionLocked ? "text-emerald-400/70" : "text-emerald-300"
+            }`}>
+              {ts.takeProfit2}
+            </span>
+            <span className="text-[10px] text-emerald-300/70 font-mono block truncate mt-0.5">
+              +{ts.tp2Pips || 0} pips (รันเทรนด์โครงสร้างใหญ่)
+            </span>
+          </div>
         </div>
       </div>
 

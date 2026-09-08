@@ -217,8 +217,8 @@ export function generateRuleBasedAnalysis(
   const prevCandle = candles.length > 1 ? candles[candles.length - 2] : undefined;
 
   // Run automated historical backtest, parameter optimization, regime classifier, session status, and economic calendar safety shield
-  const historicalBacktest = runAutomatedBacktest(candles);
-  const optimizedConfig = optimizeIndicatorParameters(candles);
+  const historicalBacktest = runAutomatedBacktest(candles, symbol);
+  const optimizedConfig = optimizeIndicatorParameters(candles, symbol);
   const regimeInfo = classifyMarketRegime(candles, indicators);
   const sessionStatus = getMarketSessionStatus(symbol, undefined, candles);
   const calendarSafety = getNewsSafetyShieldStatus(symbol);
@@ -1095,6 +1095,11 @@ export function generateRuleBasedAnalysis(
       pendingPrice = fvgMitigation.recommendedEntryLimit;
     }
 
+    // [แผน 41] Liquidity Inducement Trap Avoidance (Do not enter directly on trap)
+    if (liquidityInducement.isInducementTrap && liquidityInducement.idmLevel !== null && Math.abs(pendingPrice - liquidityInducement.idmLevel) < currentATR * 0.6) {
+      pendingPrice = Number((liquidityInducement.idmLevel - currentATR * 0.35).toFixed(precision));
+    }
+
     // [แผน 14] Dynamic Multi-Stage Take Profit
     const risk = Math.max(pendingPrice - stopLoss, currentATR * 0.8);
     takeProfit1 = Number((pendingPrice + risk * 1.0).toFixed(precision));
@@ -1130,6 +1135,11 @@ export function generateRuleBasedAnalysis(
     // [แผน 31] FVG Consequent Encroachment (50%) Limit Refinement
     if (fvgMitigation.recommendedEntryLimit && fvgMitigation.recommendedEntryLimit > currentPrice && fvgMitigation.recommendedEntryLimit <= stopLoss) {
       pendingPrice = fvgMitigation.recommendedEntryLimit;
+    }
+
+    // [แผน 41] Liquidity Inducement Trap Avoidance (Do not enter directly on trap)
+    if (liquidityInducement.isInducementTrap && liquidityInducement.idmLevel !== null && Math.abs(pendingPrice - liquidityInducement.idmLevel) < currentATR * 0.6) {
+      pendingPrice = Number((liquidityInducement.idmLevel + currentATR * 0.35).toFixed(precision));
     }
 
     // [แผน 14] Dynamic Multi-Stage Take Profit
@@ -1226,8 +1236,14 @@ export function generateRuleBasedAnalysis(
   // SAFETY LOCK 12 (part b): MCPI Conviction Gating (Block if MCPI < 70 or Inducement Trap active)
   if (!mcpiConviction.isApprovedForExecution && (signal === "BUY" || signal === "SELL" || signal === "STRONG_BUY" || signal === "STRONG_SELL")) {
     signal = "WAIT";
+    tradeAction = "NO_TRADE";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 50);
+  }
+
+  // De-confliction Guarantee: Whenever signal is WAIT or VETOED, tradeAction must strictly be NO_TRADE
+  if (signal === "WAIT" || orchestrator.vetoTriggered || !calendarSafety.tradeAllowed) {
+    tradeAction = "NO_TRADE";
   }
 
   // 13-Point Confluence Checklist with News Shield, Order Flow, Volume Profile, Anchored VWAP, & Harmonics
@@ -1626,7 +1642,9 @@ export function generateRuleBasedAnalysis(
     },
     tradeSetup: {
       action: tradeAction,
-      orderType: tradeAction === "BUY"
+      orderType: signal === "WAIT" || tradeAction === "NO_TRADE"
+        ? "WAIT_NO_ORDER"
+        : tradeAction === "BUY"
         ? (currentPrice > pendingPrice || Math.abs(currentPrice - pendingPrice) >= currentATR * 0.25 ? "BUY_LIMIT" : "MARKET_EXECUTION")
         : tradeAction === "SELL"
         ? (currentPrice < pendingPrice || Math.abs(currentPrice - pendingPrice) >= currentATR * 0.25 ? "SELL_LIMIT" : "MARKET_EXECUTION")

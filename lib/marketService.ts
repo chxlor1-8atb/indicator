@@ -658,7 +658,7 @@ export function simulateInstitutionalBacktest(
   if (!candles || candles.length < 50) return [];
 
   // 1. Run Dynamic Self-Adaptive Optimization specifically for this asset
-  const opt = optimizeIndicatorParameters(candles);
+  const opt = optimizeIndicatorParameters(candles, symbol);
   const emaFastPeriod = opt.isOptimized ? opt.emaFast : 20;
   const emaSlowPeriod = opt.isOptimized ? opt.emaSlow : 50;
   const emaTrendPeriod = opt.isOptimized ? opt.emaTrend : 200;
