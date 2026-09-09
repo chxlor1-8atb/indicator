@@ -3,6 +3,7 @@ import { getSignalsAndStats, saveAiSignal } from "@/lib/db";
 import { AVAILABLE_ASSETS } from "@/lib/marketService";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
         success: true,
         ...data,
         perSymbolStats: enrichedPerSymbolStats,
+        timestamp: Date.now(),
       },
       {
         headers: {

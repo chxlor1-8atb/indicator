@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchLiveNews } from "@/lib/newsService";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
         success: true,
         count: filteredNews.length,
         news: filteredNews,
+        timestamp: Date.now(),
       },
       {
         headers: {

@@ -152,13 +152,22 @@ export default function HeroExecutionHUD({
             <Smartphone className="w-5 h-5 text-indigo-400" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-mono font-bold tracking-wider text-indigo-300 uppercase">
                 Institutional Trade Ticket
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-200 border border-indigo-500/30">
                 MT4 / MT5 Ready
               </span>
+              {analysis.timestamp && (
+                <span
+                  className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-mono text-slate-300 px-2 py-0.5 rounded-full bg-surface-50 border border-slate-800"
+                  title="เวลาที่ AI สร้างแผนนี้"
+                >
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  <span>วิเคราะห์ล่าสุด: {new Date(analysis.timestamp).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                </span>
+              )}
             </div>
             <h3 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
               <span>{analysis.symbol}</span>

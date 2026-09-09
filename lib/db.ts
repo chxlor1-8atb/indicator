@@ -351,7 +351,7 @@ export async function getSignalsAndStats(
     const losses = s.losses || 0;
     const active = s.active || 0;
     const resolved = wins + losses;
-    const winRatePct = resolved > 0 ? Number(((wins / resolved) * 100).toFixed(1)) : 82.5;
+    const winRatePct = resolved > 0 ? Number(((wins / resolved) * 100).toFixed(1)) : 0;
     const netPips = Number(s.net_pips || 0);
 
     // Per-symbol breakdown (merged live + backtest)
@@ -718,7 +718,7 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
     volumeWeight: 15,
     smcWeight: 20,
     minScoreThreshold: 70,
-    recentWinRate: 82.5,
+    recentWinRate: 0,
     isSelfTuned: false,
   };
 
@@ -748,7 +748,7 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
         volumeWeight: Number(c.volume_weight) || 15,
         smcWeight: Number(c.smc_weight) || 20,
         minScoreThreshold: Number(c.min_confluence_threshold) || 70,
-        recentWinRate: Number(c.recent_win_rate) || 82.5,
+        recentWinRate: Number(c.recent_win_rate) || 0,
         isSelfTuned: true,
       };
     }
@@ -768,7 +768,7 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
 
     const total = stats[0]?.total || 0;
     const wins = stats[0]?.wins || 0;
-    const winRate = total >= 4 ? Number(((wins / total) * 100).toFixed(1)) : 82.5;
+    const winRate = total >= 4 ? Number(((wins / total) * 100).toFixed(1)) : (total > 0 ? Number(((wins / total) * 100).toFixed(1)) : 0);
 
     let trend = 25;
     let momentum = 20;

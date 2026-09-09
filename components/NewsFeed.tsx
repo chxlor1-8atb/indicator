@@ -215,9 +215,20 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
             );
           })
         ) : isLoading ? (
-          <div className="py-12 text-center text-xs text-slate-500 space-y-2">
-            <div className="w-6 h-6 border-2 border-brand-blue border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p>กำลังดึงข้อมูลข่าวสารตลาดการเงินสด...</p>
+          <div className="space-y-2.5">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="p-3 bg-surface-50 border border-slate-800/80 rounded-xl space-y-2 animate-pulse"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-20 bg-slate-700/60 rounded" />
+                  <div className="h-3 w-16 bg-slate-800 rounded" />
+                </div>
+                <div className="h-4 w-5/6 bg-slate-700/80 rounded" />
+                <div className="h-3 w-2/3 bg-slate-800/80 rounded" />
+              </div>
+            ))}
           </div>
         ) : filteredNews.length === 0 ? (
           <div className="py-10 text-center text-xs text-slate-500">

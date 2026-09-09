@@ -14,6 +14,8 @@ interface AssetSelectorProps {
   isAnalyzing: boolean;
   currentPrice?: number;
   priceChangePercent?: number;
+  isLoadingPrice?: boolean;
+  lastPriceUpdate?: number | null;
 }
 
 const CATEGORIES: { id: "all" | AssetCategory; label: string }[] = [
@@ -51,6 +53,8 @@ export default function AssetSelector({
   isAnalyzing,
   currentPrice,
   priceChangePercent = 0,
+  isLoadingPrice,
+  lastPriceUpdate,
 }: AssetSelectorProps) {
   const [activeTab, setActiveTab] = useState<"all" | AssetCategory>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -200,8 +204,13 @@ export default function AssetSelector({
             )}
           </div>
 
-          {/* Quick Price Badge */}
-          {currentPrice !== undefined && (
+          {/* Quick Price Badge with Loading Skeleton */}
+          {isLoadingPrice || !currentPrice || currentPrice <= 0 ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-50 rounded-lg border border-slate-800 text-xs animate-pulse">
+              <div className="h-4 w-20 bg-slate-700/60 rounded" />
+              <div className="h-3.5 w-12 bg-slate-800 rounded" />
+            </div>
+          ) : (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-50 rounded-lg border border-slate-800 text-xs">
               <span className="font-mono font-bold text-white">
                 ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: currentAssetInfo?.precision || 2 })}
@@ -219,6 +228,14 @@ export default function AssetSelector({
                 {priceChangePercent > 0 ? "+" : ""}
                 {priceChangePercent.toFixed(2)}%
               </span>
+              {lastPriceUpdate && (
+                <span
+                  className="hidden sm:inline text-[10px] text-slate-500 font-mono pl-1.5 border-l border-slate-700/80"
+                  title="เวลาอัปเดตราคาล่าสุด"
+                >
+                  {new Date(lastPriceUpdate).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+              )}
             </div>
           )}
         </div>

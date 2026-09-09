@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { Candle, IndicatorData, OptimizedConfig, VolumeAnomalyItem } from "@/lib/types";
-import { BarChart2, Activity, Zap, TrendingUp, Compass, Layers } from "lucide-react";
+import { BarChart2, Activity, Zap, TrendingUp, Compass, Layers, Clock } from "lucide-react";
 
 interface MarketChartProps {
   candles: Candle[];
@@ -11,6 +11,7 @@ interface MarketChartProps {
   timeframe: string;
   isLiveUpdating?: boolean;
   optimizedConfig?: OptimizedConfig;
+  lastTickTime?: number | null;
 }
 
 export default function MarketChart({
@@ -19,6 +20,7 @@ export default function MarketChart({
   symbol,
   timeframe,
   optimizedConfig,
+  lastTickTime,
 }: MarketChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -765,9 +767,24 @@ export default function MarketChart({
             <div className="text-[10px] uppercase text-slate-500 font-medium">Volume</div>
             <div className="text-slate-200 font-bold">{totalVolume.toLocaleString()}</div>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-bold text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            <span className="font-sans">LIVE TICK</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-bold text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span className="font-sans">LIVE TICK</span>
+            </div>
+            <div
+              className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-surface-50 border border-slate-800 text-[10.5px] text-slate-300 font-mono"
+              title="เวลาอัปเดตราคาล่าสุด"
+            >
+              <Clock className="w-3 h-3 text-slate-400" />
+              <span>
+                {lastTickTime
+                  ? new Date(lastTickTime).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                  : candles.length > 0 && candles[candles.length - 1].time
+                  ? new Date(candles[candles.length - 1].time * 1000).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                  : "เรียลไทม์"}
+              </span>
+            </div>
           </div>
         </div>
       </div>

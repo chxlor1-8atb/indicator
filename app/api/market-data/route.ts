@@ -3,6 +3,7 @@ import { AVAILABLE_ASSETS, getMarketCandles } from "@/lib/marketService";
 import { calculateAllIndicators } from "@/lib/indicators";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,13 +22,18 @@ export async function GET(request: NextRequest) {
 
     const candles = await getMarketCandles(symbol, timeframe);
     const indicators = calculateAllIndicators(candles, symbol);
+    const lastCandleTime = candles.length > 0 ? candles[candles.length - 1].time : undefined;
 
     return NextResponse.json(
       {
         success: true,
+        symbol,
+        timeframe,
         assetInfo,
         candles,
         indicators,
+        lastCandleTime,
+        timestamp: Date.now(),
       },
       {
         headers: {

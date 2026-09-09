@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { DbAiSignal, WinRateStats, PerSymbolStat } from "@/lib/db";
+import { AVAILABLE_ASSETS } from "@/lib/marketService";
 import {
   Award,
   TrendingUp,
@@ -16,7 +17,8 @@ import {
   Zap,
   Database,
   Sparkles,
-  Search
+  Search,
+  StopCircle,
 } from "lucide-react";
 
 export default function SignalJournalCard() {
@@ -27,7 +29,7 @@ export default function SignalJournalCard() {
     winCount: 0,
     lossCount: 0,
     activeCount: 0,
-    winRatePct: 82.5,
+    winRatePct: 0,
     netPips: 0,
   });
   const [perSymbolStats, setPerSymbolStats] = useState<PerSymbolStat[]>([]);
@@ -37,28 +39,130 @@ export default function SignalJournalCard() {
   const [seedMessage, setSeedMessage] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
+  const hasAutoTriggeredRef = useRef(false);
+  const cancelScanRef = useRef(false);
+
+  // ─── Chunked Batch Scanning State (Eliminates Vercel Serverless 504 Timeout) ───
+  const [scanProgress, setScanProgress] = useState<{
+    current: number;
+    total: number;
+    percent: number;
+    currentSymbols: string;
+    totalTrades: number;
+    savedTrades: number;
+  } | null>(null);
+
+  const handleCancelScan = () => {
+    cancelScanRef.current = true;
+    setSeedMessage("⚠️ กำลังหยุดการสแกนหลังจากแบทช์นี้เสร็จสิ้น...");
+  };
 
   const handleSeed500Candles = async (category = "all", resetPrevious = true) => {
     setIsSeeding(true);
-    setSeedMessage(`⏳ กำลังดึงข้อมูลย้อนหลัง 500 แท่ง & รันระบบ 5-Filter สถาบันแม่นยำสูง ${category === "forex" ? "Forex 39 คู่" : "ทุกคู่เงิน"} บันทึกลง Neon DB...`);
+    cancelScanRef.current = false;
+
+    let targetAssets = AVAILABLE_ASSETS;
+    if (category === "forex") {
+      targetAssets = AVAILABLE_ASSETS.filter((a) => a.category === "forex");
+    } else if (category === "core") {
+      targetAssets = AVAILABLE_ASSETS.filter((a) =>
+        ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "BTCUSDT", "USOIL"].includes(a.symbol)
+      );
+    }
+
+    const allSymbols = targetAssets.map((a) => a.symbol);
+    const CHUNK_SIZE = 3; // 3 symbols per chunk ensures each request finishes in ~1.5s, far below 10s timeout
+    const chunks: string[][] = [];
+    for (let i = 0; i < allSymbols.length; i += CHUNK_SIZE) {
+      chunks.push(allSymbols.slice(i, i + CHUNK_SIZE));
+    }
+
+    setScanProgress({
+      current: 0,
+      total: allSymbols.length,
+      percent: 0,
+      currentSymbols: chunks[0]?.join(", ") || "",
+      totalTrades: 0,
+      savedTrades: 0,
+    });
+
+    setSeedMessage(
+      `⏳ เริ่มต้นสแกน ${allSymbols.length} คู่เงินแบบ Safe-Batch (${chunks.length} แบทช์ย่อย ปลอดภัยจาก Vercel Timeout)...`
+    );
+
+    let accumulatedSaved = 0;
+    let accumulatedTrades = 0;
+    let processedSymbols = 0;
+
     try {
-      const res = await fetch("/api/backtest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "seed-all", category, resetPrevious }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSeedMessage(`✅ ${data.message}`);
-        await fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined);
-      } else {
-        setSeedMessage(`❌ เกิดข้อผิดพลาด: ${data.error}`);
+      for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+        if (cancelScanRef.current) {
+          setSeedMessage(`⚠️ สแกนหยุดชั่วคราว: ประมวลผลไปแล้ว ${processedSymbols}/${allSymbols.length} คู่เงิน`);
+          break;
+        }
+
+        const chunk = chunks[cIdx];
+        const isFirstChunk = cIdx === 0;
+
+        setScanProgress({
+          current: processedSymbols,
+          total: allSymbols.length,
+          percent: Math.round((processedSymbols / allSymbols.length) * 100),
+          currentSymbols: chunk.join(", "),
+          totalTrades: accumulatedTrades,
+          savedTrades: accumulatedSaved,
+        });
+
+        const res = await fetch("/api/backtest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "seed-batch",
+            symbols: chunk,
+            timeframe: "1h",
+            resetPrevious: isFirstChunk && resetPrevious,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            accumulatedSaved += data.totalSaved || 0;
+            accumulatedTrades += data.totalTradesGenerated || 0;
+          }
+        } else {
+          console.warn(`Batch ${cIdx + 1} returned status ${res.status}`);
+        }
+
+        processedSymbols += chunk.length;
+        setScanProgress({
+          current: Math.min(processedSymbols, allSymbols.length),
+          total: allSymbols.length,
+          percent: Math.min(100, Math.round((processedSymbols / allSymbols.length) * 100)),
+          currentSymbols: chunk.join(", "),
+          totalTrades: accumulatedTrades,
+          savedTrades: accumulatedSaved,
+        });
+
+        // Small yield to allow UI to breathe
+        await new Promise((r) => setTimeout(r, 60));
       }
+
+      if (!cancelScanRef.current) {
+        setSeedMessage(
+          `✅ สแกนสำเร็จครบถ้วน ${processedSymbols} คู่เงิน! สร้าง ${accumulatedTrades} trades บันทึกลง Neon DB ใหม่ ${accumulatedSaved} trades`
+        );
+      }
+      await fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined);
     } catch (err) {
-      setSeedMessage(`❌ การเชื่อมต่อล้มเหลว: ${err}`);
+      setSeedMessage(`❌ เกิดข้อผิดพลาดระหว่างสแกน: ${err}`);
     } finally {
       setIsSeeding(false);
-      setTimeout(() => setSeedMessage(null), 8000);
+      setTimeout(() => {
+        setScanProgress(null);
+        setSeedMessage(null);
+      }, 10000);
     }
   };
 
@@ -72,7 +176,18 @@ export default function SignalJournalCard() {
         if (data.success) {
           setSignals(data.signals || []);
           setStats(data.stats);
-          if (data.perSymbolStats) setPerSymbolStats(data.perSymbolStats);
+          const now = new Date();
+          setLastSyncedTime(
+            now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+          );
+          if (data.perSymbolStats) {
+            setPerSymbolStats(data.perSymbolStats);
+            // Auto-trigger initial backtest sync if database has 0 historical statistics
+            if (data.perSymbolStats.length === 0 && !hasAutoTriggeredRef.current) {
+              hasAutoTriggeredRef.current = true;
+              handleSeed500Candles("core", false);
+            }
+          }
         }
       }
     } catch (err) {
@@ -166,15 +281,24 @@ export default function SignalJournalCard() {
           </div>
         </div>
 
-        <button
-          onClick={() => fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined)}
-          disabled={isLoading}
-          className="p-1.5 rounded-lg bg-surface-50 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all text-xs flex items-center gap-1"
-          title="รีเฟรชข้อมูลล่าสุด"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-brand-blue" : ""}`} />
-          <span className="hidden xs:inline text-[11px]">อัปเดต</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {lastSyncedTime && (
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-50 border border-slate-800 text-[10.5px] font-mono text-slate-300">
+              <Clock className="w-3 h-3 text-slate-400" />
+              <span>ซิงค์ล่าสุด: {lastSyncedTime}</span>
+            </span>
+          )}
+
+          <button
+            onClick={() => fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined)}
+            disabled={isLoading}
+            className="p-1.5 rounded-lg bg-surface-50 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all text-xs flex items-center gap-1"
+            title="รีเฟรชข้อมูลล่าสุด"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-brand-blue" : ""}`} />
+            <span className="hidden xs:inline text-[11px]">อัปเดต</span>
+          </button>
+        </div>
       </div>
 
       {/* 4 Performance KPI Cards */}
@@ -183,10 +307,10 @@ export default function SignalJournalCard() {
         <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
           <span className="text-[10px] text-slate-400 block font-medium">Win Rate สะสม</span>
           <span className="text-base sm:text-lg font-mono font-black text-emerald-400 block">
-            {stats.winRatePct}%
+            {stats.resolvedCount > 0 ? `${stats.winRatePct}%` : "0.0%"}
           </span>
           <span className="text-[10px] text-slate-500 font-mono block truncate">
-            เป้าสถาบัน &gt; 75%
+            {stats.resolvedCount > 0 ? "เป้าสถาบัน > 75%" : stats.activeCount > 0 ? `รอสรุปผล (${stats.activeCount} ไม้เปิด)` : "ยังไม่มีไม้ที่ปิดผล"}
           </span>
         </div>
 
@@ -259,6 +383,53 @@ export default function SignalJournalCard() {
         </div>
       </div>
 
+      {/* ─── Client-Driven Chunked Batch Progress Bar (Vercel Serverless Safe) ─── */}
+      {scanProgress && (
+        <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/80 via-surface-100 to-purple-950/70 border border-indigo-500/50 space-y-2.5 animate-fadeIn shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-bold text-white flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-cyan-400 shrink-0" />
+              <span>
+                กำลังสแกนแบทช์ย่อย: <span className="font-mono text-cyan-300 font-black">{scanProgress.currentSymbols}</span>
+              </span>
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono font-bold text-indigo-300 text-xs px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/30">
+                {scanProgress.percent}% ({scanProgress.current}/{scanProgress.total} คู่เงิน)
+              </span>
+              <button
+                onClick={handleCancelScan}
+                className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95"
+                title="หยุดการสแกนชั่วคราว"
+              >
+                <StopCircle className="w-3.5 h-3.5" />
+                <span>ยกเลิก</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Animated Gradient Progress Bar */}
+          <div className="w-full h-3 bg-slate-900/90 rounded-full overflow-hidden p-0.5 border border-slate-700/80 shadow-inner">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 transition-all duration-300 shadow-sm shadow-cyan-500/50"
+              style={{ width: `${Math.max(4, scanProgress.percent)}%` }}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <span>Trades ที่สร้างสะสม:</span>
+              <span className="font-mono text-amber-300 font-black">{scanProgress.totalTrades.toLocaleString()}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span>บันทึก Neon DB สำเร็จ:</span>
+              <span className="font-mono text-emerald-400 font-black">{scanProgress.savedTrades.toLocaleString()}</span>
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">⚡ ป้องกัน Vercel 504 Timeout ด้วย Chunked Sub-batches</span>
+          </div>
+        </div>
+      )}
+
       {/* Seeder Status Message */}
       {seedMessage && (
         <div className="p-2.5 rounded-xl bg-indigo-950/60 border border-indigo-500/40 text-[11px] text-indigo-200 flex items-center gap-2 animate-fadeIn">
@@ -269,15 +440,27 @@ export default function SignalJournalCard() {
 
       {/* ─── Per-Symbol Win Rate Breakdown Section ─── */}
       {perSymbolStats.length === 0 ? (
-        <div className="p-4 rounded-xl bg-surface-50 border border-dashed border-slate-800 text-center space-y-2">
-          <div className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center mx-auto">
-            <Database className="w-4 h-4" />
+        isSeeding ? (
+          <div className="p-4 rounded-xl bg-surface-50 border border-indigo-500/30 text-center space-y-2 animate-pulse">
+            <div className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center mx-auto">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+            </div>
+            <h5 className="text-xs font-bold text-white">กำลังซิงค์สถิติย้อนหลัง 500 แท่งให้อัตโนมัติ...</h5>
+            <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+              ระบบกำลังประมวลผลย้อนหลัง 500 แท่งและบันทึกประวัติ Win Rate ลงระบบอัตโนมัติในพื้นหลัง
+            </p>
           </div>
-          <h5 className="text-xs font-bold text-white">ยังไม่มีข้อมูลสถิติย้อนหลัง 500 แท่งใน Database</h5>
-          <p className="text-[11px] text-slate-400 max-w-md mx-auto">
-            กดปุ่ม <strong>&quot;สแกน Forex 39 คู่&quot;</strong> หรือ <strong>&quot;สแกนทุกหมวด&quot;</strong> ด้านบน เพื่อให้ระบบดึงข้อมูล 500 แท่งเทียนและบันทึกประวัติ Win Rate ลงระบบทันที
-          </p>
-        </div>
+        ) : (
+          <div className="p-4 rounded-xl bg-surface-50 border border-slate-800 text-center space-y-2">
+            <div className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center mx-auto">
+              <Database className="w-4 h-4" />
+            </div>
+            <h5 className="text-xs font-bold text-white">กำลังเตรียมข้อมูลสถิติย้อนหลัง...</h5>
+            <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+              ระบบกำลังดึงข้อมูลสถิติ หรือกดปุ่ม <strong>&quot;สแกน Forex 39 คู่&quot;</strong> ด้านบนเพื่อซิงค์ทันที
+            </p>
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           {/* Category Filter Tabs & Search */}

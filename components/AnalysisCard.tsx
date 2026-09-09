@@ -290,12 +290,12 @@ export default function AnalysisCard({
   if (!analysis) {
     return (
       <div className="bg-surface-100 border border-slate-800 rounded-2xl p-8 shadow-sm text-center flex flex-col items-center justify-center min-h-[350px]">
-        <div className="w-12 h-12 rounded-xl bg-surface-50 border border-slate-800 flex items-center justify-center text-slate-400 mb-3">
-          <Sparkles className="w-6 h-6" />
+        <div className="w-12 h-12 rounded-xl bg-surface-50 border border-slate-800 flex items-center justify-center text-indigo-400 mb-3">
+          <Sparkles className="w-6 h-6 animate-pulse" />
         </div>
-        <h3 className="text-sm font-semibold text-white">No AI Analysis Generated Yet</h3>
+        <h3 className="text-sm font-semibold text-white">กำลังรอผลวิเคราะห์ AI หรือเริ่มต้นการวิเคราะห์ใหม่</h3>
         <p className="text-xs text-slate-400 max-w-sm mt-1">
-          กดปุ่ม <strong>AI Synthesize</strong> เพื่อให้ระบบตรวจสอบข่าวกล่องแดงและออกแผนเทรด
+          ระบบกำลังเชื่อมต่อและประมวลผล หรือกดปุ่ม <strong>AI Synthesize</strong> ด้านบนเพื่อประมวลผลใหม่ทันที
         </p>
       </div>
     );

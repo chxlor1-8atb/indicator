@@ -84,6 +84,20 @@ export const AVAILABLE_ASSETS: AssetInfo[] = [
  * Institutional Spot Gold and Forex quote fetcher directly from TradingView's CFD/Forex scanner.
  * Synchronizes with OANDA and Capital.com down to the cent, eliminating crypto token spreads.
  */
+interface SpotQuoteCache {
+  data: {
+    price: number;
+    open: number;
+    high: number;
+    low: number;
+    change: number;
+    volume?: number;
+  };
+  timestamp: number;
+}
+const spotQuoteCache = new Map<string, SpotQuoteCache>();
+const SPOT_QUOTE_TTL_MS = 2500; // 2.5s cache to eliminate redundant TradingView rate-limits
+
 export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
   price: number;
   open: number;
@@ -93,6 +107,12 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
   volume?: number;
 } | null> {
   const sym = symbol.toUpperCase();
+  const cached = spotQuoteCache.get(sym);
+  const now = Date.now();
+  if (cached && now - cached.timestamp < SPOT_QUOTE_TTL_MS && cached.data.price > 0) {
+    return cached.data;
+  }
+
   let scannerEndpoint = "forex";
   let tickers: string[] = [];
 
@@ -140,7 +160,9 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
           if (item && Array.isArray(item.d)) {
             const [close, open, high, low, change, volume] = item.d;
             if (typeof close === "number" && !isNaN(close) && close > 0) {
-              return { price: close, open, high, low, change, volume };
+              const quote = { price: close, open, high, low, change, volume };
+              spotQuoteCache.set(sym, { data: quote, timestamp: Date.now() });
+              return quote;
             }
           }
         }
@@ -149,7 +171,7 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
   } catch (err) {
     console.warn(`TradingView scanner quote fetch failed for ${sym}:`, err);
   }
-  return null;
+  return cached ? cached.data : null;
 }
 
 export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKey: string): Promise<Candle[]> {

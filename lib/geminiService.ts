@@ -1894,6 +1894,37 @@ export async function calculateTrueMultiTimeframeMatrix(
   }
 }
 
+// ─── AI SYNTHESIZE MEMORY CACHE & RATE LIMITING ───
+// Eliminates runaway API costs, provides instant cached responses, and avoids Gemini 429 Too Many Requests
+interface AiAnalysisCacheEntry {
+  result: AnalysisResult;
+  timestamp: number;
+  lastCandleTime?: number;
+  lastClosePrice: number;
+}
+const aiAnalysisCache = new Map<string, AiAnalysisCacheEntry>();
+const AI_CACHE_TTL_MS = 60000; // 60 seconds TTL
+
+// In-flight request deduplication map to prevent redundant concurrent LLM calls
+const inFlightAiRequests = new Map<string, Promise<AnalysisResult>>();
+
+// Sliding-window rate limiter for external Gemini calls (max 12 calls/minute to stay below 15 RPM free tier)
+const geminiCallTimestamps: number[] = [];
+const GEMINI_RATE_LIMIT_WINDOW_MS = 60000;
+const GEMINI_MAX_CALLS_PER_WINDOW = 12;
+
+function isGeminiRateLimited(): boolean {
+  const now = Date.now();
+  while (geminiCallTimestamps.length > 0 && now - geminiCallTimestamps[0] > GEMINI_RATE_LIMIT_WINDOW_MS) {
+    geminiCallTimestamps.shift();
+  }
+  return geminiCallTimestamps.length >= GEMINI_MAX_CALLS_PER_WINDOW;
+}
+
+function recordGeminiCall(): void {
+  geminiCallTimestamps.push(Date.now());
+}
+
 export async function analyzeWithGemini(
   symbol: string,
   timeframe: string,
@@ -1902,32 +1933,64 @@ export async function analyzeWithGemini(
   news: NewsItem[],
   customApiKey?: string
 ): Promise<AnalysisResult> {
-  const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+  const cacheKey = `${symbol.toUpperCase()}_${timeframe.toLowerCase()}`;
+  const now = Date.now();
+  const lastCandle = candles[candles.length - 1];
+  const currentPrice = indicators.currentPrice || (lastCandle ? lastCandle.close : 0);
 
-  // Closed-loop reinforcement: Retrieve dynamic weights, past win/loss lessons, and True MTF Matrix
-  const [adaptiveConfig, recentLessons, trueMTFMatrix] = await Promise.all([
-    getAdaptiveWeights(symbol).catch(() => undefined),
-    getRecentLessons(symbol, 4).catch(() => []),
-    calculateTrueMultiTimeframeMatrix(symbol).catch(() => undefined),
-  ]);
-
-  const ruleAnalysis = generateRuleBasedAnalysis(
-    symbol,
-    timeframe,
-    candles,
-    indicators,
-    news,
-    adaptiveConfig,
-    trueMTFMatrix
-  );
-
-  if (!apiKey) {
-    return ruleAnalysis;
+  // 1. Fast Cache Lookup (Serves in <1ms without hitting external Gemini API)
+  const cached = aiAnalysisCache.get(cacheKey);
+  if (cached && now - cached.timestamp < AI_CACHE_TTL_MS) {
+    const priceDiffPct =
+      cached.lastClosePrice > 0 ? Math.abs(currentPrice - cached.lastClosePrice) / cached.lastClosePrice : 0;
+    // If price hasn't swung dramatically (< 0.15%), return cached analysis instantly
+    if (priceDiffPct < 0.0015) {
+      return {
+        ...cached.result,
+        currentPrice: currentPrice > 0 ? currentPrice : cached.result.currentPrice,
+      };
+    }
   }
 
-  const lessonsText =
-    recentLessons && recentLessons.length > 0
-      ? recentLessons.map((l, i) => `${i + 1}. ${l}`).join("\n")
+  // 2. In-flight Request Deduplication: if another request is already processing this symbol, reuse it
+  const existingInFlight = inFlightAiRequests.get(cacheKey);
+  if (existingInFlight) {
+    return existingInFlight;
+  }
+
+  const executionPromise = (async (): Promise<AnalysisResult> => {
+    const apiKey = customApiKey || process.env.GEMINI_API_KEY;
+
+    // Closed-loop reinforcement: Retrieve dynamic weights, past win/loss lessons, and True MTF Matrix
+    const [adaptiveConfig, recentLessons, trueMTFMatrix] = await Promise.all([
+      getAdaptiveWeights(symbol).catch(() => undefined),
+      getRecentLessons(symbol, 4).catch(() => []),
+      calculateTrueMultiTimeframeMatrix(symbol).catch(() => undefined),
+    ]);
+
+    const ruleAnalysis = generateRuleBasedAnalysis(
+      symbol,
+      timeframe,
+      candles,
+      indicators,
+      news,
+      adaptiveConfig,
+      trueMTFMatrix
+    );
+
+    if (!apiKey) {
+      aiAnalysisCache.set(cacheKey, {
+        result: ruleAnalysis,
+        timestamp: Date.now(),
+        lastCandleTime: lastCandle?.time,
+        lastClosePrice: currentPrice,
+      });
+      return ruleAnalysis;
+    }
+
+    const lessonsText =
+      recentLessons && recentLessons.length > 0
+        ? recentLessons.map((l, i) => `${i + 1}. ${l}`).join("\n")
       : "1. คอยสังเกตแท่งเทียน Rejection ที่แนวรับ EMA20/50 ก่อนเข้าเทรดเสมอ";
 
   const prompt = `You are a World-Class Quantitative Portfolio Architect & Trading Mentor.
@@ -1995,6 +2058,18 @@ Respond ONLY with valid JSON matching this schema:
 }`;
 
   try {
+    if (isGeminiRateLimited()) {
+      console.warn(`Gemini rate limit threshold reached (${GEMINI_MAX_CALLS_PER_WINDOW} RPM). Serving institutional rule analysis for ${symbol}.`);
+      aiAnalysisCache.set(cacheKey, {
+        result: ruleAnalysis,
+        timestamp: Date.now(),
+        lastCandleTime: lastCandle?.time,
+        lastClosePrice: currentPrice,
+      });
+      return ruleAnalysis;
+    }
+    recordGeminiCall();
+
     // Attempt with fast, robust gemini-3.5-flash first
     let res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`,
@@ -2241,9 +2316,29 @@ Respond ONLY with valid JSON matching this schema:
         parsed.tradeSetup.riskRewardRatio = ruleAnalysis.tradeSetup.riskRewardRatio;
       }
     }
+    aiAnalysisCache.set(cacheKey, {
+      result: parsed,
+      timestamp: Date.now(),
+      lastCandleTime: lastCandle?.time,
+      lastClosePrice: currentPrice,
+    });
     return parsed;
   } catch (err) {
     console.error("Gemini analysis error, falling back to calendar-aware rule engine:", err);
+    aiAnalysisCache.set(cacheKey, {
+      result: ruleAnalysis,
+      timestamp: Date.now(),
+      lastCandleTime: lastCandle?.time,
+      lastClosePrice: currentPrice,
+    });
     return ruleAnalysis;
+  }
+  })();
+
+  inFlightAiRequests.set(cacheKey, executionPromise);
+  try {
+    return await executionPromise;
+  } finally {
+    inFlightAiRequests.delete(cacheKey);
   }
 }

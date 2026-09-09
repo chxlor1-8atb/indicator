@@ -4,6 +4,7 @@ import { calculateEMA, calculateRSI } from "@/lib/indicators";
 import { saveBacktestResults, clearBacktestResults, BacktestTrade } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,15 +17,73 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: `ล้างข้อมูลผลลัพธ์ Backtest เรียบร้อยแล้ว (${sym || "ทั้งหมด"})`,
+        timestamp: Date.now(),
+      });
+    }
+
+    // ─── Chunked Batch Seeder Mode: Safe client-driven chunk execution (Eliminates Vercel Serverless Timeout) ───
+    if (body.action === "seed-batch" || (Array.isArray(body.symbols) && body.symbols.length > 0)) {
+      const symbols: string[] = body.symbols || [];
+      const timeframe = body.timeframe || "1h";
+      const resetPrevious = Boolean(body.resetPrevious);
+
+      if (resetPrevious && symbols.length > 0) {
+        for (const sym of symbols) {
+          await clearBacktestResults(sym);
+        }
+      }
+
+      let totalSaved = 0;
+      let totalTradesGenerated = 0;
+      const results: Array<{ symbol: string; saved: number; trades: number; error?: string }> = [];
+
+      // Process batch symbols concurrently
+      const batchResults = await Promise.all(
+        symbols.map(async (symbol) => {
+          try {
+            const candles = await getMarketCandles(symbol, timeframe);
+            const candles500 = candles.slice(-500);
+            if (candles500.length < 35) {
+              return { symbol, saved: 0, trades: 0, error: "Insufficient candles (<35)" };
+            }
+
+            const trades = simulateInstitutionalBacktest(symbol, candles500);
+            if (trades.length > 0) {
+              const saveRes = await saveBacktestResults(symbol, timeframe, trades);
+              return { symbol, saved: saveRes.saved, trades: trades.length };
+            }
+            return { symbol, saved: 0, trades: 0 };
+          } catch (err) {
+            return { symbol, saved: 0, trades: 0, error: String(err) };
+          }
+        })
+      );
+
+      for (const r of batchResults) {
+        totalSaved += r.saved;
+        totalTradesGenerated += r.trades;
+        results.push(r);
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `สแกนแบทช์สำเร็จ ${symbols.length} คู่เงิน: สร้าง ${totalTradesGenerated} trades, บันทึกใหม่ ${totalSaved} trades`,
+        totalSaved,
+        totalTradesGenerated,
+        processedCount: symbols.length,
+        results,
+        timestamp: Date.now(),
       });
     }
 
     // ─── Batch Seeder Mode: 500 Historical Candles across ALL Currency Pairs / Categories ───
     if (body.action === "seed-all" || body.seedAll) {
       const targetCategory = body.category || "all";
-      const assets = AVAILABLE_ASSETS.filter(
-        (a) => targetCategory === "all" || a.category === targetCategory
-      );
+      const assets = targetCategory === "core"
+        ? AVAILABLE_ASSETS.filter((a) => ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "BTCUSDT", "USOIL"].includes(a.symbol))
+        : AVAILABLE_ASSETS.filter(
+            (a) => targetCategory === "all" || a.category === targetCategory
+          );
 
       if (body.resetPrevious || body.clearFirst) {
         if (targetCategory === "all") {
@@ -79,6 +138,7 @@ export async function POST(request: NextRequest) {
         totalTradesGenerated,
         processedCount: assets.length,
         results,
+        timestamp: Date.now(),
       });
     }
 
@@ -128,6 +188,7 @@ export async function POST(request: NextRequest) {
         pnlR: t.pnlR > 0 ? `+${t.pnlR}R` : `${t.pnlR}R`,
         date: new Date(t.entryTime * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
       })),
+      timestamp: Date.now(),
     });
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : "Backtest execution failed";

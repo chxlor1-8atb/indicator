@@ -131,7 +131,19 @@ function detectRelatedSymbols(text: string): string[] {
   return symbols;
 }
 
+interface CachedNews {
+  data: NewsItem[];
+  timestamp: number;
+}
+let memoryNewsCache: CachedNews | null = null;
+const NEWS_CACHE_TTL_MS = 90 * 1000; // 90s memory cache to eliminate redundant RSS roundtrips
+
 export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
+  const now = Date.now();
+  if (memoryNewsCache && now - memoryNewsCache.timestamp < NEWS_CACHE_TTL_MS && memoryNewsCache.data.length > 0) {
+    return memoryNewsCache.data;
+  }
+
   const allNews: NewsItem[] = [];
 
   const feeds = [
@@ -153,7 +165,7 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
     try {
       const res = await fetch(feed.url, {
         headers: { "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(2500),
         next: { revalidate: 60 },
       });
       if (res.ok) {
@@ -221,6 +233,13 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
         relatedSymbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
       }
     );
+  }
+
+  if (allNews.length > 0) {
+    memoryNewsCache = {
+      data: allNews,
+      timestamp: Date.now(),
+    };
   }
 
   return allNews;

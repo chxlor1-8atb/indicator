@@ -6,6 +6,7 @@ import { analyzeWithGemini } from "@/lib/geminiService";
 import { saveAiSignal, resolveOpenSignals, saveMarketSnapshot, saveBacktestResults } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {

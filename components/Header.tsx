@@ -7,14 +7,17 @@ interface HeaderProps {
   onRefreshAll: () => void;
   isLoading: boolean;
   onOpenTelegramModal: () => void;
+  lastSyncTimestamp?: number | null;
 }
 
 export default function Header({
   onRefreshAll,
   isLoading,
   onOpenTelegramModal,
+  lastSyncTimestamp,
 }: HeaderProps) {
   const [time, setTime] = useState<string>("");
+  const [freshnessText, setFreshnessText] = useState<string>("เพิ่งซิงค์");
 
   useEffect(() => {
     const update = () => {
@@ -25,6 +28,25 @@ export default function Header({
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!lastSyncTimestamp) {
+      setFreshnessText("กำลังซิงค์...");
+      return;
+    }
+    const updateFreshness = () => {
+      const diffSec = Math.max(0, Math.floor((Date.now() - lastSyncTimestamp) / 1000));
+      if (diffSec < 5) setFreshnessText("สดเรียลไทม์ (เมื่อสักครู่)");
+      else if (diffSec < 60) setFreshnessText(`ซิงค์ล่าสุด: ${diffSec} วิที่แล้ว`);
+      else {
+        const mins = Math.floor(diffSec / 60);
+        setFreshnessText(`ซิงค์ล่าสุด: ${mins} นาทีที่แล้ว`);
+      }
+    };
+    updateFreshness();
+    const interval = setInterval(updateFreshness, 2000);
+    return () => clearInterval(interval);
+  }, [lastSyncTimestamp]);
 
   return (
     <header className="border-b border-slate-800/80 bg-surface-100/95 backdrop-blur sticky top-0 z-40 px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 w-full">
@@ -50,6 +72,15 @@ export default function Header({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Data Freshness Indicator */}
+          <div
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-xs font-mono text-emerald-300"
+            title="ความสดใหม่ของข้อมูลราคาและการซิงค์ตลาด"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>{freshnessText}</span>
+          </div>
+
           {/* Clock */}
           <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-50 border border-slate-800 text-xs font-mono text-slate-300">
             <Activity className="w-3.5 h-3.5 text-slate-400" />

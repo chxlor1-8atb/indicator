@@ -48,7 +48,7 @@ export default function DashboardPage() {
 
   const [isLoadingMarket, setIsLoadingMarket] = useState<boolean>(true);
   const [isLoadingNews, setIsLoadingNews] = useState<boolean>(true);
-  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(true);
   const [isSendingTelegram, setIsSendingTelegram] = useState<boolean>(false);
   const [telegramStatus, setTelegramStatus] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -345,11 +345,17 @@ export default function DashboardPage() {
     };
   }, [isAutoPilot]);
 
-  // Auto trigger AI analysis
+  // Auto trigger AI analysis immediately on mount and debounced on change
+  const isInitialMount = useRef(true);
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      runAnalysis();
+      return;
+    }
     const timer = setTimeout(() => {
       runAnalysis();
-    }, 500);
+    }, 400);
     return () => clearTimeout(timer);
   }, [selectedAsset, selectedTimeframe, runAnalysis]);
 
@@ -437,6 +443,7 @@ export default function DashboardPage() {
           isAnalyzing={isAnalyzing}
           currentPrice={indicators.currentPrice}
           priceChangePercent={indicators.priceChangePercent24h}
+          isLoadingPrice={isLoadingMarket || !indicators.currentPrice || indicators.currentPrice <= 0}
         />
 
         {/* 2-Column Responsive Grid Layout */}
