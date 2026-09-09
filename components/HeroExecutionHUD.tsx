@@ -171,7 +171,7 @@ export default function HeroExecutionHUD({
         {/* Order Type & RR Badges */}
         <div className="flex flex-wrap items-center gap-2">
           <span className={`px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-black tracking-wide shadow-md ${
-            isFreeze || isVeto
+            isFreeze
               ? "bg-rose-500/20 text-rose-300 border-rose-500/50"
               : isWait
               ? "bg-surface-50 text-slate-400 border-slate-700"
@@ -189,8 +189,6 @@ export default function HeroExecutionHUD({
           }`}>
             {isFreeze
               ? "⛔ ระงับคำสั่ง (NEWS FREEZE)"
-              : isVeto
-              ? "⛔ ระงับคำสั่ง (VETO LOCKED)"
               : isWait
               ? "⚪ พักดูจังหวะ (WAIT - ไม่เปิดออเดอร์)"
               : ts.orderType === "BUY_LIMIT"
@@ -206,6 +204,17 @@ export default function HeroExecutionHUD({
               : "⚪ พักดูจังหวะ (WAIT)"}
           </span>
 
+          {/* Cautionary Warning Badge if Veto/Conflict is detected */}
+          {isVeto && !isFreeze && (
+            <span
+              className="px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5"
+              title={orch?.vetoReason || "คำเตือนความเสี่ยงเชิงควอนต์"}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>เฝ้าระวังสภาพคล่อง/กับดักสถาบัน</span>
+            </span>
+          )}
+
           <span className="px-3 py-1.5 rounded-xl bg-surface-50 border border-slate-700 text-xs font-mono font-bold text-slate-300">
             R:R <strong className="text-emerald-400 text-sm">{ts.riskRewardRatio}</strong>
           </span>
@@ -215,7 +224,6 @@ export default function HeroExecutionHUD({
       {/* ─── 2. PROMINENT ENTRY TRIGGER CALLOUT (กล่องจังหวะเข้าออเดอร์ชัดเจนสุดๆ) ─── */}
       <div className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all ${
         isFreeze ? "bg-rose-950/40 border-rose-500/60 text-rose-100" :
-        isVeto ? "bg-amber-950/30 border-amber-500/50 text-amber-100" :
         isBuy ? "bg-emerald-950/30 border-emerald-500/50 text-emerald-100" :
         isSell ? "bg-rose-950/30 border-rose-500/50 text-rose-100" :
         "bg-slate-800/40 border-slate-700 text-slate-200"
@@ -229,12 +237,17 @@ export default function HeroExecutionHUD({
               <span>{triggerTitle}</span>
             </h4>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/40 text-slate-300 border border-white/10">
-              สถานะ: {isFreeze ? "FREEZE" : isVeto ? "VETO" : isLimit ? "PENDING LIMIT" : isBuy || isSell ? "ACTIONABLE" : "WAIT"}
+              สถานะ: {isFreeze ? "FREEZE" : isLimit ? "PENDING LIMIT" : isBuy || isSell ? "ACTIONABLE" : "WAIT"}
             </span>
           </div>
           <p className="text-xs leading-relaxed font-medium opacity-95">
             {triggerMessage}
           </p>
+          {isVeto && !isFreeze && orch?.vetoReason && (
+            <p className="text-[11px] text-amber-300/90 font-mono pt-1 border-t border-white/10 flex items-center gap-1">
+              <span>⚠️ ข้อควรระวัง: {orch.vetoReason}</span>
+            </p>
+          )}
         </div>
       </div>
 
