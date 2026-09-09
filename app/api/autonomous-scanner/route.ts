@@ -4,6 +4,7 @@ import {
   getActiveBridgeOrders,
   getTelemetryLogs,
   DEFAULT_PILOT_CONFIG,
+  approveOrder,
 } from "@/lib/autonomousEngine";
 import { saveAiSignal } from "@/lib/db";
 
@@ -103,6 +104,10 @@ export async function POST(request: NextRequest) {
     if (body.accountType === "STANDARD" || body.accountType === "CENT") {
       DEFAULT_PILOT_CONFIG.accountType = body.accountType;
     }
+    // ปรับ Approval Mode ผ่าน POST
+    if (body.approvalMode === "AUTO" || body.approvalMode === "SEMI_AUTO" || body.approvalMode === "SIGNAL_ONLY") {
+      DEFAULT_PILOT_CONFIG.approvalMode = body.approvalMode;
+    }
 
     return NextResponse.json({
       success: true,
@@ -111,6 +116,64 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : "Failed to update config";
+    return NextResponse.json({ success: false, error: errMsg }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/autonomous-scanner
+ * Human Approval Gate — อนุมัติ/ปฏิเสธ order ที่รออยู่ใน PENDING_HUMAN_APPROVAL
+ *
+ * Body: { orderId: string, approved: boolean, approvedBy?: string, reason?: string }
+ *
+ * ตัวอย่าง:
+ *   PATCH /api/autonomous-scanner
+ *   { "orderId": "ord_XAUUSD_17...", "approved": true }
+ *   { "orderId": "ord_BTCUSDT_17...", "approved": false, "reason": "ข่าว CPI ยังไม่ออก" }
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json().catch(() => ({}));
+
+    const { orderId, approved, approvedBy, reason } = body as {
+      orderId?: string;
+      approved?: boolean;
+      approvedBy?: string;
+      reason?: string;
+    };
+
+    if (!orderId || typeof orderId !== "string") {
+      return NextResponse.json(
+        { success: false, error: "orderId is required" },
+        { status: 400 }
+      );
+    }
+    if (typeof approved !== "boolean") {
+      return NextResponse.json(
+        { success: false, error: "approved (boolean) is required" },
+        { status: 400 }
+      );
+    }
+
+    const result = approveOrder(orderId, approved, approvedBy || "HUMAN", reason);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { success: false, error: result.error },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      action: approved ? "APPROVED" : "REJECTED",
+      order: result.order,
+      message: approved
+        ? `✅ Order ${orderId.slice(-6)} approved — ส่งไป MT4/MT5 Bridge แล้ว`
+        : `❌ Order ${orderId.slice(-6)} rejected${reason ? ` — ${reason}` : ""}`,
+    });
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : "Approval action failed";
     return NextResponse.json({ success: false, error: errMsg }, { status: 500 });
   }
 }

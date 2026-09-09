@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSignalsAndStats, saveAiSignal } from "@/lib/db";
+import { getSignalsAndStats, saveAiSignal, getEquityCurveAndAnalytics } from "@/lib/db";
 import { AVAILABLE_ASSETS } from "@/lib/marketService";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
     const symbol = searchParams.get("symbol") || undefined;
     const limit = Number(searchParams.get("limit")) || 20;
 
-    const data = await getSignalsAndStats(limit, symbol);
+    const [data, analytics] = await Promise.all([
+      getSignalsAndStats(limit, symbol),
+      getEquityCurveAndAnalytics(symbol),
+    ]);
 
     // Enrich perSymbolStats with human-readable name and asset category
     const enrichedPerSymbolStats = (data.perSymbolStats || []).map((ps) => {
@@ -27,6 +30,7 @@ export async function GET(request: NextRequest) {
       {
         success: true,
         ...data,
+        analytics,
         perSymbolStats: enrichedPerSymbolStats,
         timestamp: Date.now(),
       },

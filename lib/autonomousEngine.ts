@@ -31,8 +31,12 @@ export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
   minConfluenceThreshold: 75, // Grade A sniper entry
   riskPercentPerTrade: 1.5,
   accountType: "STANDARD",
-  scanIntervalMs: 25000,
-  approvalMode: "AUTO",
+  scanIntervalMs: 8000,
+  /**
+   * SEMI_AUTO = default ปลอดภัย: AI วิเคราะห์และสร้าง order แต่รอมนุษย์ approve ก่อนส่ง MT4/MT5
+   * เปลี่ยนเป็น AUTO เฉพาะเมื่อใช้ demo/paper trading เท่านั้น
+   */
+  approvalMode: "SEMI_AUTO",
 };
 
 /**
@@ -184,6 +188,20 @@ export async function evaluateAssetAutonomous(
     tradeSetup.action !== "NO_TRADE" &&
     (orderType === "BUY_LIMIT" || orderType === "SELL_LIMIT" || orderType === "MARKET_EXECUTION");
 
+  // ─── SIGNAL_ONLY Mode: ไม่สร้าง order เลย ส่งแค่ log/Telegram ───
+  if (config.approvalMode === "SIGNAL_ONLY") {
+    if (config.isEnabled && !isNewsFrozen && isSignalActionable &&
+        (setupGrade === "A+" || setupGrade === "A" || totalScore >= config.minConfluenceThreshold)) {
+      decisionTriggered = true;
+      addTelemetryLog(
+        sym, "DECISION",
+        `[SIGNAL_ONLY] ${orderType} @ ${pendingPrice} — Grade ${setupGrade} | Score ${totalScore}% | ไม่สร้าง order (Signal Only Mode)`,
+        totalScore, setupGrade, { price: pendingPrice, sl: slPrice, tp1: tp1Price }
+      );
+    }
+    return { scannerSummary, newOrder: undefined, decisionTriggered };
+  }
+
   if (
     config.isEnabled &&
     !isNewsFrozen &&
@@ -195,9 +213,10 @@ export async function evaluateAssetAutonomous(
       ? (tradeSetup.action === "BUY" ? "BUY_LIMIT" : "SELL_LIMIT")
       : orderType;
 
-    // Check Deduplication against active orders
+    // Check Deduplication — นับทั้ง PENDING และ PENDING_HUMAN_APPROVAL
     const existingOrder = getActiveBridgeOrders(sym).find(
-      (o) => o.status === "PENDING" && o.orderType === effectiveOrderType
+      (o) => (o.status === "PENDING" || o.status === "PENDING_HUMAN_APPROVAL") &&
+              o.orderType === effectiveOrderType
     );
 
     const atrList = calculateATR(candles, 14);
@@ -208,7 +227,32 @@ export async function evaluateAssetAutonomous(
       decisionTriggered = true;
       const lotSize = config.accountType === "CENT" ? 0.10 : 0.02;
 
-      const requiresApproval = config.approvalMode === "SEMI_AUTO";
+      // ─── AI RISK FLAGS: รวบรวมเหตุผลทั้งหมดที่ทำให้ควรให้มนุษย์ตรวจสอบ ───
+      const aiRiskFlags: string[] = [];
+
+      // Flags จาก News Hallucination Guard
+      const newsFlags = analysis.newsSentimentAnalysis?.newsRiskFlags ?? [];
+      aiRiskFlags.push(...newsFlags);
+
+      // Flag ถ้า news reliability ต่ำ
+      const newsReliability = analysis.newsSentimentAnalysis?.newsReliabilityScore ?? 1;
+      if (newsReliability < 0.4) {
+        aiRiskFlags.push(`LOW_NEWS_RELIABILITY: ${(newsReliability * 100).toFixed(0)}%`);
+      }
+
+      // Flag ถ้า grade ไม่ใช่ A/A+ (B grade ผ่าน threshold แต่ confidence ต่ำกว่า)
+      if (setupGrade === "B") {
+        aiRiskFlags.push("GRADE_B_LOWER_CONFIDENCE");
+      }
+
+      // ─── Human Approval Logic ───
+      // AUTO = ไม่ต้องรอ | SEMI_AUTO = รอเสมอ | มี risk flags = รอเสมอ
+      const requiresHumanApproval =
+        config.approvalMode !== "AUTO" ||
+        aiRiskFlags.length > 0;
+
+      const orderStatus = requiresHumanApproval ? "PENDING_HUMAN_APPROVAL" : "PENDING";
+
       newOrder = {
         id: `ord_${sym}_${Date.now()}`,
         symbol: sym,
@@ -221,30 +265,32 @@ export async function evaluateAssetAutonomous(
         confluenceScore: totalScore,
         setupGrade,
         comment: `Aegis_Auto_${setupGrade.split(" ")[0]}`,
-        status: requiresApproval ? "PENDING_HUMAN_APPROVAL" : "PENDING",
+        status: orderStatus,
         timestamp: Date.now(),
         expiresAt: Date.now() + 4 * 60 * 60 * 1000, // 4 hours validity
-        aiRiskFlags: [],
-        requiresHumanApproval: requiresApproval,
+        aiRiskFlags,
+        requiresHumanApproval,
       };
 
-      if (newOrder) {
-        activeOrdersStore.set(newOrder.id, newOrder);
-      }
+      activeOrdersStore.set(newOrder.id, newOrder);
 
       addTelemetryLog(
         sym,
         "DECISION",
-        `Autonomous Decision: ${effectiveOrderType} @ ${pendingPrice} primed (Confluence ${totalScore}%, Grade ${setupGrade})`,
+        requiresHumanApproval
+          ? `⏳ รอการอนุมัติ: ${effectiveOrderType} @ ${pendingPrice} (Grade ${setupGrade} | Score ${totalScore}%${aiRiskFlags.length > 0 ? ` | ⚠️ Flags: ${aiRiskFlags.length}` : ""})`
+          : `Autonomous Decision: ${effectiveOrderType} @ ${pendingPrice} primed (Confluence ${totalScore}%, Grade ${setupGrade})`,
         totalScore,
         setupGrade,
-        { price: pendingPrice, sl: slPrice, tp1: tp1Price }
+        { price: pendingPrice, sl: slPrice, tp1: tp1Price, aiRiskFlags }
       );
 
       addTelemetryLog(
         sym,
         "ORDER",
-        `Institutional Ticket dispatched to MT4/MT5 Bridge (SL: ${slPrice} | TP1: ${tp1Price})`
+        requiresHumanApproval
+          ? `🔐 Order #${newOrder.id.slice(-6)} อยู่ใน Human Review Queue${aiRiskFlags.length > 0 ? ` — Risk Flags: [${aiRiskFlags.join(", ")}]` : ""}`
+          : `Institutional Ticket dispatched to MT4/MT5 Bridge (SL: ${slPrice} | TP1: ${tp1Price})`
       );
     }
   }
@@ -383,5 +429,60 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
         }
       }
     }
+  }
+}
+
+/**
+ * Human Approval Gate: อนุมัติหรือปฏิเสธ order ที่รออยู่ใน PENDING_HUMAN_APPROVAL
+ * - approved = true  → เปลี่ยน status เป็น PENDING (ส่งต่อ MT4/MT5 ได้)
+ * - approved = false → เปลี่ยน status เป็น CANCELLED + log เหตุผล
+ */
+export function approveOrder(
+  orderId: string,
+  approved: boolean,
+  approvedBy = "HUMAN",
+  reason?: string
+): { success: boolean; order?: MtBridgeOrder; error?: string } {
+  const order = activeOrdersStore.get(orderId);
+
+  if (!order) {
+    return { success: false, error: `Order ${orderId} not found` };
+  }
+
+  if (order.status !== "PENDING_HUMAN_APPROVAL") {
+    return {
+      success: false,
+      error: `Order ${orderId} is not awaiting approval (current status: ${order.status})`,
+    };
+  }
+
+  const now = Date.now();
+
+  if (approved) {
+    order.status = "PENDING";
+    order.approvedBy = approvedBy;
+    order.approvedAt = now;
+    activeOrdersStore.set(orderId, order);
+
+    addTelemetryLog(
+      order.symbol,
+      "ORDER",
+      `✅ Order #${orderId.slice(-6)} APPROVED by ${approvedBy} — ส่ง ${order.orderType} @ ${order.price} ไป MT4/MT5 Bridge (SL: ${order.stopLoss} | TP1: ${order.takeProfit1})`
+    );
+
+    return { success: true, order };
+  } else {
+    order.status = "CANCELLED";
+    order.approvedBy = approvedBy;
+    order.approvedAt = now;
+    activeOrdersStore.delete(orderId);
+
+    addTelemetryLog(
+      order.symbol,
+      "VETO",
+      `❌ Order #${orderId.slice(-6)} REJECTED by ${approvedBy}${reason ? ` — เหตุผล: ${reason}` : ""} | Flags: [${order.aiRiskFlags.join(", ") || "none"}]`
+    );
+
+    return { success: true, order };
   }
 }

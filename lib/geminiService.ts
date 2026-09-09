@@ -393,21 +393,67 @@ export function generateRuleBasedAnalysis(
   };
   const masterConfluence = evaluateMasterConfluence(candles, adaptiveIndicators, tier1Bias, adaptiveConfig);
 
-  // News Sentiment calculation
+  // ─── NEWS HALLUCINATION GUARD ───
+  // วิเคราะห์ข่าวแบบ confidence-weighted เพื่อป้องกันการตีความข่าวผิดส่งผลต่อ confluence
   let sentimentScore = 0;
+  const newsRiskFlags: string[] = [];
+
   const relevantNews = news.filter((n) => n.relatedSymbols.includes(symbol) || n.impact === "HIGH");
   const newsList = relevantNews.length > 0 ? relevantNews : news.slice(0, 4);
 
+  // ตรวจว่ามี fallback news หรือไม่
+  const hasFallbackNews = newsList.some((n) => n.isFallback);
+  const realNewsCount = newsList.filter((n) => !n.isFallback).length;
+
+  if (hasFallbackNews) {
+    newsRiskFlags.push("FALLBACK_NEWS_DATA");
+  }
+  if (realNewsCount < 2) {
+    newsRiskFlags.push("INSUFFICIENT_NEWS_COVERAGE");
+  }
+
   for (const item of newsList) {
-    const weight = item.impact === "HIGH" ? 20 : item.impact === "MEDIUM" ? 10 : 5;
-    if (item.sentiment === "BULLISH") sentimentScore += weight;
-    if (item.sentiment === "BEARISH") sentimentScore -= weight;
+    // ข่าว fallback → ข้ามเลย ไม่ให้ส่งผลต่อ score
+    if (item.isFallback) continue;
+
+    // ข่าวขัดแย้ง → ข้ามหรือ penalty
+    if (item.isContradictory) {
+      newsRiskFlags.push(`CONTRADICTORY_NEWS: "${item.title.substring(0, 40)}..."`);
+      continue; // ไม่นำมา score
+    }
+
+    // ถ้า confidence ต่ำมาก (< 0.2) → ข้ามด้วย
+    if (item.sentimentConfidence < 0.2) {
+      newsRiskFlags.push("LOW_NEWS_CONFIDENCE");
+      continue;
+    }
+
+    const baseWeight = item.impact === "HIGH" ? 20 : item.impact === "MEDIUM" ? 10 : 5;
+    // ─── Confidence Multiplier: ลด weight ตามความน่าเชื่อถือ ───
+    // confidence 0.9 → 100% weight | confidence 0.4 → 44% weight | confidence 0.2 → 22%
+    const effectiveWeight = Math.round(baseWeight * item.sentimentConfidence);
+
+    if (item.sentiment === "BULLISH") sentimentScore += effectiveWeight;
+    if (item.sentiment === "BEARISH") sentimentScore -= effectiveWeight;
   }
   sentimentScore = Math.max(-100, Math.min(100, sentimentScore));
 
   let overallSentiment: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
   if (sentimentScore >= 20) overallSentiment = "BULLISH";
   else if (sentimentScore <= -20) overallSentiment = "BEARISH";
+
+  // newsReliabilityScore: 0 = ไม่น่าเชื่อ, 1 = เชื่อได้
+  const avgConfidence = newsList.filter(n => !n.isFallback).reduce((s, n) => s + n.sentimentConfidence, 0) / Math.max(1, realNewsCount);
+  const newsReliabilityScore = hasFallbackNews && realNewsCount === 0 ? 0 : Math.round(avgConfidence * 100) / 100;
+
+  // ตรวจว่า sentiment ขัดกับ technical signal หรือไม่
+  if (overallSentiment === "BULLISH" && tier1Bias === "BEARISH" && newsReliabilityScore < 0.5) {
+    newsRiskFlags.push("NEWS_SIGNAL_CONFLICT_UNRELIABLE");
+  }
+  if (overallSentiment === "BEARISH" && tier1Bias === "BULLISH" && newsReliabilityScore < 0.5) {
+    newsRiskFlags.push("NEWS_SIGNAL_CONFLICT_UNRELIABLE");
+  }
+
 
   // MTF Matrix Resolution (True candles from DB if provided, else fallback to current series)
   const rawMtf = multiTimeframeMatrix || {
@@ -1629,9 +1675,16 @@ export function generateRuleBasedAnalysis(
     newsSentimentAnalysis: {
       overallSentiment,
       sentimentScore,
+      /** 0 = ข่าวไม่น่าเชื่อ (fallback/contradictory), 1 = น่าเชื่อมาก */
+      newsReliabilityScore,
+      /** Flags ที่ตรวจพบปัญหาด้านความน่าเชื่อถือของข่าว */
+      newsRiskFlags,
       topHeadlines: newsList.slice(0, 3).map((n) => ({
         title: n.title,
         impact: n.impact,
+        sentimentConfidence: n.sentimentConfidence,
+        isContradictory: n.isContradictory,
+        isFallback: !!n.isFallback,
         takeaway: n.summary.substring(0, 100) + "...",
       })),
       macroDrivers: [

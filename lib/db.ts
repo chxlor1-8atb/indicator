@@ -994,3 +994,185 @@ export async function getPerSymbolWinRate(): Promise<PerSymbolStat[]> {
     return [];
   }
 }
+
+export interface EquityPoint {
+  index: number;
+  symbol: string;
+  pnlPips: number;
+  cumulativePips: number;
+  result: "WIN" | "LOSS" | "BE";
+  time: string;
+}
+
+export interface QuantitativeAnalytics {
+  profitFactor: number;
+  maxDrawdownPips: number;
+  maxDrawdownPct: number;
+  realizedRR: number;
+  winStreak: number;
+  lossStreak: number;
+  recoveryFactor: number;
+  bestAsset: { symbol: string; winRatePct: number; netPips: number } | null;
+  equityCurve: EquityPoint[];
+}
+
+/**
+ * Computes Cumulative Equity Curve points and Institutional Quantitative Analytics
+ */
+export async function getEquityCurveAndAnalytics(filterSymbol?: string): Promise<QuantitativeAnalytics> {
+  const emptyAnalytics: QuantitativeAnalytics = {
+    profitFactor: 0,
+    maxDrawdownPips: 0,
+    maxDrawdownPct: 0,
+    realizedRR: 0,
+    winStreak: 0,
+    lossStreak: 0,
+    recoveryFactor: 0,
+    bestAsset: null,
+    equityCurve: [{ index: 0, symbol: "START", pnlPips: 0, cumulativePips: 0, result: "BE", time: "Start" }],
+  };
+
+  if (!sql) return emptyAnalytics;
+
+  try {
+    await initBacktestTable();
+
+    const query = filterSymbol
+      ? `
+      SELECT symbol, pnl_pips, result, trade_time
+      FROM (
+        SELECT symbol, pnl_pips::numeric as pnl_pips,
+          CASE WHEN status IN ('HIT_TP1', 'HIT_TP2') THEN 'WIN'
+               WHEN status = 'HIT_SL' THEN 'LOSS'
+               ELSE 'BE' END as result,
+          COALESCE(resolved_at, created_at) as trade_time
+        FROM ai_signals WHERE status IN ('HIT_TP1', 'HIT_TP2', 'HIT_SL') AND symbol = $1
+        UNION ALL
+        SELECT symbol, pnl_pips::numeric as pnl_pips, result,
+          TO_TIMESTAMP(COALESCE(exit_time, entry_time) / 1000)::timestamp as trade_time
+        FROM backtest_results WHERE symbol = $1
+      ) combined
+      WHERE pnl_pips IS NOT NULL
+      ORDER BY trade_time ASC
+      LIMIT 150;
+      `
+      : `
+      SELECT symbol, pnl_pips, result, trade_time
+      FROM (
+        SELECT symbol, pnl_pips::numeric as pnl_pips,
+          CASE WHEN status IN ('HIT_TP1', 'HIT_TP2') THEN 'WIN'
+               WHEN status = 'HIT_SL' THEN 'LOSS'
+               ELSE 'BE' END as result,
+          COALESCE(resolved_at, created_at) as trade_time
+        FROM ai_signals WHERE status IN ('HIT_TP1', 'HIT_TP2', 'HIT_SL')
+        UNION ALL
+        SELECT symbol, pnl_pips::numeric as pnl_pips, result,
+          TO_TIMESTAMP(COALESCE(exit_time, entry_time) / 1000)::timestamp as trade_time
+        FROM backtest_results
+      ) combined
+      WHERE pnl_pips IS NOT NULL
+      ORDER BY trade_time ASC
+      LIMIT 150;
+      `;
+
+    const params = filterSymbol ? [filterSymbol.toUpperCase()] : [];
+    const rows = (await sql.query(query, params)) as unknown as Array<{
+      symbol: string;
+      pnl_pips: number | string;
+      result: "WIN" | "LOSS" | "BE";
+      trade_time: string | Date;
+    }>;
+
+    if (!rows || rows.length === 0) return emptyAnalytics;
+
+    let cumulativePips = 0;
+    let grossProfit = 0;
+    let grossLoss = 0;
+    let winsCount = 0;
+    let lossCount = 0;
+    let peakPips = 0;
+    let maxDrawdown = 0;
+    let curWinStreak = 0;
+    let maxWinStreak = 0;
+    let curLossStreak = 0;
+    let maxLossStreak = 0;
+
+    const equityCurve: EquityPoint[] = [
+      { index: 0, symbol: "START", pnlPips: 0, cumulativePips: 0, result: "BE", time: "Start" },
+    ];
+
+    rows.forEach((row, i) => {
+      const pnl = Number(row.pnl_pips || 0);
+      cumulativePips = Number((cumulativePips + pnl).toFixed(1));
+
+      if (pnl > 0) {
+        grossProfit += pnl;
+        winsCount++;
+        curWinStreak++;
+        curLossStreak = 0;
+        if (curWinStreak > maxWinStreak) maxWinStreak = curWinStreak;
+      } else if (pnl < 0) {
+        grossLoss += Math.abs(pnl);
+        lossCount++;
+        curLossStreak++;
+        curWinStreak = 0;
+        if (curLossStreak > maxLossStreak) maxLossStreak = curLossStreak;
+      }
+
+      if (cumulativePips > peakPips) {
+        peakPips = cumulativePips;
+      }
+      const dd = peakPips - cumulativePips;
+      if (dd > maxDrawdown) {
+        maxDrawdown = dd;
+      }
+
+      const timeStr = row.trade_time ? new Date(row.trade_time).toLocaleDateString("th-TH", { month: "short", day: "numeric" }) : `#${i + 1}`;
+
+      equityCurve.push({
+        index: i + 1,
+        symbol: row.symbol,
+        pnlPips: pnl,
+        cumulativePips,
+        result: row.result || (pnl > 0 ? "WIN" : pnl < 0 ? "LOSS" : "BE"),
+        time: timeStr,
+      });
+    });
+
+    const profitFactor = grossLoss > 0 ? Number((grossProfit / grossLoss).toFixed(2)) : grossProfit > 0 ? 9.99 : 0;
+    const avgWin = winsCount > 0 ? grossProfit / winsCount : 0;
+    const avgLoss = lossCount > 0 ? grossLoss / lossCount : 0;
+    const realizedRR = avgLoss > 0 ? Number((avgWin / avgLoss).toFixed(2)) : avgWin > 0 ? 2.0 : 0;
+    const recoveryFactor = maxDrawdown > 0 ? Number((cumulativePips / maxDrawdown).toFixed(2)) : cumulativePips > 0 ? 9.99 : 0;
+    const maxDrawdownPct = peakPips > 0 ? Number(((maxDrawdown / peakPips) * 100).toFixed(1)) : 0;
+
+    // Determine Best Performing Asset
+    const perSymbol = await getPerSymbolWinRate();
+    let bestAsset: { symbol: string; winRatePct: number; netPips: number } | null = null;
+    if (perSymbol && perSymbol.length > 0) {
+      const sorted = [...perSymbol].sort((a, b) => b.netPips - a.netPips);
+      if (sorted[0] && sorted[0].netPips > 0) {
+        bestAsset = {
+          symbol: sorted[0].symbol,
+          winRatePct: sorted[0].winRatePct,
+          netPips: sorted[0].netPips,
+        };
+      }
+    }
+
+    return {
+      profitFactor,
+      maxDrawdownPips: Number(maxDrawdown.toFixed(1)),
+      maxDrawdownPct,
+      realizedRR,
+      winStreak: maxWinStreak,
+      lossStreak: maxLossStreak,
+      recoveryFactor,
+      bestAsset,
+      equityCurve,
+    };
+  } catch (err) {
+    console.error("Error computing equity curve and analytics:", err);
+    return emptyAnalytics;
+  }
+}

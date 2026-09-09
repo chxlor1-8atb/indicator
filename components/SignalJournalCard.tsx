@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { DbAiSignal, WinRateStats, PerSymbolStat } from "@/lib/db";
+import { DbAiSignal, WinRateStats, PerSymbolStat, QuantitativeAnalytics, EquityPoint } from "@/lib/db";
 import { AVAILABLE_ASSETS } from "@/lib/marketService";
 import {
   Award,
@@ -19,6 +19,11 @@ import {
   Sparkles,
   Search,
   StopCircle,
+  LineChart,
+  Target,
+  ArrowUpRight,
+  ArrowDownRight,
+  Activity,
 } from "lucide-react";
 
 export default function SignalJournalCard() {
@@ -32,6 +37,9 @@ export default function SignalJournalCard() {
     winRatePct: 0,
     netPips: 0,
   });
+  const [analytics, setAnalytics] = useState<QuantitativeAnalytics | null>(null);
+  const [viewTab, setViewTab] = useState<"ANALYTICS" | "PER_SYMBOL" | "TRADES">("ANALYTICS");
+  const [hoveredPoint, setHoveredPoint] = useState<EquityPoint | null>(null);
   const [perSymbolStats, setPerSymbolStats] = useState<PerSymbolStat[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string>("ALL");
   const [isLoading, setIsLoading] = useState(false);
@@ -176,6 +184,7 @@ export default function SignalJournalCard() {
         if (data.success) {
           setSignals(data.signals || []);
           setStats(data.stats);
+          if (data.analytics) setAnalytics(data.analytics);
           const now = new Date();
           setLastSyncedTime(
             now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -254,6 +263,239 @@ export default function SignalJournalCard() {
           </span>
         );
     }
+  };
+
+  const renderEquityCurve = () => {
+    const points = analytics?.equityCurve || [];
+    if (points.length <= 1) {
+      return (
+        <div className="p-8 rounded-xl bg-surface-50 border border-slate-800 text-center space-y-2">
+          <LineChart className="w-8 h-8 text-indigo-400 mx-auto animate-pulse" />
+          <p className="text-xs text-slate-300 font-semibold">กำลังสะสมข้อมูลเพื่อวาดกราฟ Equity Curve...</p>
+          <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+            เมื่อระบบมีประวัติออเดอร์ปิดผล (Closed Trades) กราฟเส้นการเติบโตสะสมและสถิติเชิงลึกจะปรากฏขึ้นอัตโนมัติ
+          </p>
+        </div>
+      );
+    }
+
+    const values = points.map((p) => p.cumulativePips);
+    const minVal = Math.min(0, ...values);
+    const maxVal = Math.max(10, ...values);
+    const valRange = maxVal - minVal || 1;
+
+    const width = 640;
+    const height = 180;
+    const padLeft = 45;
+    const padRight = 20;
+    const padTop = 20;
+    const padBottom = 25;
+
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
+
+    const getX = (i: number) => padLeft + (i / (points.length - 1)) * plotW;
+    const getY = (val: number) => padTop + (1 - (val - minVal) / valRange) * plotH;
+
+    const zeroY = getY(0);
+
+    const linePath = points
+      .map((p, i) => `${i === 0 ? "M" : "L"} ${getX(i).toFixed(1)} ${getY(p.cumulativePips).toFixed(1)}`)
+      .join(" ");
+    const areaPath = `${linePath} L ${getX(points.length - 1).toFixed(1)} ${getY(minVal).toFixed(1)} L ${getX(0).toFixed(1)} ${getY(minVal).toFixed(1)} Z`;
+
+    const lastPoint = points[points.length - 1];
+    const isPositive = (lastPoint?.cumulativePips ?? 0) >= 0;
+    const peakVal = Math.max(...values);
+    const peakIndex = values.indexOf(peakVal);
+
+    return (
+      <div className="space-y-3">
+        {/* Chart Card */}
+        <div className="p-3 sm:p-4 rounded-xl bg-surface-50 border border-slate-800 space-y-2 relative">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Cumulative Equity Curve (การเติบโตของพอร์ตสะสม)</span>
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                {points.length - 1} Closed Trades
+              </span>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] font-mono">
+              <span className="text-slate-400">Peak ATH: <strong className="text-emerald-400">+{peakVal} pips</strong></span>
+              <span className="text-slate-400">สุทธิ: <strong className={isPositive ? "text-emerald-300" : "text-rose-400"}>{lastPoint?.cumulativePips > 0 ? `+${lastPoint?.cumulativePips}` : lastPoint?.cumulativePips} pips</strong></span>
+            </div>
+          </div>
+
+          {/* SVG Curve */}
+          <div className="relative w-full overflow-hidden">
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible select-none">
+              <defs>
+                <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+
+              {/* Zero Breakeven Line */}
+              {zeroY >= padTop && zeroY <= height - padBottom && (
+                <>
+                  <line
+                    x1={padLeft}
+                    y1={zeroY}
+                    x2={width - padRight}
+                    y2={zeroY}
+                    stroke="#475569"
+                    strokeDasharray="4 4"
+                    strokeWidth="1"
+                  />
+                  <text x={padLeft - 6} y={zeroY + 3} textAnchor="end" fill="#64748b" fontSize="9" fontFamily="monospace">0</text>
+                </>
+              )}
+
+              {/* Max / Min Y Axis Labels */}
+              <text x={padLeft - 6} y={getY(maxVal) + 4} textAnchor="end" fill="#10b981" fontSize="9" fontFamily="monospace">+{maxVal.toFixed(0)}</text>
+              {minVal < 0 && (
+                <text x={padLeft - 6} y={getY(minVal) - 2} textAnchor="end" fill="#f43f5e" fontSize="9" fontFamily="monospace">{minVal.toFixed(0)}</text>
+              )}
+
+              {/* Area Fill */}
+              <path d={areaPath} fill="url(#equityGrad)" />
+
+              {/* Main Line */}
+              <path d={linePath} fill="none" stroke={isPositive ? "#34d399" : "#fb7185"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+
+              {/* Peak Milestone Dot */}
+              {peakIndex > 0 && (
+                <circle
+                  cx={getX(peakIndex)}
+                  cy={getY(peakVal)}
+                  r="4.5"
+                  fill="#10b981"
+                  stroke="#022c22"
+                  strokeWidth="2"
+                />
+              )}
+
+              {/* Interactive Circles */}
+              {points.map((p, i) => {
+                if (i === 0) return null;
+                const cx = getX(i);
+                const cy = getY(p.cumulativePips);
+                const isWin = p.pnlPips > 0;
+                const isHovered = hoveredPoint?.index === p.index;
+
+                return (
+                  <g key={i}>
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={isHovered ? 5 : 2.5}
+                      fill={isWin ? "#34d399" : p.pnlPips < 0 ? "#f87171" : "#94a3b8"}
+                      stroke="#0f172a"
+                      strokeWidth="1.5"
+                      className="cursor-pointer transition-all"
+                      onMouseEnter={() => setHoveredPoint(p)}
+                      onMouseLeave={() => setHoveredPoint(null)}
+                    />
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={12}
+                      fill="transparent"
+                      className="cursor-pointer"
+                      onMouseEnter={() => setHoveredPoint(p)}
+                      onMouseLeave={() => setHoveredPoint(null)}
+                    />
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* Hover Tooltip Float */}
+            {hoveredPoint && (
+              <div className="absolute top-2 right-2 p-2.5 rounded-lg bg-surface-100/95 border border-indigo-500/40 shadow-xl text-[10px] font-mono pointer-events-none space-y-0.5 animate-fadeIn z-10 backdrop-blur-sm">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-1">
+                  <span className="font-bold text-white flex items-center gap-1">
+                    <span>Trade #{hoveredPoint.index}</span>
+                    <span className="px-1 py-0.2 rounded bg-slate-800 text-indigo-300 font-bold">{hoveredPoint.symbol}</span>
+                  </span>
+                  <span className={hoveredPoint.pnlPips >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                    {hoveredPoint.pnlPips >= 0 ? `+${hoveredPoint.pnlPips}` : hoveredPoint.pnlPips} pips
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-slate-400 pt-0.5">
+                  <span>กำไรสะสม ณ จุดนี้:</span>
+                  <span className="font-bold text-emerald-300">{hoveredPoint.cumulativePips >= 0 ? `+${hoveredPoint.cumulativePips}` : hoveredPoint.cumulativePips} pips</span>
+                </div>
+                <div className="text-[9px] text-slate-500 text-right">{hoveredPoint.time}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 6 Quantitative Fund KPI Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-center">
+          {/* 1. Profit Factor */}
+          <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+            <span className="text-[10px] text-slate-400 block font-medium">Profit Factor (PF)</span>
+            <span className="text-base font-mono font-black text-emerald-400 block">
+              {analytics?.profitFactor ?? 0}
+            </span>
+            <span className="text-[9px] text-slate-500 font-mono block">เป้าหมาย &gt; 1.80</span>
+          </div>
+
+          {/* 2. Max Drawdown */}
+          <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+            <span className="text-[10px] text-slate-400 block font-medium">Max Drawdown</span>
+            <span className="text-base font-mono font-black text-rose-400 block">
+              -{analytics?.maxDrawdownPips ?? 0} <span className="text-[10px] font-sans text-slate-500 font-normal">pips</span>
+            </span>
+            <span className="text-[9px] text-slate-500 font-mono block">DD: {analytics?.maxDrawdownPct ?? 0}%</span>
+          </div>
+
+          {/* 3. Realized R:R */}
+          <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+            <span className="text-[10px] text-slate-400 block font-medium">Realized R:R</span>
+            <span className="text-base font-mono font-black text-indigo-300 block">
+              1 : {analytics?.realizedRR ?? 0}
+            </span>
+            <span className="text-[9px] text-slate-500 font-mono block">กำไรเฉลี่ย vs ขาดทุน</span>
+          </div>
+
+          {/* 4. Win / Loss Streak */}
+          <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+            <span className="text-[10px] text-slate-400 block font-medium">สถิติชนะติดกัน</span>
+            <span className="text-base font-mono font-black text-emerald-300 block">
+              {analytics?.winStreak ?? 0} <span className="text-[10px] font-sans text-slate-500 font-normal">ไม้รวด</span>
+            </span>
+            <span className="text-[9px] text-slate-500 font-mono block">แพ้ติดกัน: {analytics?.lossStreak ?? 0} ไม้</span>
+          </div>
+
+          {/* 5. Recovery Factor */}
+          <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+            <span className="text-[10px] text-slate-400 block font-medium">Recovery Factor</span>
+            <span className="text-base font-mono font-black text-cyan-400 block">
+              {analytics?.recoveryFactor ?? 0}
+            </span>
+            <span className="text-[9px] text-slate-500 font-mono block">ความเร็วฟื้นตัว</span>
+          </div>
+
+          {/* 6. Best Performing Asset */}
+          <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+            <span className="text-[10px] text-slate-400 block font-medium">Best Asset (อันดับ 1)</span>
+            <span className="text-base font-mono font-black text-amber-300 block truncate">
+              {analytics?.bestAsset ? analytics.bestAsset.symbol : "—"}
+            </span>
+            <span className="text-[9px] text-slate-500 font-mono block truncate">
+              {analytics?.bestAsset ? `+${analytics.bestAsset.netPips} pips (${analytics.bestAsset.winRatePct}%)` : "รอข้อมูล"}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -438,8 +680,51 @@ export default function SignalJournalCard() {
         </div>
       )}
 
-      {/* ─── Per-Symbol Win Rate Breakdown Section ─── */}
-      {perSymbolStats.length === 0 ? (
+      {/* 3-View Tab Navigation */}
+      <div className="flex items-center gap-1.5 p-1 bg-surface-50 rounded-xl border border-slate-800 text-xs overflow-x-auto scrollbar-none">
+        <button
+          onClick={() => setViewTab("ANALYTICS")}
+          className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            viewTab === "ANALYTICS"
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <LineChart className="w-3.5 h-3.5 text-emerald-400" />
+          <span>📈 Equity Curve & สถิติสถาบัน</span>
+        </button>
+
+        <button
+          onClick={() => setViewTab("PER_SYMBOL")}
+          className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            viewTab === "PER_SYMBOL"
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <BarChart3 className="w-3.5 h-3.5 text-indigo-300" />
+          <span>📋 สถิติแยกตามคู่เงิน ({perSymbolStats.length} คู่)</span>
+        </button>
+
+        <button
+          onClick={() => setViewTab("TRADES")}
+          className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+            viewTab === "TRADES"
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5 text-amber-400" />
+          <span>📝 ประวัติออเดอร์ ({signals.length})</span>
+        </button>
+      </div>
+
+      {/* VIEW 1: Interactive Visual Equity Curve & Quant Fund Analytics */}
+      {viewTab === "ANALYTICS" && renderEquityCurve()}
+
+      {/* VIEW 2: Per-Symbol Win Rate Breakdown Section */}
+      {viewTab === "PER_SYMBOL" && (
+        perSymbolStats.length === 0 ? (
         isSeeding ? (
           <div className="p-4 rounded-xl bg-surface-50 border border-indigo-500/30 text-center space-y-2 animate-pulse">
             <div className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center mx-auto">
@@ -572,68 +857,70 @@ export default function SignalJournalCard() {
             </table>
           </div>
         </div>
-      )}
+      ))}
 
-      {/* Recent Recorded Signals List */}
-      <div className="space-y-2">
-        <span className="text-[11px] font-semibold text-slate-400 block">
-          ประวัติสัญญาณล่าสุดที่บันทึกลง Database:
-        </span>
+      {/* VIEW 3: Recent Recorded Signals List */}
+      {viewTab === "TRADES" && (
+        <div className="space-y-2">
+          <span className="text-[11px] font-semibold text-slate-400 block">
+            ประวัติสัญญาณล่าสุดที่บันทึกลง Database:
+          </span>
 
-        {signals.length === 0 ? (
-          <div className="p-6 rounded-xl bg-surface-50 border border-slate-800/80 text-center space-y-1.5 text-xs text-slate-400">
-            <ShieldCheck className="w-6 h-6 text-indigo-400 mx-auto opacity-70" />
-            <p className="font-semibold text-slate-300">ฐานข้อมูล Neon พร้อมทำงานเรียบร้อยแล้ว</p>
-            <p className="text-[11px] text-slate-500">
-              เมื่อระบบตรวจพบสัญญาณเทรดที่เข้าเงื่อนไข (Grade A หรือ B+) สัญญาณจะถูกบันทึกและวัดผลอัตโนมัติที่นี่ครับ
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-1.5 max-h-[340px] overflow-y-auto pr-1">
-            {signals.map((sig) => (
-              <div
-                key={sig.id}
-                className="p-2.5 rounded-xl bg-surface-50 hover:bg-slate-800/60 border border-slate-800/80 transition-all flex flex-wrap items-center justify-between gap-2"
-              >
-                {/* Left info */}
-                <div className="flex items-center gap-2.5">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-black font-mono ${
-                    sig.action === "BUY"
-                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                      : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                  }`}>
-                    {sig.action}
-                  </span>
+          {signals.length === 0 ? (
+            <div className="p-6 rounded-xl bg-surface-50 border border-slate-800/80 text-center space-y-1.5 text-xs text-slate-400">
+              <ShieldCheck className="w-6 h-6 text-indigo-400 mx-auto opacity-70" />
+              <p className="font-semibold text-slate-300">ฐานข้อมูล Neon พร้อมทำงานเรียบร้อยแล้ว</p>
+              <p className="text-[11px] text-slate-500">
+                เมื่อระบบตรวจพบสัญญาณเทรดที่เข้าเงื่อนไข (Grade A หรือ B+) สัญญาณจะถูกบันทึกและวัดผลอัตโนมัติที่นี่ครับ
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-[340px] overflow-y-auto pr-1">
+              {signals.map((sig) => (
+                <div
+                  key={sig.id}
+                  className="p-2.5 rounded-xl bg-surface-50 hover:bg-slate-800/60 border border-slate-800/80 transition-all flex flex-wrap items-center justify-between gap-2"
+                >
+                  {/* Left info */}
+                  <div className="flex items-center gap-2.5">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-black font-mono ${
+                      sig.action === "BUY"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                        : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                    }`}>
+                      {sig.action}
+                    </span>
 
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-white font-mono">{sig.symbol}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">({sig.timeframe})</span>
-                      <span className="text-[10px] font-bold text-slate-300 px-1.5 py-0.2 rounded bg-surface-100 border border-slate-700">
-                        {sig.order_type}
-                      </span>
-                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-white font-mono">{sig.symbol}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">({sig.timeframe})</span>
+                        <span className="text-[10px] font-bold text-slate-300 px-1.5 py-0.2 rounded bg-surface-100 border border-slate-700">
+                          {sig.order_type}
+                        </span>
+                      </div>
 
-                    <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
-                      <span>เข้า: <strong className="text-amber-300">{formatJournalPrice(sig.entry_price, sig.symbol)}</strong></span>
-                      <span>SL: <strong className="text-rose-400">{formatJournalPrice(sig.stop_loss, sig.symbol)}</strong></span>
-                      <span>TP1: <strong className="text-emerald-400">{formatJournalPrice(sig.take_profit1, sig.symbol)}</strong></span>
+                      <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                        <span>เข้า: <strong className="text-amber-300">{formatJournalPrice(sig.entry_price, sig.symbol)}</strong></span>
+                        <span>SL: <strong className="text-rose-400">{formatJournalPrice(sig.stop_loss, sig.symbol)}</strong></span>
+                        <span>TP1: <strong className="text-emerald-400">{formatJournalPrice(sig.take_profit1, sig.symbol)}</strong></span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Right status */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-100 border border-slate-700 text-slate-300">
-                    {sig.setup_grade}
-                  </span>
-                  {getStatusBadge(sig.status, Number(sig.pnl_pips))}
+                  {/* Right status */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-100 border border-slate-700 text-slate-300">
+                      {sig.setup_grade}
+                    </span>
+                    {getStatusBadge(sig.status, Number(sig.pnl_pips))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

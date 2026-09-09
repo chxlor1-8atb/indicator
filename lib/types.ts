@@ -924,7 +924,18 @@ export interface AnalysisResult {
   newsSentimentAnalysis: {
     overallSentiment: "BULLISH" | "BEARISH" | "NEUTRAL";
     sentimentScore: number;
-    topHeadlines: { title: string; impact: string; takeaway: string }[];
+    /** 0 = ข่าวไม่น่าเชื่อ (fallback/contradictory), 1 = น่าเชื่อมาก */
+    newsReliabilityScore: number;
+    /** Flags ที่ตรวจพบปัญหาด้านความน่าเชื่อถือของข่าว */
+    newsRiskFlags: string[];
+    topHeadlines: {
+      title: string;
+      impact: string;
+      sentimentConfidence: number;
+      isContradictory: boolean;
+      isFallback: boolean;
+      takeaway: string;
+    }[];
     macroDrivers: string[];
   };
   tradeSetup: {
