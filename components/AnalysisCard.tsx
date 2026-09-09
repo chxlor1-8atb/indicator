@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { StrategyPersonaSelector } from "./StrategyPersonaSelector";
 import HeroExecutionHUD from "./HeroExecutionHUD";
+import FiveCorePillarsCard from "./FiveCorePillarsCard";
 
 interface AnalysisCardProps {
   analysis: AnalysisResult | null;
@@ -68,7 +69,7 @@ export default function AnalysisCard({
   const [customRiskPct, setCustomRiskPct] = useState<number>(2);
   const [accountType, setAccountType] = useState<"STANDARD" | "CENT">("STANDARD");
   const [activeQuantLayer, setActiveQuantLayer] = useState<1 | 2 | 3 | 4 | 5>(3);
-  const [activeCardTab, setActiveCardTab] = useState<"STRATEGY" | "DEEP_QUANT">("STRATEGY");
+  const [activeCardTab, setActiveCardTab] = useState<"NONE" | "STRATEGY" | "DEEP_QUANT">("NONE");
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -409,7 +410,7 @@ export default function AnalysisCard({
           <button
             onClick={handleCopyFullPlan}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface-100 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 transition-all active:scale-95"
-            title="Copy MT4/MT5 trade setup to clipboard"
+            title="Copy trade setup to clipboard"
           >
             {copiedKey === "full_plan" ? (
               <>
@@ -419,7 +420,7 @@ export default function AnalysisCard({
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5 text-slate-400" />
-                <span>Copy MT4/5 Plan</span>
+                <span>Copy Trade Plan</span>
               </>
             )}
           </button>
@@ -448,43 +449,51 @@ export default function AnalysisCard({
         setAccountType={setAccountType}
       />
 
-      {/* ─── 3. MODULAR WORKSPACE TABS (บีบรวม UI ให้กระชับ ไม่รก ทำงานเบื้องหลัง) ─── */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5 pt-1">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveCardTab("STRATEGY")}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeCardTab === "STRATEGY"
-                ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
-                : "bg-surface-50 text-slate-400 hover:text-slate-200 border border-slate-800"
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>กลยุทธ์ & เกราะป้องกันข่าว (Strategy & Shield)</span>
-          </button>
+      {/* 🎯 2.5. 5 CORE PRACTICAL TRADING PILLARS (5 เสาหลักเทรดจริง - แม่นยำ ไม่ขัดแย้งกันเอง) */}
+      <FiveCorePillarsCard analysis={analysis} />
 
-          <button
-            onClick={() => setActiveCardTab("DEEP_QUANT")}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeCardTab === "DEEP_QUANT"
-                ? "bg-purple-600 text-white shadow-md shadow-purple-500/25"
-                : "bg-surface-50 text-slate-400 hover:text-slate-200 border border-slate-800"
-            }`}
-          >
-            <Cpu className="w-4 h-4" />
-            <span>คลังอินดิเคเตอร์ 100 ตัวเชิงลึก (Deep Quant Lab - Milestone 100 Complete)</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
-              รันในพื้นหลัง
-            </span>
-          </button>
+      {/* ─── 3. MODULAR COLLAPSIBLE DRAWER (ย่อ UI ให้กระชับ ไม่รก ทำงานเบื้องหลัง 100%) ─── */}
+      <div className="rounded-2xl border border-slate-800 bg-surface-50/50 p-3 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActiveCardTab(activeCardTab === "STRATEGY" ? "NONE" : "STRATEGY")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                activeCardTab === "STRATEGY"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                  : "bg-surface-100 text-slate-300 hover:text-white border border-slate-700/80"
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>🛡️ กลยุทธ์ & เกราะข่าว</span>
+              {activeCardTab === "STRATEGY" ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+            </button>
+
+            <button
+              onClick={() => setActiveCardTab(activeCardTab === "DEEP_QUANT" ? "NONE" : "DEEP_QUANT")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                activeCardTab === "DEEP_QUANT"
+                  ? "bg-purple-600 text-white shadow-md shadow-purple-500/25"
+                  : "bg-surface-100 text-slate-300 hover:text-white border border-slate-700/80"
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5" />
+              <span>🔬 เบื้องหลัง 100 อินดิเคเตอร์ (Deep Quant)</span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
+                Active 100%
+              </span>
+              {activeCardTab === "DEEP_QUANT" ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+            </button>
+          </div>
+
+          <span className="text-[11px] text-slate-400 font-medium">
+            {activeCardTab === "NONE"
+              ? "⚡ ระบบรันคำนวณเบื้องหลัง 100 ตัวครบถ้วน (แตะเพื่อดูรายละเอียด)"
+              : activeCardTab === "STRATEGY"
+              ? "🛡️ คัดกรองกลยุทธ์ & วิเคราะห์ 4 กล่องข่าว"
+              : "⚡ แสดงการวิเคราะห์เชิงลึก 100 เครื่องมือและ 5 เลเยอร์ควอนต์"}
+          </span>
         </div>
-
-        <span className="text-[11px] text-slate-500 hidden md:inline font-medium">
-          {activeCardTab === "STRATEGY"
-            ? "🛡️ คัดกรองกลยุทธ์ & ป้องกันสัญญาณตีกัน"
-            : "⚡ คำนวณเบื้องหลัง 100 เครื่องมือแบบเรียลไทม์ (100% Roadmap Complete)"}
-        </span>
-      </div>
 
       {/* ─── TAB 1: STRATEGY & MACRO SHIELD ─── */}
       {activeCardTab === "STRATEGY" && (
@@ -5112,6 +5121,7 @@ export default function AnalysisCard({
       )}
         </div>
       )}
+      </div>
     </div>
   );
 }

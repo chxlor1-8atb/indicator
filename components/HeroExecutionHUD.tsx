@@ -61,11 +61,15 @@ export default function HeroExecutionHUD({
   // Trigger Status Analysis
   const isFreeze = Boolean(cal && !cal.tradeAllowed);
   const isVeto = Boolean(orch?.vetoTriggered);
-  const isWait = ts.orderType === "WAIT_NO_ORDER" || analysis.signal === "WAIT" || (!ts.orderType?.includes("BUY") && !ts.orderType?.includes("SELL"));
-  const isExecutionLocked = isFreeze || isVeto || isWait;
-  const isBuy = !isExecutionLocked && (ts.orderType?.includes("BUY") || analysis.signal?.includes("BUY"));
-  const isSell = !isExecutionLocked && (ts.orderType?.includes("SELL") || analysis.signal?.includes("SELL"));
-  const isLimit = !isExecutionLocked && ts.orderType?.includes("LIMIT");
+  const hasBuySignal = (ts.orderType?.includes("BUY") || analysis.signal?.includes("BUY")) && !isFreeze;
+  const hasSellSignal = (ts.orderType?.includes("SELL") || analysis.signal?.includes("SELL")) && !isFreeze;
+  const isActionable = hasBuySignal || hasSellSignal;
+
+  const isExecutionLocked = isFreeze || !isActionable;
+  const isBuy = hasBuySignal;
+  const isSell = hasSellSignal;
+  const isLimit = isActionable && (ts.orderType?.includes("LIMIT") || ts.orderType === "BUY_LIMIT" || ts.orderType === "SELL_LIMIT");
+  const isWait = !isActionable;
 
   // Determine Trigger Text & Alert Style
   let triggerTitle = "จังหวะการเข้าเทรด";
@@ -76,30 +80,18 @@ export default function HeroExecutionHUD({
     triggerTitle = "⛔ สั่งระงับการเข้าเทรดด่วน (Calendar News Shield)";
     triggerMessage = `ตลาดกำลังเผชิญข่าวกล่องแดง/ส้ม (${cal?.freezeReason || "ความเสี่ยงผันผวนรุนแรง"}) ห้ามเปิดสถานะเด็ดขาดจนกว่าตลาดจะนิ่ง`;
     triggerStatusIcon = <AlertOctagon className="w-5 h-5 text-rose-400 shrink-0" />;
-  } else if (isVeto) {
-    triggerTitle = "⛔ คำสั่ง VETO ระงับสัญญาณชั่วคราว";
-    triggerMessage = orch?.vetoReason || "พบกับดักสภาพคล่องหรือความขัดแย้งเชิงโครงสร้างใหญ่ ระบบระงับสัญญาณเพื่อปกป้องเงินทุน";
-    triggerStatusIcon = <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />;
-  } else if (isWait) {
-    triggerTitle = "⚪ สถานะ: พักดูจังหวะ (ตลาดยังไม่ให้แต้มต่อ)";
-    triggerMessage = "ยังไม่มีความได้เปรียบทางสถิติที่ชัดเจน นั่งทับมือรอการย่อตัวหรือการเบรกเอาท์ที่สมบูรณ์";
-    triggerStatusIcon = <Clock className="w-5 h-5 text-slate-400 shrink-0" />;
-  } else if (orch?.executionAdvice) {
-    triggerTitle = isBuy
-      ? (isLimit ? "⏳ จังหวะเข้า: ตั้งคำสั่ง BUY LIMIT รอราคาเกี่ยวที่แนวรับ" : "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด BUY ทันที")
-      : (isLimit ? "⏳ จังหวะเข้า: ตั้งคำสั่ง SELL LIMIT รอราคาเกี่ยวที่แนวต้าน" : "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด SELL ทันที");
-    triggerMessage = `${orch.executionAdvice} • ราคาเข้าเป้าหมาย ${entryPrice} (ห่างประมาณ ${distancePips} pips)`;
-    triggerStatusIcon = isLimit ? <Clock className="w-5 h-5 text-amber-300 shrink-0" /> : <Zap className="w-5 h-5 text-emerald-400 shrink-0 animate-bounce" />;
-  } else if (isLimit) {
-    triggerTitle = isBuy
+  } else if (isBuy) {
+    triggerTitle = isLimit
       ? "⏳ จังหวะเข้า: ตั้งคำสั่ง BUY LIMIT รอราคาเกี่ยวที่แนวรับ"
-      : "⏳ จังหวะเข้า: ตั้งคำสั่ง SELL LIMIT รอราคาเกี่ยวที่แนวต้าน";
-    triggerMessage = `แนะนำตั้ง Pending Limit ที่ราคา ${entryPrice} (ห่างราคาปัจจุบันประมาณ ${distancePips} pips) ในโซน OTE Discount/Premium ที่ได้เปรียบต้นทุน`;
-    triggerStatusIcon = <Clock className="w-5 h-5 text-amber-300 shrink-0" />;
-  } else if (isBuy || isSell) {
-    triggerTitle = isBuy ? "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด BUY ทันที" : "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด SELL ทันที";
-    triggerMessage = `Confluence Score ผ่านเกณฑ์ (${analysis.masterConfluence?.totalScore || analysis.confidence}%) สอดคล้องกับแนวโน้มหลัก สามารถเปิดออเดอร์ที่ราคาปัจจุบันได้ทันที`;
-    triggerStatusIcon = <Zap className="w-5 h-5 text-emerald-400 shrink-0 animate-bounce" />;
+      : "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด BUY ทันที";
+    triggerMessage = `วิเคราะห์ผ่านเกณฑ์ 5 เสาหลัก (${analysis.fiveCorePillars?.passedPillarsCount ?? 3}/5) • ราคาเข้าเป้าหมาย ${entryPrice} (ห่างประมาณ ${distancePips} pips) • เป้า TP1 ${ts.takeProfit1} (+${ts.tp1Pips || 0} pips)`;
+    triggerStatusIcon = isLimit ? <Clock className="w-5 h-5 text-emerald-400 shrink-0" /> : <Zap className="w-5 h-5 text-emerald-400 shrink-0 animate-bounce" />;
+  } else if (isSell) {
+    triggerTitle = isLimit
+      ? "⏳ จังหวะเข้า: ตั้งคำสั่ง SELL LIMIT รอราคาเกี่ยวที่แนวต้าน"
+      : "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด SELL ทันที";
+    triggerMessage = `วิเคราะห์ผ่านเกณฑ์ 5 เสาหลัก (${analysis.fiveCorePillars?.passedPillarsCount ?? 3}/5) • ราคาเข้าเป้าหมาย ${entryPrice} (ห่างประมาณ ${distancePips} pips) • เป้า TP1 ${ts.takeProfit1} (+${ts.tp1Pips || 0} pips)`;
+    triggerStatusIcon = isLimit ? <Clock className="w-5 h-5 text-rose-400 shrink-0" /> : <Zap className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />;
   } else {
     triggerTitle = "⚪ สถานะ: พักดูจังหวะ (ตลาดยังไม่ให้แต้มต่อ)";
     triggerMessage = "ยังไม่มีความได้เปรียบทางสถิติที่ชัดเจน นั่งทับมือรอการย่อตัวหรือการเบรกเอาท์ที่สมบูรณ์";
@@ -157,7 +149,7 @@ export default function HeroExecutionHUD({
                 Institutional Trade Ticket
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-200 border border-indigo-500/30">
-                MT4 / MT5 Ready
+                AI Signal Alert • Telegram Ready
               </span>
               {analysis.timestamp && (
                 <span

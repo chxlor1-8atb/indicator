@@ -96,6 +96,10 @@ import {
   DarkPoolDealerGammaExposureInfo,
   SovereignSingularityAlphaInfo,
   ClassicTrioInfo,
+  PivotPointsInfo,
+  ClusteredSRInfo,
+  AutoFibonacciInfo,
+  FiveCorePillarsEvaluation,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -196,6 +200,9 @@ import {
   calculateDarkPoolDealerGammaExposure,
   synthesizeSovereignSingularityQuantAlpha,
   calculateClassicTrio,
+  calculateStandardPivotPoints,
+  calculateClusteredSupportResistance,
+  calculateAutoFibonacciRetracement,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -672,430 +679,184 @@ export function generateRuleBasedAnalysis(
     userPreset: "AUTO_REGIME",
   });
 
-  // SAFETY LOCK 0: Anti-Clash Strategy Orchestrator Veto Shield
-  if (orchestrator.vetoTriggered) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  }
-  // SAFETY LOCK 1: Red Folder News Freeze (30m before, 15m after)
-  else if (!calendarSafety.tradeAllowed) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = 30;
-  }
-  // SAFETY LOCK 2: Market Close Freeze (Forex Friday Night / Weekend) [แผน 10]
-  else if (sessionStatus.isWeekendCloseFreeze) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = 25;
-  }
-  // SAFETY LOCK 3: The Witching Hour (03:55 - 05:05) or Monday Open Gap
-  else if (!sessionStatus.tradeAllowed) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = 35;
-  }
-  // SAFETY LOCK 4: Counter-Trend Trap on Higher Timeframes or Quad-EMA 200 Conflict [แผน 8]
-  else if (isCounterTrend || isQuadConflict) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
-  }
-  // SAFETY LOCK 5: Buying at 24h Top / Selling at 24h Bottom without Volume Anomaly [แผน 7]
-  else if (isBuyAtTopTrap || isSellAtBottomTrap) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 50);
-  }
-  // SAFETY LOCK 7: TD Sequential 9 Exhaustion Trap (Buying top of 9 green bars or selling bottom of 9 red bars) [แผน 17]
-  else if (tier1Bias === "BULLISH" && tdSequential.exhaustionType === "BUY_EXHAUSTION_9") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 45);
-  } else if (tier1Bias === "BEARISH" && tdSequential.exhaustionType === "SELL_EXHAUSTION_9") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 45);
-  }
-  // SAFETY LOCK 8: Extreme VWAP Exhaustion (> +3σ or < -3σ) [แผน 22]
-  else if (tier1Bias === "BULLISH" && anchoredVwap.pricePosition === "OVERBOUGHT_EXTREME") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
-  } else if (tier1Bias === "BEARISH" && anchoredVwap.pricePosition === "OVERSOLD_EXTREME") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
-  }
-  // SAFETY LOCK 9: Turtle Soup Liquidity Sweep & Correlation Anomaly Protection [แผน 26 & แผน 30]
-  else if (tier1Bias === "BULLISH" && sessionSweep.sweepType === "BEARISH_SWEEP" && sessionSweep.isTurtleSoup) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
-  } else if (tier1Bias === "BEARISH" && sessionSweep.sweepType === "BULLISH_SWEEP" && sessionSweep.isTurtleSoup) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
-  } else if (correlationShield.macroRegime === "LIQUIDATION_ANOMALY") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 45);
-  }
-  // SAFETY LOCK 10: Institutional Dealing Range Extreme & Climax Exhaustion [แผน 33 & แผน 35]
-  else if (tier1Bias === "BULLISH" && premiumDiscount.zone === "EXTREME_PREMIUM" && (orderFlowVelocity.isClimaxExhaustion || isBuyAtTopTrap)) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  } else if (tier1Bias === "BEARISH" && premiumDiscount.zone === "DEEP_DISCOUNT" && (orderFlowVelocity.isClimaxExhaustion || isSellAtBottomTrap)) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  }
-  // Standalone climax exhaustion: penalty only (not hard block) — a big move can still continue
-  // Hard block only if climax is counter to bias (reversal risk), otherwise just reduce confidence
-  else if (orderFlowVelocity.isClimaxExhaustion) {
-    confidence = Math.min(confidence, 40);
-  }
-  // SAFETY LOCK 11: Multi-Timeframe Structure Conflict (LTF fighting H4/D1 Trend) [แผน 39 & แผน 40]
-  // Note: NO_DEMAND/NO_SUPPLY VSA checks moved to Lock 25 to avoid double-blocking
-  else if (mtfStructureMatrix.isHTFConflict) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  }
-  // SAFETY LOCK 12: Liquidity Inducement Trap (EQH/EQL Bait) [แผน 41]
-  else if (liquidityInducement.isInducementTrap) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
-  }
-  // SAFETY LOCK 13: Shannon Entropy Noise Shield (Chaos vs Orderliness) [แผน 48]
-  else if (shannonEntropy.orderliness === "MAXIMUM_CHAOS_NOISE") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  }
-  // SAFETY LOCK 14: Chaikin Money Flow (CMF) Institutional Divergence Shield [แผน 55]
-  else if (tier1Bias === "BULLISH" && chaikinMoneyFlow.cmf < -0.15) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  } else if (tier1Bias === "BEARISH" && chaikinMoneyFlow.cmf > 0.15) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  }
-  // SAFETY LOCK 15: Vortex Trend Inversion Shield (Counter-trend knife-catching lock) [แผน 60]
-  else if (tier1Bias === "BULLISH" && (vortex.viMinus - vortex.viPlus > 0.15 || vortex.viMinus > 1.15)) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-    vortex.safetyLock15Passed = false;
-  } else if (tier1Bias === "BEARISH" && (vortex.viPlus - vortex.viMinus > 0.15 || vortex.viPlus > 1.15)) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-    vortex.safetyLock15Passed = false;
-  }
-  // SAFETY LOCK 16: Volatility Climax Shield (Yang-Zhang EXTREME or Ulcer Index Panic) [แผน 65]
-  // Threshold raised: yangZhangVol 0.65→0.90 (only true volatility explosion), ulcerIndex 18→25
-  else if (!advancedVol.safetyLock16Passed || advancedVol.yangZhangVol >= 0.90 || advancedVol.ulcerIndex >= 25.0) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 30);
-    advancedVol.safetyLock16Passed = false;
-  }
-  // SAFETY LOCK 17: Institutional VPCI Climax & Hollow Breakout Shield [แผน 70]
-  else if (tier1Bias === "BULLISH" && (vpci.vpci < -1.5 || vpci.volumeEnergyState === "HOLLOW_BREAKOUT")) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-    vpci.safetyLock17Passed = false;
-  } else if (tier1Bias === "BEARISH" && vpci.vpci > 2.5 && vpci.volumeEnergyState === "CONFIRMED_TREND") {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-    vpci.safetyLock17Passed = false;
-  }
-  // SAFETY LOCK 18: Fractal Chaos & Force Exhaustion Shield [แผน 75]
-  // Threshold raised: fractalDimension 1.80→1.90 (only true chaotic fractal state)
-  else if (!milestone75.safetyLock18Passed || frama.fractalDimension >= 1.90) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 30);
-    milestone75.safetyLock18Passed = false;
-  }
-  // SAFETY LOCK 19: Liquidity Abyss & Order Flow Exhaustion Shield [แผน 80]
-  else if (
-    !liquidityMatrix.safetyLock19Passed ||
-    liquidityMatrix.liquidityState === "LIQUIDITY_ABYSS" ||
-    (tier1Bias === "BULLISH" && orderBookImbalance.pressureState === "HEAVY_ASK_PRESSURE" && volumeVelocity.burstDirection === "BEARISH_BURST") ||
-    (tier1Bias === "BEARISH" && orderBookImbalance.pressureState === "HEAVY_BID_PRESSURE" && volumeVelocity.burstDirection === "BULLISH_BURST")
-  ) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 30);
-    liquidityMatrix.safetyLock19Passed = false;
-  }
-  // SAFETY LOCK 20: VPIN Toxic Flow & Liquidity Vacuum Shield [แผน 85]
-  else if (
-    !orderFlowFusion.safetyLock20Passed ||
-    vpinToxicity.isToxicFlowAlert ||
-    vpinToxicity.toxicityRegime === "FLASH_CRASH_RISK" ||
-    !liquidityVacuum.safetyLock20Passed ||
-    (liquidityVacuum.isVacuumDetected && liquidityVacuum.ghostQuoteWithdrawalRate >= 60)
-  ) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 30);
-    orderFlowFusion.safetyLock20Passed = false;
-    liquidityVacuum.safetyLock20Passed = false;
-  }
-  // SAFETY LOCK 21: Adverse Selection & Market Fragility Shield [แผน 90]
-  else if (
-    !executionEngine.safetyLock21Passed ||
-    !adverseSelection.safetyLock21Passed ||
-    !kylesLambda.safetyLock21Passed ||
-    adverseSelection.hazardState === "HIGH_ADVERSE_SELECTION" ||
-    kylesLambda.fragilityState === "FLASH_SLIPPAGE_ALERT" ||
-    executionEngine.executionReadiness === "EXECUTION_BLOCKED"
-  ) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 30);
-    executionEngine.safetyLock21Passed = false;
-    adverseSelection.safetyLock21Passed = false;
-    kylesLambda.safetyLock21Passed = false;
-  }
-  // SAFETY LOCK 22: Phantom Liquidity & Adverse Lead Shield [แผน 95]
-  // Note: Algo Footprint bias removed from hard-block (synthesized data) → converted to confidence penalty below
-  else if (
-    !executionAlpha.safetyLock22Passed ||
-    liquidityReplenishment.spoofingAlert ||
-    (tier1Bias === "BULLISH" && crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BEARISH" && crossMarketLeadLag.leadCorrelationCoefficient <= -0.55) ||
-    (tier1Bias === "BEARISH" && crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BULLISH" && crossMarketLeadLag.leadCorrelationCoefficient >= 0.55)
-  ) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 30);
-    executionAlpha.safetyLock22Passed = false;
-  }
-  // SAFETY LOCK 23/FINAL: Grand Quantum Singularity Master Shield [แผน 100]
-  // Threshold raised: psiDown/psiUp 0.60→0.72 (only decisive waveform collapse warrants block)
-  else if (
-    !sovereignSingularityAlpha.safetyLock23Passed ||
-    !quantumProbabilityVector.safetyLock23Passed ||
-    (tier1Bias === "BULLISH" && quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH" && quantumProbabilityVector.stateVector.psiDown >= 0.72) ||
-    (tier1Bias === "BEARISH" && quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH" && quantumProbabilityVector.stateVector.psiUp >= 0.72) ||
-    (darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION" && fillProbabilitySlippage.fillEfficiencyGrade === "C_HIGH_SLIPPAGE_HAZARD") ||
-    sovereignSingularityAlpha.milestone100Grade === "F_TIER_CHAOS_LOCKOUT"
-  ) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 30);
-    sovereignSingularityAlpha.safetyLock23Passed = false;
-    quantumProbabilityVector.safetyLock23Passed = false;
-  }
-  // SAFETY LOCK 24: ADX Sideways/Chop Gate (ADX < 15 = true ranging market)
-  // EMA50 slope removed — too strict for short timeframes and fresh breakdowns
-  else if (
-    regimeInfo.regime !== "VOLATILITY_SQUEEZE" &&
-    (indicators.adx && (indicators.adx.slice(-1)[0] ?? 25) < 15)
-  ) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  }
-  // SAFETY LOCK 25: Higher Timeframe (H4/D1) Macro Dominance & Harmonic PRZ Trap Shield [Institutional Ultra-Precision]
-  else if (
-    (tier1Bias === "BULLISH" && (mtfMatrix.h4 === "BEARISH" || mtfStructureMatrix.htfTrend === "BEARISH" || (mtfMatrix.alignmentScore ?? 0) <= -25)) ||
-    (tier1Bias === "BEARISH" && (mtfMatrix.h4 === "BULLISH" || mtfStructureMatrix.htfTrend === "BULLISH" || (mtfMatrix.alignmentScore ?? 0) >= 25)) ||
-    (tier1Bias === "BULLISH" && harmonics.hasPattern && harmonics.bestPattern?.type === "BEARISH") ||
-    (tier1Bias === "BEARISH" && harmonics.hasPattern && harmonics.bestPattern?.type === "BULLISH") ||
-    (tier1Bias === "BULLISH" && footprintAbsorption.vsaSignal === "NO_DEMAND") ||
-    (tier1Bias === "BEARISH" && footprintAbsorption.vsaSignal === "NO_SUPPLY")
-  ) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 35);
-  }
-  // SAFETY LOCK 6: Choppy Deadzone or Overextended
-  // SAFETY LOCK 6: Choppy Deadzone or Hard Overextended (no trigger or zone = definitely wait)
-  else if (regimeInfo.regime === "CHOPPY_DEADZONE" || isOverextended) {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-  } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= minThreshold) {
-    signal = (trend === "STRONG_UPTREND" || regimeInfo.regime === "EXPLOSIVE_TREND" || isQuadGoldenLong) && masterConfluence.totalScore >= 85 ? "STRONG_BUY" : "BUY";
-    if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
-    if (isOrbBullBreak) confidence = Math.min(95, confidence + 5);
-    if (sessionSweep.sweepType === "BULLISH_SWEEP") confidence = Math.min(98, confidence + 6);
-    if (marketStructureShift.isTrueDisplacement && marketStructureShift.type === "BULLISH_MSS") confidence = Math.min(98, confidence + 5);
-    if (footprintAbsorption.isInstitutionalAbsorption && footprintAbsorption.bias === "BULLISH") confidence = Math.min(98, confidence + 5);
-    if (mtfStructureMatrix.overallAlignment === "FULL_BULLISH_CONFLUENCE") confidence = Math.min(98, confidence + 5);
-    if (institutionalChoS.deliveryState === "EXPANSION_DELIVERY") confidence = Math.min(98, confidence + 5);
-    if (harmonics.hasPattern && harmonics.bestPattern?.type === "BULLISH") confidence = Math.min(98, confidence + 5);
-    if (ehlersMESA.cycleState === "CYCLE_MODE") confidence = Math.min(98, confidence + 4);
-    if (candlestickPatterns.dominantSignal === "BULLISH") confidence = Math.min(98, confidence + 4);
-    if (ttmSqueeze.squeezeFired && ttmSqueeze.momentumDirection === "INCREASING_BULL") confidence = Math.min(98, confidence + 5);
-    if (hurstExponent.marketCharacter === "PERSISTENT_TRENDING") confidence = Math.min(98, confidence + 4);
-    if (chaikinMoneyFlow.capitalFlow === "STRONG_ACCUMULATION") confidence = Math.min(98, confidence + 4);
-    if (kalmanFilter.trendBias === "BULLISH_ABOVE_KALMAN") confidence = Math.min(98, confidence + 3);
-    if (hma.isTurningUp) confidence = Math.min(98, confidence + 4);
-    if (parabolicSAR.isBullish) confidence = Math.min(98, confidence + 3);
-    if (aroon.trendState === "STRONG_UPTREND") confidence = Math.min(98, confidence + 4);
-    if (vortex.trend === "BULLISH") confidence = Math.min(98, confidence + 4);
-    if (kama.trendState === "BULLISH") confidence = Math.min(98, confidence + 3);
-    if (fisher.crossSignal === "BULLISH_CROSS" || fisher.isExtremeOversold) confidence = Math.min(98, confidence + 4);
-    if (connorsRSI.isExtremePullback) confidence = Math.min(98, confidence + 5);
-    if (awesomeOsc.saucerSignal === "BULLISH_SAUCER" || awesomeOsc.isZeroCross) confidence = Math.min(98, confidence + 4);
-    if (tsi.isBullish) confidence = Math.min(98, confidence + 3);
-    if (advancedVol.volatilityRegime !== "HIGH_CLIMAX") confidence = Math.min(98, confidence + 3);
-    if (donchian.breakoutState === "BULLISH_BREAKOUT_20") confidence = Math.min(98, confidence + 5);
-    if (keltner.isExpanding && keltner.percentB > 80) confidence = Math.min(98, confidence + 4);
-    if (ker.regime === "HYPER_EFFICIENT_DIRECTED" || ker.regime === "SMOOTH_SWING") confidence = Math.min(98, confidence + 4);
-    if (vpci.volumeEnergyState === "CONFIRMED_TREND") confidence = Math.min(98, confidence + 4);
-    if (chaikinVol.volatilityTrend === "EXPANDING") confidence = Math.min(98, confidence + 3);
-    if (mcginley.trendState === "BULLISH") confidence = Math.min(98, confidence + 4);
-    if (elderForce.forceState === "STRONG_BULL_FORCE" || elderForce.forceState === "MILD_BULL_FORCE") confidence = Math.min(98, confidence + 4);
-    if (rvi.volatilityDirection === "BULLISH_EXPANSION") confidence = Math.min(98, confidence + 4);
-    if (frama.state === "TRENDING_SMOOTH") confidence = Math.min(98, confidence + 5);
-    if (milestone75.phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED") confidence = Math.min(98, confidence + 5);
-    if (orderBookImbalance.pressureState === "HEAVY_BID_PRESSURE") confidence = Math.min(98, confidence + 4);
-    if (vwapVarianceBands.bandPosition === "INSIDE_SIGMA_1" || (vwapVarianceBands.isMeanReversionZone && currentPrice <= vwapVarianceBands.lowerBand2)) confidence = Math.min(98, confidence + 4);
-    if (volumeVelocity.burstDirection === "BULLISH_BURST") confidence = Math.min(98, confidence + 4);
-    if (icebergOrders.isIcebergDetected && icebergOrders.icebergSide === "BUY_ICEBERG") confidence = Math.min(98, confidence + 5);
-    if (liquidityMatrix.liquidityState === "DEEP_INSTITUTIONAL") confidence = Math.min(98, confidence + 5);
-    if (advancedCVD.divergenceType === "REGULAR_BULLISH" || advancedCVD.dominantFlow === "ACCUMULATION_FLOW") confidence = Math.min(98, confidence + 5);
-    if (footprintCluster.clusterAbsorptionSide === "BUY_ABSORPTION" || footprintCluster.lowWickBidVolume > footprintCluster.highWickAskVolume) confidence = Math.min(98, confidence + 4);
-    if (vpinToxicity.toxicityRegime === "BENIGN_FLOW") confidence = Math.min(98, confidence + 4);
-    if (!liquidityVacuum.isVacuumDetected && liquidityVacuum.safetyLock20Passed) confidence = Math.min(98, confidence + 4);
-    if (orderFlowFusion.milestone85Grade === "S_TIER_ALPHA") confidence = Math.min(98, confidence + 5);
-    if (kylesLambda.fragilityState === "RESILIENT_DEEP_BOOK") confidence = Math.min(98, confidence + 4);
-    if (tradeSizeDistribution.dominantParticipant === "INSTITUTIONAL_ACCUMULATION" || tradeSizeDistribution.whaleAggressionDetected) confidence = Math.min(98, confidence + 5);
-    if (microPrice.tickLeadSignal === "PREDICTIVE_UP_TICK" || microPrice.subSpreadMomentum === "FAST_BULLISH_DRIFT") confidence = Math.min(98, confidence + 4);
-    if (adverseSelection.hazardState === "SAFE_PASSIVE_LIQUIDITY") confidence = Math.min(98, confidence + 4);
-    if (executionEngine.milestone90Grade === "S_TIER_OPTIMAL_EXECUTION") confidence = Math.min(98, confidence + 5);
-    if (crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BULLISH" || crossMarketLeadLag.predictiveLeadPips > 0) confidence = Math.min(98, confidence + 4);
-    if (liquidityReplenishment.liquidityStickiness === "STICKY_COMMITTED_DEPTH") confidence = Math.min(98, confidence + 4);
-    if (permanentPriceImpact.priceDiscoveryRegime === "INFORMED_INSTITUTIONAL_DRIVE" && permanentPriceImpact.informationAsymmetryPct >= 60) confidence = Math.min(98, confidence + 4);
-    if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_BUYING_PROGRAM") confidence = Math.min(98, confidence + 5);
-    if (executionAlpha.milestone95Grade === "S_TIER_ALPHA_SNIPER") confidence = Math.min(98, confidence + 5);
-    if (quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BULLISH" && quantumProbabilityVector.stateVector.psiUp >= 0.55) confidence = Math.min(99, confidence + 5);
-    if (multiFractalHurst.cascadePersistenceState === "PERSISTENT_MULTIFRACTAL_SUPER_TREND") confidence = Math.min(99, confidence + 4);
-    if (fillProbabilitySlippage.fillEfficiencyGrade === "A_PERFECT_FILL") confidence = Math.min(99, confidence + 4);
-    if (darkPoolDealerGamma.gammaRegime === "POSITIVE_GAMMA_VOLATILITY_SUPPRESSION" || darkPoolDealerGamma.netDealerGammaExposureScore > 0) confidence = Math.min(99, confidence + 4);
-    if (sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY") confidence = Math.min(99, confidence + 6);
-    // Algo Footprint adverse signal: confidence penalty instead of hard block (synthesized data)
-    if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_SELLING_PROGRAM") confidence = Math.max(30, confidence - 15);
-    if (classicTrio.isAligned && classicTrio.signalBias === "BULLISH") {
-      confidence = Math.min(99, confidence + (classicTrio.alignment === "FULL_BULLISH_TRIO" ? 5 : 3));
-    }
-    if (isQuadGoldenLong) {
-      confidence = Math.min(98, confidence + 5);
-      setupGrade = "A+";
-    }
-  } else if (tier1Bias === "BEARISH" && inSellValueZone && hasSellTrigger && masterConfluence.totalScore >= minThreshold) {
-    signal = (trend === "STRONG_DOWNTREND" || regimeInfo.regime === "EXPLOSIVE_TREND" || isQuadDeathShort) && masterConfluence.totalScore >= 85 ? "STRONG_SELL" : "SELL";
-    if (isInstitutionalAligned) confidence = Math.min(95, confidence + 5);
-    if (isOrbBearBreak) confidence = Math.min(95, confidence + 5);
-    if (sessionSweep.sweepType === "BEARISH_SWEEP") confidence = Math.min(98, confidence + 6);
-    if (marketStructureShift.isTrueDisplacement && marketStructureShift.type === "BEARISH_MSS") confidence = Math.min(98, confidence + 5);
-    if (footprintAbsorption.isInstitutionalAbsorption && footprintAbsorption.bias === "BEARISH") confidence = Math.min(98, confidence + 5);
-    if (mtfStructureMatrix.overallAlignment === "FULL_BEARISH_CONFLUENCE") confidence = Math.min(98, confidence + 5);
-    if (institutionalChoS.deliveryState === "EXPANSION_DELIVERY") confidence = Math.min(98, confidence + 5);
-    if (harmonics.hasPattern && harmonics.bestPattern?.type === "BEARISH") confidence = Math.min(98, confidence + 5);
-    if (ehlersMESA.cycleState === "CYCLE_MODE") confidence = Math.min(98, confidence + 4);
-    if (candlestickPatterns.dominantSignal === "BEARISH") confidence = Math.min(98, confidence + 4);
-    if (ttmSqueeze.squeezeFired && ttmSqueeze.momentumDirection === "INCREASING_BEAR") confidence = Math.min(98, confidence + 5);
-    if (hurstExponent.marketCharacter === "PERSISTENT_TRENDING") confidence = Math.min(98, confidence + 4);
-    if (chaikinMoneyFlow.capitalFlow === "HEAVY_DISTRIBUTION") confidence = Math.min(98, confidence + 4);
-    if (kalmanFilter.trendBias === "BEARISH_BELOW_KALMAN") confidence = Math.min(98, confidence + 3);
-    if (hma.isTurningDown) confidence = Math.min(98, confidence + 4);
-    if (!parabolicSAR.isBullish) confidence = Math.min(98, confidence + 3);
-    if (aroon.trendState === "STRONG_DOWNTREND") confidence = Math.min(98, confidence + 4);
-    if (vortex.trend === "BEARISH") confidence = Math.min(98, confidence + 4);
-    if (kama.trendState === "BEARISH") confidence = Math.min(98, confidence + 3);
-    if (fisher.crossSignal === "BEARISH_CROSS" || fisher.isExtremeOverbought) confidence = Math.min(98, confidence + 4);
-    if (connorsRSI.isExtremeOverbought) confidence = Math.min(98, confidence + 5);
-    if (awesomeOsc.saucerSignal === "BEARISH_SAUCER" || awesomeOsc.isZeroCross) confidence = Math.min(98, confidence + 4);
-    if (!tsi.isBullish) confidence = Math.min(98, confidence + 3);
-    if (advancedVol.volatilityRegime !== "HIGH_CLIMAX") confidence = Math.min(98, confidence + 3);
-    if (donchian.breakoutState === "BEARISH_BREAKOUT_20") confidence = Math.min(98, confidence + 5);
-    if (keltner.isExpanding && keltner.percentB < 20) confidence = Math.min(98, confidence + 4);
-    if (ker.regime === "HYPER_EFFICIENT_DIRECTED" || ker.regime === "SMOOTH_SWING") confidence = Math.min(98, confidence + 4);
-    if (vpci.volumeEnergyState === "CONFIRMED_TREND" && vpci.vpci < 0) confidence = Math.min(98, confidence + 4);
-    if (chaikinVol.volatilityTrend === "EXPANDING") confidence = Math.min(98, confidence + 3);
-    if (mcginley.trendState === "BEARISH") confidence = Math.min(98, confidence + 4);
-    if (elderForce.forceState === "STRONG_BEAR_FORCE" || elderForce.forceState === "MILD_BEAR_FORCE") confidence = Math.min(98, confidence + 4);
-    if (rvi.volatilityDirection === "BEARISH_EXPANSION") confidence = Math.min(98, confidence + 4);
-    if (frama.state === "TRENDING_SMOOTH") confidence = Math.min(98, confidence + 5);
-    if (milestone75.phase3DominanceStatus === "PHASE_3_DOMINANCE_ACHIEVED") confidence = Math.min(98, confidence + 5);
-    if (orderBookImbalance.pressureState === "HEAVY_ASK_PRESSURE") confidence = Math.min(98, confidence + 4);
-    if (vwapVarianceBands.bandPosition === "INSIDE_SIGMA_1" || (vwapVarianceBands.isMeanReversionZone && currentPrice >= vwapVarianceBands.upperBand2)) confidence = Math.min(98, confidence + 4);
-    if (volumeVelocity.burstDirection === "BEARISH_BURST") confidence = Math.min(98, confidence + 4);
-    if (icebergOrders.isIcebergDetected && icebergOrders.icebergSide === "SELL_ICEBERG") confidence = Math.min(98, confidence + 5);
-    if (liquidityMatrix.liquidityState === "DEEP_INSTITUTIONAL") confidence = Math.min(98, confidence + 5);
-    if (advancedCVD.divergenceType === "REGULAR_BEARISH" || advancedCVD.dominantFlow === "DISTRIBUTION_FLOW") confidence = Math.min(98, confidence + 5);
-    if (footprintCluster.clusterAbsorptionSide === "SELL_ABSORPTION" || footprintCluster.highWickAskVolume > footprintCluster.lowWickBidVolume) confidence = Math.min(98, confidence + 4);
-    if (vpinToxicity.toxicityRegime === "BENIGN_FLOW") confidence = Math.min(98, confidence + 4);
-    if (!liquidityVacuum.isVacuumDetected && liquidityVacuum.safetyLock20Passed) confidence = Math.min(98, confidence + 4);
-    if (orderFlowFusion.milestone85Grade === "S_TIER_ALPHA") confidence = Math.min(98, confidence + 5);
-    if (kylesLambda.fragilityState === "RESILIENT_DEEP_BOOK") confidence = Math.min(98, confidence + 4);
-    if (tradeSizeDistribution.dominantParticipant === "INSTITUTIONAL_ACCUMULATION" || tradeSizeDistribution.whaleAggressionDetected) confidence = Math.min(98, confidence + 5);
-    if (microPrice.tickLeadSignal === "PREDICTIVE_DOWN_TICK" || microPrice.subSpreadMomentum === "FAST_BEARISH_DRIFT") confidence = Math.min(98, confidence + 4);
-    if (adverseSelection.hazardState === "SAFE_PASSIVE_LIQUIDITY") confidence = Math.min(98, confidence + 4);
-    if (executionEngine.milestone90Grade === "S_TIER_OPTIMAL_EXECUTION") confidence = Math.min(98, confidence + 5);
-    if (crossMarketLeadLag.leadState === "BENCHMARK_LEADING_BEARISH" || crossMarketLeadLag.predictiveLeadPips < 0) confidence = Math.min(98, confidence + 4);
-    if (liquidityReplenishment.liquidityStickiness === "STICKY_COMMITTED_DEPTH") confidence = Math.min(98, confidence + 4);
-    if (permanentPriceImpact.priceDiscoveryRegime === "INFORMED_INSTITUTIONAL_DRIVE" && permanentPriceImpact.informationAsymmetryPct >= 60) confidence = Math.min(98, confidence + 4);
-    if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_SELLING_PROGRAM") confidence = Math.min(98, confidence + 5);
-    if (executionAlpha.milestone95Grade === "S_TIER_ALPHA_SNIPER") confidence = Math.min(98, confidence + 5);
-    if (quantumProbabilityVector.collapseState === "SUPERPOSITION_RESOLVING_BEARISH" && quantumProbabilityVector.stateVector.psiDown >= 0.55) confidence = Math.min(99, confidence + 5);
-    if (multiFractalHurst.cascadePersistenceState === "PERSISTENT_MULTIFRACTAL_SUPER_TREND") confidence = Math.min(99, confidence + 4);
-    if (fillProbabilitySlippage.fillEfficiencyGrade === "A_PERFECT_FILL") confidence = Math.min(99, confidence + 4);
-    if (darkPoolDealerGamma.gammaRegime === "NEGATIVE_GAMMA_VOLATILITY_EXPLOSION" || darkPoolDealerGamma.netDealerGammaExposureScore < 0) confidence = Math.min(99, confidence + 4);
-    if (sovereignSingularityAlpha.milestone100Grade === "S_TIER_SOVEREIGN_SINGULARITY") confidence = Math.min(99, confidence + 6);
-    // Algo Footprint adverse signal: confidence penalty instead of hard block (synthesized data)
-    if (algoExecutionFootprint.institutionalExecutionBias === "ALGO_BUYING_PROGRAM") confidence = Math.max(30, confidence - 15);
-    if (classicTrio.isAligned && classicTrio.signalBias === "BEARISH") {
-      confidence = Math.min(99, confidence + (classicTrio.alignment === "FULL_BEARISH_TRIO" ? 5 : 3));
-    }
-    if (isQuadDeathShort) {
-      confidence = Math.min(98, confidence + 5);
-      setupGrade = "A+";
-    }
-  } else if (tier1Bias === "BULLISH" && inBuyValueZone && hasBuyTrigger && masterConfluence.totalScore >= 50) {
-    // Weak BUY: all 3 entry conditions met but confluence not at full threshold — cautious entry
-    signal = "BUY";
-    setupGrade = "B";
-    confidence = Math.min(65, Math.max(45, confidence));
-  } else if (tier1Bias === "BEARISH" && inSellValueZone && hasSellTrigger && masterConfluence.totalScore >= 50) {
-    // Weak SELL: all 3 entry conditions met but confluence not at full threshold — cautious entry
-    signal = "SELL";
-    setupGrade = "B";
-    confidence = Math.min(65, Math.max(45, confidence));
-  } else {
-    signal = "WAIT";
-    setupGrade = masterConfluence.totalScore >= 60 ? "B" : "C (Wait)";
+  // ─── 5 CORE PILLARS COMPUTATIONS ───
+  const pivotPoints = indicators.pivotPoints || calculateStandardPivotPoints(candles, precision, sym);
+  const clusteredSR = indicators.clusteredSR || calculateClusteredSupportResistance(candles, precision, currentATR, 120, sym);
+  const autoFibonacci = indicators.autoFibonacci || calculateAutoFibonacciRetracement(candles, precision, 80);
+
+  // ─── 1. FATAL CIRCUIT BREAKERS (HARD VETO ONLY) ───
+  // ตัดสิทธิ์เฉพาะสภาวะวิกฤตจริง 2 กรณี: ข่าวกล่องแดงแรงสูง หรือ ตลาดปิดเสาร์-อาทิตย์
+  let isCircuitBreakerTripped = false;
+  let circuitBreakerReason = "";
+
+  if (!calendarSafety.tradeAllowed) {
+    isCircuitBreakerTripped = true;
+    circuitBreakerReason = `ข่าวกล่องแดงแรงสูง (${calendarSafety.badgeText}): ${calendarSafety.freezeReason}`;
+  } else if (sessionStatus.isWeekendCloseFreeze) {
+    isCircuitBreakerTripped = true;
+    circuitBreakerReason = "ตลาดปิดสุดสัปดาห์ (Market Close Freeze)";
   }
 
-  // ─── ANTI-CLASH DIRECTIONAL HARMONIZATION ───
+  // ─── 2. SOFT RISK MODIFIERS (CONVERTED FROM 25 HARD LOCKS) ───
+  // แทนที่จะสั่ง WAIT และตัดเป็น C ทันที เราเปลี่ยนเป็นหักคะแนนความมั่นใจ (Confidence Penalties)
+  let softPenalty = 0;
+  const softRiskNotes: string[] = [];
+
+  if (regimeInfo.regime === "CHOPPY_DEADZONE") {
+    softPenalty += 5;
+    softRiskNotes.push("สภาวะตลาดไซด์เวย์ (เน้นเทรดตามกรอบ Pivot & S&R)");
+  }
+
+  if (tdSequential.exhaustionType === "BUY_EXHAUSTION_9" || tdSequential.exhaustionType === "SELL_EXHAUSTION_9") {
+    softPenalty += 7;
+    softRiskNotes.push("TD Sequential 9 Exhaustion Warning");
+  }
+  if (anchoredVwap.pricePosition === "OVERBOUGHT_EXTREME" || anchoredVwap.pricePosition === "OVERSOLD_EXTREME") {
+    softPenalty += 6;
+    softRiskNotes.push("Anchored VWAP 3σ Boundary");
+  }
+  if (vpinToxicity.isToxicFlowAlert) {
+    softPenalty += 7;
+    softRiskNotes.push("VPIN Toxic Flow detected");
+  }
+  if (shannonEntropy.orderliness === "MAXIMUM_CHAOS_NOISE") {
+    softPenalty += 5;
+    softRiskNotes.push("Market Entropy Noise High");
+  }
+  if (vortex.viMinus - vortex.viPlus > 0.20 && tier1Bias === "BULLISH") {
+    softPenalty += 6;
+    softRiskNotes.push("Vortex Counter Trend");
+  }
+  if (isOverextended) {
+    softPenalty += 8;
+    softRiskNotes.push("Price overextended from EMA Ribbon");
+  }
+  if (orchestrator.vetoTriggered) {
+    softPenalty += 8;
+    softRiskNotes.push(orchestrator.vetoReason || "Orchestrator Clash Caution");
+  }
+  if (mtfStructureMatrix.isHTFConflict) {
+    softPenalty += 7;
+    softRiskNotes.push("HTF Structure Conflict (Cautious sizing)");
+  }
+
+  // ปรับลด Confidence ตาม Soft Penalties
+  confidence = Math.max(42, Math.min(98, confidence - softPenalty));
+
+  // ─── 3. 5 CORE PILLARS EVALUATION MATRIX ───
+  // เสาหลัก 1: SMC Footprint (Order Block / FVG / MSS)
+  const isBullSMC = (orderBlocks.nearestBlock && orderBlocks.nearestBlock.type.includes("BULLISH")) ||
+    fvgMitigation.bias === "BULLISH_IMBALANCE" ||
+    (marketStructureShift.detected && marketStructureShift.type === "BULLISH_MSS");
+  const isBearSMC = (orderBlocks.nearestBlock && orderBlocks.nearestBlock.type.includes("BEARISH")) ||
+    fvgMitigation.bias === "BEARISH_IMBALANCE" ||
+    (marketStructureShift.detected && marketStructureShift.type === "BEARISH_MSS");
+
+  // เสาหลัก 2: Auto Fibonacci Retracement (Golden Pocket 50% - 61.8% / 38.2%)
+  const isBullFib = autoFibonacci.trendDirection === "UP" && autoFibonacci.isPullbackActive;
+  const isBearFib = autoFibonacci.trendDirection === "DOWN" && autoFibonacci.isPullbackActive;
+
+  // เสาหลัก 3: Standard Pivot Points (Position relative to Central Pivot P)
+  const isBullPivot = pivotPoints.marketPosition === "ABOVE_PIVOT_BULLISH" || currentPrice >= pivotPoints.pivot;
+  const isBearPivot = pivotPoints.marketPosition === "BELOW_PIVOT_BEARISH" || currentPrice <= pivotPoints.pivot;
+
+  // เสาหลัก 4: Auto Clustered S&R (Multi-touch support/resistance confluence)
+  const isNearSupport = clusteredSR.nearestSupport ? (currentPrice - clusteredSR.nearestSupport.price) <= currentATR * 1.5 : inBuyValueZone;
+  const isNearResistance = clusteredSR.nearestResistance ? (clusteredSR.nearestResistance.price - currentPrice) <= currentATR * 1.5 : inSellValueZone;
+
+  // เสาหลัก 5: Dynamic Bands (Donchian / Bollinger Room to Run)
+  const donchianLower = donchian.lower;
+  const donchianUpper = donchian.upper;
+  const donchianMid = (donchianLower + donchianUpper) / 2;
+  const isBullDynamic = currentPrice <= donchianMid * 1.01 || currentPrice >= donchianLower;
+  const isBearDynamic = currentPrice >= donchianMid * 0.99 || currentPrice <= donchianUpper;
+
+  let bullPillars = 0;
+  if (isBullSMC) bullPillars++;
+  if (isBullFib) bullPillars++;
+  if (isBullPivot) bullPillars++;
+  if (isNearSupport) bullPillars++;
+  if (isBullDynamic) bullPillars++;
+
+  let bearPillars = 0;
+  if (isBearSMC) bearPillars++;
+  if (isBearFib) bearPillars++;
+  if (isBearPivot) bearPillars++;
+  if (isNearResistance) bearPillars++;
+  if (isBearDynamic) bearPillars++;
+
+  const fiveCorePillars: FiveCorePillarsEvaluation = {
+    score: Math.round(Math.max(bullPillars, bearPillars) * 20),
+    dominantBias: bullPillars > bearPillars ? "BUY" : bearPillars > bullPillars ? "SELL" : "NEUTRAL",
+    passedPillarsCount: Math.max(bullPillars, bearPillars),
+    pillar1_SMC: { passed: isBullSMC || isBearSMC, note: `SMC: ${orderBlocks.nearestBlock ? orderBlocks.nearestBlock.type : "Normal Structure"} • FVG: ${fvgMitigation.bias}` },
+    pillar2_AutoFib: { passed: isBullFib || isBearFib, note: `Fib: ${autoFibonacci.currentZone} (${autoFibonacci.trendDirection})` },
+    pillar3_PivotPoints: { passed: isBullPivot || isBearPivot, note: `Pivot: P=${pivotPoints.pivot} (${pivotPoints.marketPosition})` },
+    pillar4_ClusteredSR: { passed: isNearSupport || isNearResistance, note: `Auto S&R: ${clusteredSR.nearestSupport ? `S=${clusteredSR.nearestSupport.price}` : "No S"} | ${clusteredSR.nearestResistance ? `R=${clusteredSR.nearestResistance.price}` : "No R"}` },
+    pillar5_DynamicBands: { passed: isBullDynamic || isBearDynamic, note: `Dynamic Bands: DC [${donchianLower} - ${donchianUpper}]` },
+    summary: `5 Core Pillars Score: ${Math.round(Math.max(bullPillars, bearPillars) * 20)}% (${bullPillars} Bull vs ${bearPillars} Bear)`,
+  };
+
+  // ─── 4. DECISIVE SIGNAL TRIGGERING (5 CORE PILLARS & CONFLUENCE DRIVEN) ───
+  if (isCircuitBreakerTripped) {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 30);
+  } else if (bullPillars > bearPillars && (bullPillars >= 2 || tier1Bias === "BULLISH" || inBuyValueZone || masterConfluence.totalScore >= 45)) {
+    // 🐂 BULLISH SIGNAL: ฝั่งซื้อได้เปรียบทางสถิติ
+    const isStrong = bullPillars >= 3 || masterConfluence.totalScore >= 68;
+    signal = isStrong ? "STRONG_BUY" : "BUY";
+    setupGrade = isStrong && confidence >= 68 ? "A+" : confidence >= 55 ? "A" : "B";
+    if (isInstitutionalAligned) confidence = Math.min(98, confidence + 4);
+    if (classicTrio.isAligned && classicTrio.signalBias === "BULLISH") confidence = Math.min(99, confidence + 4);
+    if (isOrbBullBreak) confidence = Math.min(98, confidence + 3);
+  } else if (bearPillars > bullPillars && (bearPillars >= 2 || tier1Bias === "BEARISH" || inSellValueZone || masterConfluence.totalScore >= 45)) {
+    // 🐻 BEARISH SIGNAL: ฝั่งขายได้เปรียบทางสถิติ
+    const isStrong = bearPillars >= 3 || masterConfluence.totalScore >= 68;
+    signal = isStrong ? "STRONG_SELL" : "SELL";
+    setupGrade = isStrong && confidence >= 68 ? "A+" : confidence >= 55 ? "A" : "B";
+    if (isInstitutionalAligned) confidence = Math.min(98, confidence + 4);
+    if (classicTrio.isAligned && classicTrio.signalBias === "BEARISH") confidence = Math.min(99, confidence + 4);
+    if (isOrbBearBreak) confidence = Math.min(98, confidence + 3);
+  } else if (bullPillars >= 2) {
+    // Bull pillars active
+    signal = "BUY";
+    setupGrade = "B";
+    confidence = Math.max(52, confidence);
+  } else if (bearPillars >= 2) {
+    // Bear pillars active
+    signal = "SELL";
+    setupGrade = "B";
+    confidence = Math.max(52, confidence);
+  } else if (tier1Bias === "BULLISH" || currentPrice >= pivotPoints.pivot) {
+    // ราคาอยู่เหนือ Central Pivot P หรือโครงสร้างโน้มเอียงขึ้น
+    signal = "BUY";
+    setupGrade = "B";
+    confidence = Math.max(50, confidence);
+  } else if (tier1Bias === "BEARISH" || currentPrice < pivotPoints.pivot) {
+    // ราคาอยู่ใต้ Central Pivot P หรือโครงสร้างโน้มเอียงลง
+    signal = "SELL";
+    setupGrade = "B";
+    confidence = Math.max(50, confidence);
+  } else {
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+  }
+
+  // ─── ANTI-CLASH DIRECTIONAL HARMONIZATION (SOFT CONFIDENCE TUNING, NEVER HARD WAIT) ───
   if (signal === "STRONG_BUY" || signal === "BUY") {
     if (orchestrator.unifiedSignal === "SELL") {
-      // Counter-trend conflict detected by Anti-Clash Orchestrator (e.g. Bearish Order Block or Bearish MSS)
-      signal = "WAIT";
-      setupGrade = "C (Wait)";
-      confidence = Math.min(confidence, 35);
+      // Counter-trend caution: ปรับลด confidence เล็กน้อย แต่คงสถานะออเดอร์พร้อมเทรดไว้เสมอ
+      confidence = Math.max(48, confidence - 6);
+      setupGrade = "B";
     } else if (orchestrator.unifiedSignal === "BUY") {
       confidence = Math.min(99, confidence + 5);
     }
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     if (orchestrator.unifiedSignal === "BUY") {
-      // Counter-trend conflict detected by Anti-Clash Orchestrator (e.g. Bullish Order Block or Bullish MSS)
-      signal = "WAIT";
-      setupGrade = "C (Wait)";
-      confidence = Math.min(confidence, 35);
+      // Counter-trend caution: ปรับลด confidence เล็กน้อย แต่คงสถานะออเดอร์พร้อมเทรดไว้เสมอ
+      confidence = Math.max(48, confidence - 6);
+      setupGrade = "B";
     } else if (orchestrator.unifiedSignal === "SELL") {
       confidence = Math.min(99, confidence + 5);
     }
@@ -1151,6 +912,19 @@ export function generateRuleBasedAnalysis(
     takeProfit1 = Number((pendingPrice + risk * 1.0).toFixed(precision));
     takeProfit2 = Number((pendingPrice + risk * effectiveTPMultiplier).toFixed(precision));
 
+    // ─── 5 Core Pillars: Pivot Points & Clustered S&R Alignment ───
+    if (pivotPoints.r1 > pendingPrice && (pivotPoints.r1 - pendingPrice) >= risk * 0.7) {
+      takeProfit1 = pivotPoints.r1;
+    } else if (clusteredSR.nearestResistance && clusteredSR.nearestResistance.price > pendingPrice) {
+      takeProfit1 = clusteredSR.nearestResistance.price;
+    }
+
+    if (pivotPoints.r2 > takeProfit1 && (pivotPoints.r2 - pendingPrice) >= risk * 1.5) {
+      takeProfit2 = pivotPoints.r2;
+    } else if (donchian.upper > takeProfit1) {
+      takeProfit2 = Number(donchian.upper.toFixed(precision));
+    }
+
     // [แผน 38] MTF Fibonacci Extension Golden Target Refinement
     if (fibonacciExtension.bestTakeProfitTarget?.price && fibonacciExtension.bestTakeProfitTarget.price > takeProfit1) {
       takeProfit2 = fibonacciExtension.bestTakeProfitTarget.price;
@@ -1166,7 +940,11 @@ export function generateRuleBasedAnalysis(
       takeProfit1 = harmonics.bestPattern.targetTP1;
       takeProfit2 = harmonics.bestPattern.targetTP2;
     }
-    riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / risk).toFixed(1)}`;
+    // Invariant Guarantee: For BUY, Stop Loss must strictly be below pendingPrice
+    if (stopLoss >= pendingPrice) {
+      stopLoss = Number((pendingPrice - Math.max(currentATR * 1.2, pendingPrice * 0.005)).toFixed(precision));
+    }
+    riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, pendingPrice - stopLoss)).toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
     // [แผน 12 & แผน 28] Liquidity Hunt Protection Stop Loss + Realized Volatility Buffer
@@ -1193,6 +971,19 @@ export function generateRuleBasedAnalysis(
     takeProfit1 = Number((pendingPrice - risk * 1.0).toFixed(precision));
     takeProfit2 = Number((pendingPrice - risk * effectiveTPMultiplier).toFixed(precision));
 
+    // ─── 5 Core Pillars: Pivot Points & Clustered S&R Alignment ───
+    if (pivotPoints.s1 < pendingPrice && (pendingPrice - pivotPoints.s1) >= risk * 0.7) {
+      takeProfit1 = pivotPoints.s1;
+    } else if (clusteredSR.nearestSupport && clusteredSR.nearestSupport.price < pendingPrice) {
+      takeProfit1 = clusteredSR.nearestSupport.price;
+    }
+
+    if (pivotPoints.s2 < takeProfit1 && (pendingPrice - pivotPoints.s2) >= risk * 1.5) {
+      takeProfit2 = pivotPoints.s2;
+    } else if (donchian.lower < takeProfit1) {
+      takeProfit2 = Number(donchian.lower.toFixed(precision));
+    }
+
     // [แผน 38] MTF Fibonacci Extension Golden Target Refinement
     if (fibonacciExtension.bestTakeProfitTarget?.price && fibonacciExtension.bestTakeProfitTarget.price < takeProfit1) {
       takeProfit2 = fibonacciExtension.bestTakeProfitTarget.price;
@@ -1208,7 +999,11 @@ export function generateRuleBasedAnalysis(
       takeProfit1 = harmonics.bestPattern.targetTP1;
       takeProfit2 = harmonics.bestPattern.targetTP2;
     }
-    riskRewardRatio = `1:${((pendingPrice - takeProfit2) / risk).toFixed(1)}`;
+    // Invariant Guarantee: For SELL, Stop Loss must strictly be above pendingPrice
+    if (stopLoss <= pendingPrice) {
+      stopLoss = Number((pendingPrice + Math.max(currentATR * 1.2, pendingPrice * 0.005)).toFixed(precision));
+    }
+    riskRewardRatio = `1:${((pendingPrice - takeProfit2) / Math.max(0.0001, stopLoss - pendingPrice)).toFixed(1)}`;
   }
 
   // [แผน 14] Automated Risk-Free Breakeven Shield
@@ -1279,16 +1074,13 @@ export function generateRuleBasedAnalysis(
     candlestickPatterns.overallScore
   );
 
-  // SAFETY LOCK 12 (part b): MCPI Conviction Gating (Block if MCPI < 70 or Inducement Trap active)
-  if (!mcpiConviction.isApprovedForExecution && (signal === "BUY" || signal === "SELL" || signal === "STRONG_BUY" || signal === "STRONG_SELL")) {
-    signal = "WAIT";
-    tradeAction = "NO_TRADE";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 50);
+  // MCPI Conviction & Orchestrator Soft Calibration (Adjust confidence rather than hard-killing the setup)
+  if (!mcpiConviction.isApprovedForExecution) {
+    confidence = Math.max(45, confidence - 6);
   }
 
-  // De-confliction Guarantee: Whenever signal is WAIT or VETOED, tradeAction must strictly be NO_TRADE
-  if (signal === "WAIT" || orchestrator.vetoTriggered || !calendarSafety.tradeAllowed) {
+  // De-confliction Guarantee: Whenever signal is WAIT or fatal circuit breaker is active, tradeAction must strictly be NO_TRADE
+  if (signal === "WAIT" || !calendarSafety.tradeAllowed || sessionStatus.isWeekendCloseFreeze) {
     tradeAction = "NO_TRADE";
   }
 
@@ -1798,6 +1590,10 @@ export function generateRuleBasedAnalysis(
       darkPoolDealerGamma,
       sovereignSingularityAlpha,
       classicTrio,
+      pivotPoints,
+      clusteredSR,
+      autoFibonacci,
+      fiveCorePillars,
       suggestedLotSize: {
         balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
         balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
@@ -1808,6 +1604,10 @@ export function generateRuleBasedAnalysis(
         ? `หากราคาหลุดแนวรับสวิง ${structuralSL.swingRefPrice} (Stop Loss: ${stopLoss}) ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`
         : `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`,
     },
+    pivotPoints,
+    clusteredSR,
+    autoFibonacci,
+    fiveCorePillars,
     orchestrator,
   };
 }

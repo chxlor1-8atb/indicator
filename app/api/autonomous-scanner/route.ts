@@ -7,6 +7,7 @@ import {
   approveOrder,
 } from "@/lib/autonomousEngine";
 import { saveAiSignal } from "@/lib/db";
+import { sendTelegramMessage } from "@/lib/telegramService";
 
 export const dynamic = "force-dynamic";
 
@@ -19,46 +20,21 @@ export async function GET(request: NextRequest) {
     if (triggerScan) {
       scanResult = await scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG);
 
-      // If new high-confluence orders were created, persist to DB signals
-      if (scanResult.newOrders && scanResult.newOrders.length > 0) {
-        for (const order of scanResult.newOrders) {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const chatId = process.env.TELEGRAM_CHAT_ID;
+
+      // 1. บันทึก Actionable AI Signals ลงฐานข้อมูลสำหรับแสดงบนหน้าเว็บ และส่งแจ้งเตือน Telegram ทันที
+      if (scanResult.actionableAnalyses && scanResult.actionableAnalyses.length > 0) {
+        for (const analysis of scanResult.actionableAnalyses) {
           try {
-            await saveAiSignal({
-              symbol: order.symbol,
-              timeframe: "1h",
-              signal: order.orderType.includes("BUY") ? "BUY" : "SELL",
-              confidence: order.confluenceScore,
-              marketCondition: order.comment,
-              keyDrivers: ["AI Autonomous Multi-Pillar Trigger"],
-              tradeSetup: {
-                action: order.orderType.includes("BUY") ? "BUY" : "SELL",
-                orderType: order.orderType as any,
-                pendingPrice: order.price,
-                entryZone: { min: order.price, max: order.price },
-                stopLoss: order.stopLoss,
-                takeProfit1: order.takeProfit1,
-                takeProfit2: order.takeProfit2,
-                slPips: Math.round(Math.abs(order.price - order.stopLoss) * (order.symbol.includes("XAU") ? 10 : 10000)),
-                tp1Pips: Math.round(Math.abs(order.takeProfit1 - order.price) * (order.symbol.includes("XAU") ? 10 : 10000)),
-                tp2Pips: Math.round(Math.abs(order.takeProfit2 - order.price) * (order.symbol.includes("XAU") ? 10 : 10000)),
-                riskRewardRatio: "1:2.0",
-              },
-              masterConfluence: {
-                totalScore: order.confluenceScore,
-                grade: order.setupGrade as any,
-                tradeRecommendation: "ENTER_POSITION",
-                pillarsPassed: 20,
-                checklist: [],
-              },
-              technicalAnalysis: {
-                summary: `AI Autonomous Order primed: ${order.orderType} @ ${order.price}`,
-                trend: order.orderType.includes("BUY") ? "UPTREND" : "DOWNTREND",
-                supportResistance: { support: [order.stopLoss], resistance: [order.takeProfit2] },
-                details: [],
-              },
-            } as any);
+            await saveAiSignal(analysis);
+
+            // ส่งแจ้งเตือนไปยัง Telegram ทันทีเมื่อมีสัญญาณ AI Signal Trade คมๆ
+            if (botToken && chatId && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
+              await sendTelegramMessage({ botToken, chatId, analysis });
+            }
           } catch (e) {
-            console.warn("Could not save autonomous order to signals DB:", e);
+            console.warn("Could not save signal or dispatch telegram:", e);
           }
         }
       }

@@ -11,7 +11,7 @@ import MarketOpportunityRadar from "@/components/MarketOpportunityRadar";
 import TelegramSettingsModal from "@/components/TelegramSettingsModal";
 import { Candle, IndicatorData, NewsItem, AnalysisResult, AssetScannerSummary } from "@/lib/types";
 import { calculateAllIndicators } from "@/lib/indicators";
-import { Bot, Radio, Zap, ShieldCheck, Activity } from "lucide-react";
+import { Bot, Radio, Zap, ShieldCheck, Activity, Target, BarChart3, Newspaper, BookOpen, Layers } from "lucide-react";
 
 // Dynamically import MarketChart with SSR disabled for clean canvas lifecycle
 const MarketChart = dynamic(() => import("@/components/MarketChart"), {
@@ -65,12 +65,19 @@ export default function DashboardPage() {
   // ─── Autonomous AI Auto-Pilot State ───
   const [isAutoPilot, setIsAutoPilot] = useState<boolean>(true);
   const [activeBridgeOrders, setActiveBridgeOrders] = useState<any[]>([]);
-  const [latestTelemetry, setLatestTelemetry] = useState<string>("ระบบ AI ตัดสินใจอัตโนมัติทำงาน • Watchlist ซิงค์เรียลไทม์ 100%");
+  const [latestTelemetry, setLatestTelemetry] = useState<string>("ระบบ AI ตรวจจับ 5 เสาหลัก & พร้อมส่งสัญญาณแจ้งเตือน Telegram เรียลไทม์ 100%");
   const [lastSyncTime, setLastSyncTime] = useState<string>("เพิ่งอัปเดต");
   const [scannerSummaries, setScannerSummaries] = useState<AssetScannerSummary[]>([]);
   const [isLoadingScanner, setIsLoadingScanner] = useState<boolean>(true);
 
-  // Fetch Market Candles & Technicals (Ultra-fresh with cache-busting)
+  // ─── PWA Mobile & Responsive Workspace View State ───
+  const [activeTab, setActiveTab] = useState<"SIGNALS" | "CHART" | "RADAR" | "NEWS" | "JOURNAL" | "ALL">("SIGNALS");
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth >= 1024) {
+      setActiveTab("ALL");
+    }
+  }, []);
   const loadMarketData = useCallback(async (symbol: string, tf: string, isSilent = false) => {
     if (!isSilent) setIsLoadingMarket(true);
     try {
@@ -415,12 +422,12 @@ export default function DashboardPage() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-4 lg:py-6 space-y-4 lg:space-y-6">
-        {/* AI Autonomous Auto-Pilot Live HUD Banner */}
-        <div className="w-full bg-surface-100/90 border border-indigo-500/25 rounded-2xl p-3 sm:p-4 shadow-lg shadow-black/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+      <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 lg:py-6 space-y-3 sm:space-y-4 pb-24 md:pb-8">
+        {/* AI Autonomous Auto-Pilot Live HUD Banner (Compact PWA Bar) */}
+        <div className="w-full bg-surface-100/90 border border-indigo-500/25 rounded-2xl p-3 sm:p-3.5 shadow-lg shadow-black/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
                 isAutoPilot
                   ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-md shadow-emerald-500/10"
                   : "bg-slate-800 border-slate-700 text-slate-400"
@@ -430,115 +437,333 @@ export default function DashboardPage() {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-sm text-white flex items-center gap-1.5">
+                <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1.5">
                   AI Autonomous Decision Pilot
                   {isAutoPilot && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      ULTRA REAL-TIME SYNC
+                      LIVE SYNC
                     </span>
                   )}
                 </span>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  (ซิงค์สด {lastSyncTime})
+                <span className="text-[10px] sm:text-[11px] text-slate-400 font-mono">
+                  ({lastSyncTime})
                 </span>
               </div>
-              <p className="text-xs text-slate-300 truncate max-w-xl flex items-center gap-1.5 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-300 truncate max-w-xl flex items-center gap-1.5 mt-0.5">
                 <Radio className={`w-3.5 h-3.5 shrink-0 ${isAutoPilot ? "text-cyan-400 animate-spin" : "text-slate-500"}`} />
                 <span className="truncate">{latestTelemetry}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 sm:gap-3 self-end md:self-center shrink-0">
-            {/* Active Bridge Orders Badge */}
-            <div className="px-2.5 py-1.5 rounded-xl bg-surface-50 border border-slate-800 flex items-center gap-1.5 text-xs font-mono">
+          <div className="flex items-center gap-2 sm:gap-2.5 self-end md:self-center shrink-0">
+            {/* Telegram Signals Live Badge */}
+            <div className="px-2.5 py-1 rounded-xl bg-surface-50 border border-slate-800 flex items-center gap-1.5 text-xs font-mono">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-slate-400">MT Bridge:</span>
-              <span className="font-bold text-white">{activeBridgeOrders.length} ออเดอร์</span>
+              <span className="text-slate-400 hidden sm:inline">Telegram:</span>
+              <span className="font-bold text-white text-[11px] sm:text-xs">Broadcast สด</span>
             </div>
 
             {/* Auto-Pilot Toggle Button */}
             <button
               onClick={handleToggleAutoPilot}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-sm ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-sm active:scale-95 ${
                 isAutoPilot
                   ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/30 shadow-emerald-600/20"
                   : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${isAutoPilot ? "bg-white animate-pulse" : "bg-slate-500"}`} />
-              {isAutoPilot ? "ระบบตัดสินใจอัตโนมัติ: เปิด" : "ระบบตัดสินใจอัตโนมัติ: ปิด"}
+              <span className="hidden sm:inline">{isAutoPilot ? "ตัดสินใจอัตโนมัติ: เปิด" : "ตัดสินใจอัตโนมัติ: ปิด"}</span>
+              <span className="sm:hidden">{isAutoPilot ? "ออโต้: เปิด" : "ออโต้: ปิด"}</span>
             </button>
           </div>
         </div>
 
-        {/* Live Multi-Asset Opportunity Radar (15+ Assets Institutional Confluence Scanner) */}
-        <MarketOpportunityRadar
-          summaries={scannerSummaries}
-          selectedAsset={selectedAsset}
-          onSelectAsset={(sym) => {
-            setSelectedAsset(sym);
-          }}
-          lastSyncTime={lastSyncTime}
-          isLoading={isLoadingScanner && scannerSummaries.length === 0}
-        />
+        {/* ─── PWA VIEW SELECTOR (หัวข้อเมนูสลับหน้าจอ สำหรับทั้งมือถือและคอม) ─── */}
+        <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-surface-100/95 border border-slate-800 shrink-0">
+            <button
+              onClick={() => setActiveTab("SIGNALS")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                activeTab === "SIGNALS"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Target className="w-3.5 h-3.5" />
+              <span>🎯 สัญญาณเทรด</span>
+            </button>
 
-        {/* Asset & Timeframe Bar */}
-        <AssetSelector
-          selectedAsset={selectedAsset}
-          onSelectAsset={setSelectedAsset}
-          selectedTimeframe={selectedTimeframe}
-          onSelectTimeframe={setSelectedTimeframe}
-          onRunAnalysis={runAnalysis}
-          isAnalyzing={isAnalyzing}
-          currentPrice={indicators.currentPrice}
-          priceChangePercent={indicators.priceChangePercent24h}
-          isLoadingPrice={isLoadingMarket || !indicators.currentPrice || indicators.currentPrice <= 0}
-          lastPriceUpdate={liveTickLastUpdated || marketLastUpdated}
-        />
+            <button
+              onClick={() => setActiveTab("CHART")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                activeTab === "CHART"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>📈 กราฟสด</span>
+            </button>
 
-        {/* 2-Column Responsive Grid Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 2xl:grid-cols-12 gap-4 lg:gap-6 w-full items-start">
-          {/* Left Column: Chart & AI Analysis & Signal Journal (8 cols on lg, 9 cols on 2xl) */}
-          <div className="lg:col-span-8 2xl:col-span-9 space-y-4 lg:space-y-6 min-w-0">
-            {/* Candlestick & Indicator Chart */}
-            <MarketChart
-              candles={candles}
-              indicators={indicators}
-              symbol={selectedAsset}
-              timeframe={selectedTimeframe}
-              isLiveUpdating={true}
-              optimizedConfig={analysis?.optimizedConfig}
-              lastTickTime={liveTickLastUpdated || marketLastUpdated}
-            />
+            <button
+              onClick={() => setActiveTab("RADAR")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                activeTab === "RADAR"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>📡 เรดาร์ตลาด</span>
+            </button>
 
-            {/* AI Hybrid Analysis & Signals Card (3-Tier Hierarchy & Auto-Tuning inside) */}
-            <AnalysisCard
-              analysis={analysis}
-              isLoading={isAnalyzing}
-              onSendTelegram={handleSendTelegram}
-              isSendingTelegram={isSendingTelegram}
-              telegramStatus={telegramStatus}
-            />
+            <button
+              onClick={() => setActiveTab("NEWS")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                activeTab === "NEWS"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Newspaper className="w-3.5 h-3.5" />
+              <span>📰 ข่าวเศรษฐกิจ</span>
+            </button>
 
-            {/* AI Trade Journal & Real Win-Rate Tracker (Neon Serverless Postgres) */}
-            <SignalJournalCard />
+            <button
+              onClick={() => setActiveTab("JOURNAL")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                activeTab === "JOURNAL"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>📜 บันทึกสถิติ</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("ALL")}
+              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                activeTab === "ALL"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>🖥️ รวมทั้งหมด</span>
+            </button>
           </div>
 
-          {/* Right Column: Real-time News Feed & Calendar (4 cols on lg, 3 cols on 2xl) with sticky sidebar */}
-          <div className="lg:col-span-4 2xl:col-span-3 min-w-0">
-            <div className="lg:sticky lg:top-[68px] space-y-4">
-              <NewsFeed
-                news={news}
-                isLoading={isLoadingNews}
-                selectedAsset={selectedAsset}
-                lastNewsTime={newsLastUpdated}
-              />
+          <span className="text-[11px] text-slate-500 hidden lg:inline font-mono">
+            {selectedAsset} • {selectedTimeframe.toUpperCase()}
+          </span>
+        </div>
+
+        {/* ─── TAB-DRIVEN CONTENT VIEWS ─── */}
+        {activeTab === "ALL" ? (
+          <div className="space-y-4 lg:space-y-6 animate-fadeIn">
+            {/* Live Multi-Asset Opportunity Radar */}
+            <MarketOpportunityRadar
+              summaries={scannerSummaries}
+              selectedAsset={selectedAsset}
+              onSelectAsset={(sym) => {
+                setSelectedAsset(sym);
+              }}
+              lastSyncTime={lastSyncTime}
+              isLoading={isLoadingScanner && scannerSummaries.length === 0}
+            />
+
+            {/* Asset & Timeframe Bar */}
+            <AssetSelector
+              selectedAsset={selectedAsset}
+              onSelectAsset={setSelectedAsset}
+              selectedTimeframe={selectedTimeframe}
+              onSelectTimeframe={setSelectedTimeframe}
+              onRunAnalysis={runAnalysis}
+              isAnalyzing={isAnalyzing}
+              currentPrice={indicators.currentPrice}
+              priceChangePercent={indicators.priceChangePercent24h}
+              isLoadingPrice={isLoadingMarket || !indicators.currentPrice || indicators.currentPrice <= 0}
+              lastPriceUpdate={liveTickLastUpdated || marketLastUpdated}
+            />
+
+            {/* 2-Column Responsive Grid Layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 2xl:grid-cols-12 gap-4 lg:gap-6 w-full items-start">
+              {/* Left Column: Chart & AI Analysis & Signal Journal (8 cols on lg, 9 cols on 2xl) */}
+              <div className="lg:col-span-8 2xl:col-span-9 space-y-4 lg:space-y-6 min-w-0">
+                <MarketChart
+                  candles={candles}
+                  indicators={indicators}
+                  symbol={selectedAsset}
+                  timeframe={selectedTimeframe}
+                  isLiveUpdating={true}
+                  optimizedConfig={analysis?.optimizedConfig}
+                  lastTickTime={liveTickLastUpdated || marketLastUpdated}
+                />
+
+                <AnalysisCard
+                  analysis={analysis}
+                  isLoading={isAnalyzing}
+                  onSendTelegram={handleSendTelegram}
+                  isSendingTelegram={isSendingTelegram}
+                  telegramStatus={telegramStatus}
+                />
+
+                <SignalJournalCard />
+              </div>
+
+              {/* Right Column: Real-time News Feed & Calendar (4 cols on lg, 3 cols on 2xl) with sticky sidebar */}
+              <div className="lg:col-span-4 2xl:col-span-3 min-w-0">
+                <div className="lg:sticky lg:top-[68px] space-y-4">
+                  <NewsFeed
+                    news={news}
+                    isLoading={isLoadingNews}
+                    selectedAsset={selectedAsset}
+                    lastNewsTime={newsLastUpdated}
+                  />
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-4 animate-fadeIn">
+            {/* Show AssetSelector bar on SIGNALS & CHART views for instant switching */}
+            {(activeTab === "SIGNALS" || activeTab === "CHART") && (
+              <AssetSelector
+                selectedAsset={selectedAsset}
+                onSelectAsset={setSelectedAsset}
+                selectedTimeframe={selectedTimeframe}
+                onSelectTimeframe={setSelectedTimeframe}
+                onRunAnalysis={runAnalysis}
+                isAnalyzing={isAnalyzing}
+                currentPrice={indicators.currentPrice}
+                priceChangePercent={indicators.priceChangePercent24h}
+                isLoadingPrice={isLoadingMarket || !indicators.currentPrice || indicators.currentPrice <= 0}
+                lastPriceUpdate={liveTickLastUpdated || marketLastUpdated}
+              />
+            )}
+
+            {/* TAB: SIGNALS (Fast 1-Click Execution & 5 Core Pillars) */}
+            {activeTab === "SIGNALS" && (
+              <div className="space-y-4">
+                <AnalysisCard
+                  analysis={analysis}
+                  isLoading={isAnalyzing}
+                  onSendTelegram={handleSendTelegram}
+                  isSendingTelegram={isSendingTelegram}
+                  telegramStatus={telegramStatus}
+                />
+              </div>
+            )}
+
+            {/* TAB: CHART (Candlestick & Technical Indicator Workspace) */}
+            {activeTab === "CHART" && (
+              <div className="space-y-4">
+                <MarketChart
+                  candles={candles}
+                  indicators={indicators}
+                  symbol={selectedAsset}
+                  timeframe={selectedTimeframe}
+                  isLiveUpdating={true}
+                  optimizedConfig={analysis?.optimizedConfig}
+                  lastTickTime={liveTickLastUpdated || marketLastUpdated}
+                />
+              </div>
+            )}
+
+            {/* TAB: RADAR (15+ Asset Scanner) */}
+            {activeTab === "RADAR" && (
+              <div className="space-y-4">
+                <MarketOpportunityRadar
+                  summaries={scannerSummaries}
+                  selectedAsset={selectedAsset}
+                  onSelectAsset={(sym) => {
+                    setSelectedAsset(sym);
+                    setActiveTab("SIGNALS");
+                  }}
+                  lastSyncTime={lastSyncTime}
+                  isLoading={isLoadingScanner && scannerSummaries.length === 0}
+                />
+              </div>
+            )}
+
+            {/* TAB: NEWS (Macro Shield & Breaking News) */}
+            {activeTab === "NEWS" && (
+              <div className="space-y-4 max-w-4xl mx-auto">
+                <NewsFeed
+                  news={news}
+                  isLoading={isLoadingNews}
+                  selectedAsset={selectedAsset}
+                  lastNewsTime={newsLastUpdated}
+                />
+              </div>
+            )}
+
+            {/* TAB: JOURNAL (Win-rate & PnL History) */}
+            {activeTab === "JOURNAL" && (
+              <div className="space-y-4">
+                <SignalJournalCard />
+              </div>
+            )}
+          </div>
+        )}
       </main>
+
+      {/* ─── MOBILE PWA BOTTOM NAVIGATION BAR (แถบเมนูด้านล่างสำหรับมือถือ สไตล์แอปแท้) ─── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface-100/95 backdrop-blur-md border-t border-slate-800 md:hidden px-3 py-2 flex items-center justify-around shadow-2xl shadow-black">
+        <button
+          onClick={() => setActiveTab("SIGNALS")}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
+            activeTab === "SIGNALS" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Target className="w-5 h-5" />
+          <span className="text-[10px]">สัญญาณ</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("CHART")}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
+            activeTab === "CHART" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <BarChart3 className="w-5 h-5" />
+          <span className="text-[10px]">กราฟ</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("RADAR")}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
+            activeTab === "RADAR" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Radio className="w-5 h-5" />
+          <span className="text-[10px]">เรดาร์</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("NEWS")}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
+            activeTab === "NEWS" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <Newspaper className="w-5 h-5" />
+          <span className="text-[10px]">ข่าว</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("JOURNAL")}
+          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
+            activeTab === "JOURNAL" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <BookOpen className="w-5 h-5" />
+          <span className="text-[10px]">บันทึก</span>
+        </button>
+      </nav>
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 py-4 px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-500 bg-surface-200/40 w-full">

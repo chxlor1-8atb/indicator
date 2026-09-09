@@ -147,6 +147,75 @@ export interface StructuralStopLossInfo {
   protectionType: "SWING_LOW_BUFFER" | "SWING_HIGH_BUFFER" | "VOLATILITY_ATR";
 }
 
+// ─── 5 CORE PILLARS QUANT INTERFACES ───
+export interface PivotPointsInfo {
+  pivot: number; // Daily central pivot (P)
+  r1: number;
+  r2: number;
+  r3: number;
+  s1: number;
+  s2: number;
+  s3: number;
+  // Fibonacci Pivots
+  fibR1: number;
+  fibR2: number;
+  fibR3: number;
+  fibS1: number;
+  fibS2: number;
+  fibS3: number;
+  nearestLevelName: string; // e.g. "R1" or "Pivot" or "S1"
+  nearestLevelPrice: number;
+  distancePips: number;
+  marketPosition: "ABOVE_PIVOT_BULLISH" | "BELOW_PIVOT_BEARISH" | "AT_PIVOT";
+  description: string;
+}
+
+export interface SREntry {
+  price: number;
+  touchCount: number;
+  strength: number; // 1-100
+  type: "SUPPORT" | "RESISTANCE";
+  distancePips: number;
+}
+
+export interface ClusteredSRInfo {
+  supports: SREntry[];
+  resistances: SREntry[];
+  nearestSupport?: SREntry;
+  nearestResistance?: SREntry;
+  channelWidthPips: number;
+  description: string;
+}
+
+export interface AutoFibonacciInfo {
+  swingHigh: number;
+  swingLow: number;
+  trendDirection: "UP" | "DOWN";
+  fib0: number;
+  fib236: number;
+  fib382: number;
+  fib500: number; // Equilibrium
+  fib618: number; // Golden Ratio
+  fib786: number; // Deep OTE Pullback
+  fib100: number;
+  currentZone: "SHALLOW_PULLBACK_382" | "GOLDEN_POCKET_50_618" | "DEEP_PULLBACK_786" | "EXTENSION" | "BREAKOUT";
+  isPullbackActive: boolean;
+  recommendedEntryLevel: number;
+  description: string;
+}
+
+export interface FiveCorePillarsEvaluation {
+  score: number; // 0-100
+  dominantBias: "BUY" | "SELL" | "NEUTRAL";
+  passedPillarsCount: number; // 0 to 5
+  pillar1_SMC: { passed: boolean; note: string };
+  pillar2_AutoFib: { passed: boolean; note: string };
+  pillar3_PivotPoints: { passed: boolean; note: string };
+  pillar4_ClusteredSR: { passed: boolean; note: string };
+  pillar5_DynamicBands: { passed: boolean; note: string };
+  summary: string;
+}
+
 // ─── BATCH 4 (PLANS 16-20) QUANT INTERFACES ───
 export interface VolumeProfileInfo {
   poc: number; // Point of Control (highest volume price bin)
@@ -629,6 +698,10 @@ export interface IndicatorData {
   intraBarMomentum?: IntraBarMomentum;
   rolling24h?: Rolling24hRange;
   quadEma?: QuadEmaConfluence;
+  pivotPoints?: PivotPointsInfo;
+  clusteredSR?: ClusteredSRInfo;
+  autoFibonacci?: AutoFibonacciInfo;
+  fiveCorePillars?: FiveCorePillarsEvaluation;
   oteZone?: OTEZoneInfo;
   volumeDelta?: VolumeDeltaInfo;
   roundLevel?: RoundLevelInfo;
@@ -1037,6 +1110,10 @@ export interface AnalysisResult {
     darkPoolDealerGamma?: DarkPoolDealerGammaExposureInfo;
     sovereignSingularityAlpha?: SovereignSingularityAlphaInfo;
     classicTrio?: ClassicTrioInfo;
+    pivotPoints?: PivotPointsInfo;
+    clusteredSR?: ClusteredSRInfo;
+    autoFibonacci?: AutoFibonacciInfo;
+    fiveCorePillars?: FiveCorePillarsEvaluation;
     suggestedLotSize?: {
       balance500: number;
       balance1k: number;
@@ -1045,6 +1122,10 @@ export interface AnalysisResult {
     };
     invalidationNote: string;
   };
+  pivotPoints?: PivotPointsInfo;
+  clusteredSR?: ClusteredSRInfo;
+  autoFibonacci?: AutoFibonacciInfo;
+  fiveCorePillars?: FiveCorePillarsEvaluation;
   institutionalQuant?: Institutional5LayerHub;
   orchestrator?: OrchestratorDecisionInfo;
 }

@@ -4,6 +4,7 @@ import {
   MtBridgeOrder,
   TelemetryLog,
   AutonomousPilotConfig,
+  AnalysisResult,
 } from "./types";
 import { calculateAllIndicators, calculateATR } from "./indicators";
 import { getMarketCandles, AVAILABLE_ASSETS } from "./marketService";
@@ -37,15 +38,14 @@ export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
   isEnabled: true,
   autoDispatchTelegram: true,
   autoFocusHighestConfluence: false,
-  minConfluenceThreshold: 75, // Grade A sniper entry
+  minConfluenceThreshold: 52, // Grade B / B+ / 5-Pillars actionable entry
   riskPercentPerTrade: 1.5,
   accountType: "STANDARD",
   scanIntervalMs: 8000,
   /**
-   * SEMI_AUTO = default ปลอดภัย: AI วิเคราะห์และสร้าง order แต่รอมนุษย์ approve ก่อนส่ง MT4/MT5
-   * เปลี่ยนเป็น AUTO เฉพาะเมื่อใช้ demo/paper trading เท่านั้น
+   * SIGNAL_ONLY = Pure Web AI Signal Trading + Telegram Alerts (ไม่มีการส่ง order ไป MT4/MT5)
    */
-  approvalMode: "SEMI_AUTO",
+  approvalMode: "SIGNAL_ONLY",
 };
 
 /**
@@ -125,6 +125,7 @@ export async function evaluateAssetAutonomous(
 ): Promise<{
   scannerSummary: AssetScannerSummary;
   newOrder?: MtBridgeOrder;
+  analysis?: AnalysisResult;
   decisionTriggered: boolean;
 }> {
   const sym = symbol.toUpperCase();
@@ -197,25 +198,31 @@ export async function evaluateAssetAutonomous(
     tradeSetup.action !== "NO_TRADE" &&
     (orderType === "BUY_LIMIT" || orderType === "SELL_LIMIT" || orderType === "MARKET_EXECUTION");
 
+  const fivePillars = analysis.fiveCorePillars;
+  const isPillarsReady = fivePillars ? fivePillars.passedPillarsCount >= 2 : true;
+  const isConfluenceEligible =
+    setupGrade === "A+" ||
+    setupGrade === "A" ||
+    setupGrade === "B" ||
+    totalScore >= config.minConfluenceThreshold;
+
   // ─── SIGNAL_ONLY Mode: ไม่สร้าง order เลย ส่งแค่ log/Telegram ───
   if (config.approvalMode === "SIGNAL_ONLY") {
-    if (config.isEnabled && !isNewsFrozen && isSignalActionable &&
-        (setupGrade === "A+" || setupGrade === "A" || totalScore >= config.minConfluenceThreshold)) {
+    if (config.isEnabled && !isNewsFrozen && isSignalActionable && isConfluenceEligible) {
       decisionTriggered = true;
       addTelemetryLog(
         sym, "DECISION",
-        `[SIGNAL_ONLY] ${orderType} @ ${pendingPrice} — Grade ${setupGrade} | Score ${totalScore}% | ไม่สร้าง order (Signal Only Mode)`,
+        `[SIGNAL_ONLY | 5 Pillars: ${fivePillars?.passedPillarsCount ?? 0}/5] ${orderType} @ ${pendingPrice} — Grade ${setupGrade} | Score ${totalScore}% (Web Signal + Telegram Alert Ready)`,
         totalScore, setupGrade, { price: pendingPrice, sl: slPrice, tp1: tp1Price }
       );
     }
-    return { scannerSummary, newOrder: undefined, decisionTriggered };
+    return { scannerSummary, newOrder: undefined, analysis, decisionTriggered };
   }
 
   if (
     config.isEnabled &&
     !isNewsFrozen &&
-    !analysis.orchestrator?.vetoTriggered &&
-    (setupGrade === "A+" || setupGrade === "A" || totalScore >= config.minConfluenceThreshold) &&
+    isConfluenceEligible &&
     isSignalActionable
   ) {
     const effectiveOrderType = orderType === "MARKET_EXECUTION"
@@ -304,7 +311,7 @@ export async function evaluateAssetAutonomous(
     }
   }
 
-  return { scannerSummary, newOrder, decisionTriggered };
+  return { scannerSummary, newOrder, analysis, decisionTriggered };
 }
 
 /**
@@ -315,12 +322,14 @@ export async function scanWatchlistAutonomous(
 ): Promise<{
   summaries: AssetScannerSummary[];
   newOrders: MtBridgeOrder[];
+  actionableAnalyses: AnalysisResult[];
   timestamp: number;
 }> {
   pruneExpiredOrders();
 
   const summaries: AssetScannerSummary[] = [];
   const newOrders: MtBridgeOrder[] = [];
+  const actionableAnalyses: AnalysisResult[] = [];
 
   // Parallel scanning across watchlist assets
   const scanPromises = AUTONOMOUS_WATCHLIST.map(async (sym) => {
@@ -344,6 +353,9 @@ export async function scanWatchlistAutonomous(
       if (res.value.newOrder) {
         newOrders.push(res.value.newOrder);
       }
+      if (res.value.decisionTriggered && res.value.analysis) {
+        actionableAnalyses.push(res.value.analysis);
+      }
     }
   }
 
@@ -353,6 +365,7 @@ export async function scanWatchlistAutonomous(
   return {
     summaries,
     newOrders,
+    actionableAnalyses,
     timestamp: Date.now(),
   };
 }

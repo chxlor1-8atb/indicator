@@ -109,6 +109,11 @@ import {
   DarkPoolDealerGammaExposureInfo,
   SovereignSingularityAlphaInfo,
   ClassicTrioInfo,
+  PivotPointsInfo,
+  ClusteredSRInfo,
+  SREntry,
+  AutoFibonacciInfo,
+  FiveCorePillarsEvaluation,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -8037,6 +8042,372 @@ export function calculateClassicTrio(
   };
 }
 
+/**
+ * ─── [เสาหลัก 1] Standard Floor & Fibonacci Pivot Points ───
+ * คำนวณจุด Pivot (P) พร้อมระดับแนวรับ (S1, S2, S3) และแนวต้าน (R1, R2, R3)
+ * คำนวณจาก High, Low, Close ของรอบ 24 แท่งเทียน (หรือรอบวันก่อนหน้า)
+ */
+export function calculateStandardPivotPoints(
+  candles: Candle[],
+  precision: number,
+  symbol = "XAUUSD"
+): PivotPointsInfo {
+  if (candles.length < 5) {
+    const cp = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      pivot: cp,
+      r1: cp, r2: cp, r3: cp,
+      s1: cp, s2: cp, s3: cp,
+      fibR1: cp, fibR2: cp, fibR3: cp,
+      fibS1: cp, fibS2: cp, fibS3: cp,
+      nearestLevelName: "P",
+      nearestLevelPrice: cp,
+      distancePips: 0,
+      marketPosition: "AT_PIVOT",
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการคำนวณ Pivot Points",
+    };
+  }
+
+  // ใช้ 24 แท่งเทียนก่อนหน้า (1 Day session) หรือครึ่งหนึ่งของข้อมูลถ้ามีน้อย
+  const sessionWindow = Math.min(24, Math.floor(candles.length * 0.8));
+  const prevSlice = candles.slice(-sessionWindow - 1, -1);
+  const refSlice = prevSlice.length > 0 ? prevSlice : candles.slice(-sessionWindow);
+
+  const high = Math.max(...refSlice.map((c) => c.high));
+  const low = Math.min(...refSlice.map((c) => c.low));
+  const close = refSlice[refSlice.length - 1].close;
+  const currentPrice = candles[candles.length - 1].close;
+
+  // Classic Standard Floor Pivots
+  const P = Number(((high + low + close) / 3).toFixed(precision));
+  const R1 = Number((2 * P - low).toFixed(precision));
+  const S1 = Number((2 * P - high).toFixed(precision));
+  const R2 = Number((P + (high - low)).toFixed(precision));
+  const S2 = Number((P - (high - low)).toFixed(precision));
+  const R3 = Number((high + 2 * (P - low)).toFixed(precision));
+  const S3 = Number((low - 2 * (high - P)).toFixed(precision));
+
+  // Fibonacci Pivots
+  const range = high - low;
+  const fibR1 = Number((P + 0.382 * range).toFixed(precision));
+  const fibR2 = Number((P + 0.618 * range).toFixed(precision));
+  const fibR3 = Number((P + 1.000 * range).toFixed(precision));
+  const fibS1 = Number((P - 0.382 * range).toFixed(precision));
+  const fibS2 = Number((P - 0.618 * range).toFixed(precision));
+  const fibS3 = Number((P - 1.000 * range).toFixed(precision));
+
+  const isGold = symbol.includes("XAU") || symbol.includes("GOLD");
+  const isJpy = symbol.includes("JPY");
+  const pipMultiplier = isGold ? 10 : isJpy ? 100 : symbol.endsWith("USDT") ? 1 : 10000;
+
+  // หา Level ที่ใกล้ราคาปัจจุบันที่สุด
+  const levels = [
+    { name: "S3", price: S3 },
+    { name: "S2", price: S2 },
+    { name: "S1", price: S1 },
+    { name: "Pivot", price: P },
+    { name: "R1", price: R1 },
+    { name: "R2", price: R2 },
+    { name: "R3", price: R3 },
+  ];
+
+  let nearest = levels[0];
+  let minDiff = Infinity;
+  for (const lvl of levels) {
+    const diff = Math.abs(currentPrice - lvl.price);
+    if (diff < minDiff) {
+      minDiff = diff;
+      nearest = lvl;
+    }
+  }
+
+  const distancePips = Math.round(minDiff * pipMultiplier);
+  const pctFromPivot = P > 0 ? ((currentPrice - P) / P) * 100 : 0;
+
+  let marketPosition: PivotPointsInfo["marketPosition"] = "AT_PIVOT";
+  if (pctFromPivot > 0.08) marketPosition = "ABOVE_PIVOT_BULLISH";
+  else if (pctFromPivot < -0.08) marketPosition = "BELOW_PIVOT_BEARISH";
+
+  const description = `Pivot Point: P=${P} | แนวรับ: S1=${S1}, S2=${S2} | แนวต้าน: R1=${R1}, R2=${R2} (ราคาอยู่${marketPosition === "ABOVE_PIVOT_BULLISH" ? "เหนือ Pivot [Bullish Bias]" : marketPosition === "BELOW_PIVOT_BEARISH" ? "ใต้ Pivot [Bearish Bias]" : "ติด Pivot กลาง"})`;
+
+  return {
+    pivot: P,
+    r1: R1, r2: R2, r3: R3,
+    s1: S1, s2: S2, s3: S3,
+    fibR1, fibR2, fibR3,
+    fibS1, fibS2, fibS3,
+    nearestLevelName: nearest.name,
+    nearestLevelPrice: nearest.price,
+    distancePips,
+    marketPosition,
+    description,
+  };
+}
+
+/**
+ * ─── [เสาหลัก 2] Auto Support & Resistance / Multi-Touch Clustered S&R (LonesomeTheBlue style) ───
+ * สแกน Swing Points ย้อนหลัง จัดกลุ่มราคาที่มีการสัมผัสซ้ำ (Cluster)
+ * และคำนวณ Strength Score (1-100) ตามจำนวนครั้งที่ราคามาทดสอบจริง
+ */
+export function calculateClusteredSupportResistance(
+  candles: Candle[],
+  precision: number,
+  currentATR = 1.0,
+  lookback = 120,
+  symbol = "XAUUSD"
+): ClusteredSRInfo {
+  if (candles.length < 10) {
+    return {
+      supports: [],
+      resistances: [],
+      channelWidthPips: 0,
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการสร้าง Clustered S&R",
+    };
+  }
+
+  const isGold = symbol.includes("XAU") || symbol.includes("GOLD");
+  const isJpy = symbol.includes("JPY");
+  const pipMultiplier = isGold ? 10 : isJpy ? 100 : symbol.endsWith("USDT") ? 1 : 10000;
+
+  const currentPrice = candles[candles.length - 1].close;
+  const recentSlice = candles.slice(-Math.min(lookback, candles.length));
+  const clusterRadius = Math.max(currentATR * 0.35, currentPrice * 0.001);
+
+  // 1. หา Swing Highs และ Swing Lows (Left 2, Right 2)
+  interface RawPoint { price: number; type: "HIGH" | "LOW"; index: number }
+  const rawPoints: RawPoint[] = [];
+
+  for (let i = 2; i < recentSlice.length - 2; i++) {
+    const c = recentSlice[i];
+    const isSwingHigh =
+      c.high > recentSlice[i - 1].high &&
+      c.high > recentSlice[i - 2].high &&
+      c.high >= recentSlice[i + 1].high &&
+      c.high >= recentSlice[i + 2].high;
+
+    const isSwingLow =
+      c.low < recentSlice[i - 1].low &&
+      c.low < recentSlice[i - 2].low &&
+      c.low <= recentSlice[i + 1].low &&
+      c.low <= recentSlice[i + 2].low;
+
+    if (isSwingHigh) rawPoints.push({ price: c.high, type: "HIGH", index: i });
+    if (isSwingLow) rawPoints.push({ price: c.low, type: "LOW", index: i });
+  }
+
+  // 2. จัดกลุ่ม Clustering ที่ระดับราคาใกล้เคียงกัน
+  interface Cluster {
+    prices: number[];
+    type: "SUPPORT" | "RESISTANCE";
+    touchCount: number;
+    avgPrice: number;
+  }
+
+  const clusters: Cluster[] = [];
+
+  for (const pt of rawPoints) {
+    let matched = false;
+    for (const cl of clusters) {
+      if (Math.abs(pt.price - cl.avgPrice) <= clusterRadius) {
+        cl.prices.push(pt.price);
+        cl.touchCount++;
+        cl.avgPrice = Number((cl.prices.reduce((a, b) => a + b, 0) / cl.prices.length).toFixed(precision));
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      clusters.push({
+        prices: [pt.price],
+        type: pt.price >= currentPrice ? "RESISTANCE" : "SUPPORT",
+        touchCount: 1,
+        avgPrice: Number(pt.price.toFixed(precision)),
+      });
+    }
+  }
+
+  // 3. กรองและคำนวณ Strength Score
+  const supports: SREntry[] = [];
+  const resistances: SREntry[] = [];
+
+  for (const cl of clusters) {
+    const distPips = Math.round(Math.abs(cl.avgPrice - currentPrice) * pipMultiplier);
+    const strength = Math.min(100, Math.round(cl.touchCount * 25 + (distPips < 50 ? 20 : 0)));
+
+    const entry: SREntry = {
+      price: cl.avgPrice,
+      touchCount: cl.touchCount,
+      strength,
+      type: cl.avgPrice >= currentPrice ? "RESISTANCE" : "SUPPORT",
+      distancePips: distPips,
+    };
+
+    if (entry.type === "RESISTANCE") {
+      resistances.push(entry);
+    } else {
+      supports.push(entry);
+    }
+  }
+
+  // เรียงลำดับ: แนวรับที่ใกล้ที่สุดมาก่อน, แนวต้านที่ใกล้ที่สุดมาก่อน
+  supports.sort((a, b) => b.price - a.price);
+  resistances.sort((a, b) => a.price - b.price);
+
+  const topSupports = supports.slice(0, 3);
+  const topResistances = resistances.slice(0, 3);
+
+  const nearestSupport = topSupports[0];
+  const nearestResistance = topResistances[0];
+
+  const channelWidthPips = nearestSupport && nearestResistance
+    ? Math.round(Math.abs(nearestResistance.price - nearestSupport.price) * pipMultiplier)
+    : 0;
+
+  const description = `Auto S&R: แนวต้านใกล้สุด ${nearestResistance ? `${nearestResistance.price} (${nearestResistance.touchCount}x สัมผัส)` : "None"} | แนวรับใกล้สุด ${nearestSupport ? `${nearestSupport.price} (${nearestSupport.touchCount}x สัมผัส)` : "None"} | กว้าง ${channelWidthPips} pips`;
+
+  return {
+    supports: topSupports,
+    resistances: topResistances,
+    nearestSupport,
+    nearestResistance,
+    channelWidthPips,
+    description,
+  };
+}
+
+/**
+ * ─── [เสาหลัก 3] Auto Fibonacci Retracement (23.6%, 38.2%, 50.0%, 61.8%, 78.6%) ───
+ * จับ Swing High และ Swing Low ล่าสุดอัตโนมัติ คำนวณระดับทองคำและระบุสถานะการย่อตัว
+ */
+export function calculateAutoFibonacciRetracement(
+  candles: Candle[],
+  precision: number,
+  lookback = 80
+): AutoFibonacciInfo {
+  if (candles.length < 10) {
+    const cp = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      swingHigh: cp,
+      swingLow: cp,
+      trendDirection: "UP",
+      fib0: cp, fib236: cp, fib382: cp, fib500: cp, fib618: cp, fib786: cp, fib100: cp,
+      currentZone: "EXTENSION",
+      isPullbackActive: false,
+      recommendedEntryLevel: cp,
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับ Auto Fibonacci",
+    };
+  }
+
+  const currentPrice = candles[candles.length - 1].close;
+  const recentSlice = candles.slice(-Math.min(lookback, candles.length));
+
+  let maxHigh = -Infinity;
+  let maxHighIdx = 0;
+  let minLow = Infinity;
+  let minLowIdx = 0;
+
+  for (let i = 0; i < recentSlice.length; i++) {
+    if (recentSlice[i].high > maxHigh) {
+      maxHigh = recentSlice[i].high;
+      maxHighIdx = i;
+    }
+    if (recentSlice[i].low < minLow) {
+      minLow = recentSlice[i].low;
+      minLowIdx = i;
+    }
+  }
+
+  // ทิศทางเทรนด์อิงจากลำดับก่อนหลังของ High และ Low ล่าสุด
+  const trendDirection: "UP" | "DOWN" = maxHighIdx >= minLowIdx ? "UP" : "DOWN";
+  const range = Math.max(maxHigh - minLow, 0.0001);
+
+  let fib0 = 0;
+  let fib236 = 0;
+  let fib382 = 0;
+  let fib500 = 0;
+  let fib618 = 0;
+  let fib786 = 0;
+  let fib100 = 0;
+  let recommendedEntryLevel = 0;
+
+  if (trendDirection === "UP") {
+    // เทรนด์ขึ้น: Swing Low = 100%, Swing High = 0% (วัดการย่อตัวลงมา)
+    fib0 = Number(maxHigh.toFixed(precision));
+    fib236 = Number((maxHigh - 0.236 * range).toFixed(precision));
+    fib382 = Number((maxHigh - 0.382 * range).toFixed(precision));
+    fib500 = Number((maxHigh - 0.500 * range).toFixed(precision));
+    fib618 = Number((maxHigh - 0.618 * range).toFixed(precision)); // Golden Pocket
+    fib786 = Number((maxHigh - 0.786 * range).toFixed(precision)); // Deep OTE
+    fib100 = Number(minLow.toFixed(precision));
+    recommendedEntryLevel = fib618;
+  } else {
+    // เทรนด์ลง: Swing High = 100%, Swing Low = 0% (วัดการเด้งตัวขึ้นไป)
+    fib0 = Number(minLow.toFixed(precision));
+    fib236 = Number((minLow + 0.236 * range).toFixed(precision));
+    fib382 = Number((minLow + 0.382 * range).toFixed(precision));
+    fib500 = Number((minLow + 0.500 * range).toFixed(precision));
+    fib618 = Number((minLow + 0.618 * range).toFixed(precision));
+    fib786 = Number((minLow + 0.786 * range).toFixed(precision));
+    fib100 = Number(maxHigh.toFixed(precision));
+    recommendedEntryLevel = fib618;
+  }
+
+  // ระบุสถานะตำแหน่งของราคาเทียบกับโซน Fibonacci
+  let currentZone: AutoFibonacciInfo["currentZone"] = "EXTENSION";
+  let isPullbackActive = false;
+
+  if (trendDirection === "UP") {
+    if (currentPrice <= fib382 && currentPrice > fib500) {
+      currentZone = "SHALLOW_PULLBACK_382";
+      isPullbackActive = true;
+    } else if (currentPrice <= fib500 && currentPrice >= fib618) {
+      currentZone = "GOLDEN_POCKET_50_618";
+      isPullbackActive = true;
+    } else if (currentPrice < fib618 && currentPrice >= fib786) {
+      currentZone = "DEEP_PULLBACK_786";
+      isPullbackActive = true;
+    } else if (currentPrice < fib100) {
+      currentZone = "BREAKOUT";
+    } else {
+      currentZone = "EXTENSION";
+    }
+  } else {
+    if (currentPrice >= fib382 && currentPrice < fib500) {
+      currentZone = "SHALLOW_PULLBACK_382";
+      isPullbackActive = true;
+    } else if (currentPrice >= fib500 && currentPrice <= fib618) {
+      currentZone = "GOLDEN_POCKET_50_618";
+      isPullbackActive = true;
+    } else if (currentPrice > fib618 && currentPrice <= fib786) {
+      currentZone = "DEEP_PULLBACK_786";
+      isPullbackActive = true;
+    } else if (currentPrice > fib100) {
+      currentZone = "BREAKOUT";
+    } else {
+      currentZone = "EXTENSION";
+    }
+  }
+
+  const description = `Auto Fib (${trendDirection}): High=${maxHigh}, Low=${minLow} | 50%=${fib500}, 61.8%=${fib618} (โซนปัจจุบัน: ${currentZone})`;
+
+  return {
+    swingHigh: maxHigh,
+    swingLow: minLow,
+    trendDirection,
+    fib0,
+    fib236,
+    fib382,
+    fib500,
+    fib618,
+    fib786,
+    fib100,
+    currentZone,
+    isPullbackActive,
+    recommendedEntryLevel,
+    description,
+  };
+}
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -8085,6 +8456,12 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const obv = calculateOBV(candles);
   const fvgs = detectFairValueGaps(cleanCandles, atr14);
   const { support, resistance } = calculateSupportResistance(cleanCandles);
+  const latestATR = atr14.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Math.max(currentPrice * 0.005, 0.5);
+
+  // ─── 5 Core Pillars Computations ───
+  const pivotPoints = calculateStandardPivotPoints(candles, precision, sym);
+  const clusteredSR = calculateClusteredSupportResistance(cleanCandles, precision, latestATR, 120, sym);
+  const autoFibonacci = calculateAutoFibonacciRetracement(cleanCandles, precision, 80);
 
   // Batch 1: Quant-grade Accuracy Indicators
   const heikinAshi = calculateHeikinAshi(candles);
@@ -8109,7 +8486,6 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const anchoredVwap = calculateAnchoredVWAP(cleanCandles, precision);
   const cvd = calculateCumulativeVolumeDelta(cleanCandles);
   const orderBlocks = identifyOrderBlocksAndBreakers(cleanCandles, precision);
-  const latestATR = atr14.filter((v): v is number => v !== null && !isNaN(v)).pop() || 1.0;
   const priceFeedIntegrity = calculatePriceFeedIntegrity(currentPrice, symbol, latestATR);
 
   // Batch 6: Plans 26, 27, 28, 29, 30
@@ -8288,8 +8664,8 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     adx,
     obv,
     fvgs,
-    supportLevels: support,
-    resistanceLevels: resistance,
+    supportLevels: clusteredSR.supports.length > 0 ? clusteredSR.supports.map((s) => s.price) : support,
+    resistanceLevels: clusteredSR.resistances.length > 0 ? clusteredSR.resistances.map((r) => r.price) : resistance,
     currentPrice,
     priceChange24h,
     priceChangePercent24h,
@@ -8383,5 +8759,8 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     darkPoolDealerGamma,
     sovereignSingularityAlpha,
     classicTrio,
+    pivotPoints,
+    clusteredSR,
+    autoFibonacci,
   };
 }
