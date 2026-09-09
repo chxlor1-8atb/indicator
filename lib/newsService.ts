@@ -57,7 +57,7 @@ function parseRssItems(xmlText: string, source: string): NewsItem[] {
   const items: NewsItem[] = [];
   const itemMatches = xmlText.match(/<item[\s\S]*?<\/item>/gi) || [];
 
-  for (const itemXml of itemMatches.slice(0, 8)) {
+  for (const itemXml of itemMatches.slice(0, 20)) {
     const title = extractTagValue(itemXml, "title");
     let description = extractTagValue(itemXml, "description");
     let link = extractTagRaw(itemXml, "link");
@@ -147,14 +147,18 @@ function parseRssItems(xmlText: string, source: string): NewsItem[] {
 
 function detectRelatedSymbols(text: string): string[] {
   const symbols: string[] = [];
-  if (text.includes("gold") || text.includes("xau") || text.includes("bullion")) symbols.push("XAUUSD");
-  if (text.includes("oil") || text.includes("crude") || text.includes("opec") || text.includes("energy")) symbols.push("USOIL");
+  if (text.includes("gold") || text.includes("xau") || text.includes("bullion") || text.includes("precious metal") || text.includes("silver")) symbols.push("XAUUSD");
+  if (text.includes("oil") || text.includes("crude") || text.includes("opec") || text.includes("energy") || text.includes("brent") || text.includes("wti")) symbols.push("USOIL");
   if (text.includes("bitcoin") || text.includes("btc")) symbols.push("BTCUSDT");
   if (text.includes("ethereum") || text.includes("eth")) symbols.push("ETHUSDT");
   if (text.includes("solana") || text.includes("sol")) symbols.push("SOLUSDT");
-  if (text.includes("euro") || text.includes("ecb")) symbols.push("EURUSD");
-  if (text.includes("dollar") || text.includes("fed") || text.includes("treasury") || text.includes("fomc")) symbols.push("XAUUSD", "EURUSD", "SPY");
-  if (text.includes("s&p") || text.includes("wall street") || text.includes("stocks")) symbols.push("SPY");
+  if (text.includes("euro") || text.includes("ecb") || text.includes("eur")) symbols.push("EURUSD");
+  if (text.includes("yen") || text.includes("boj") || text.includes("jpy") || text.includes("japan")) symbols.push("USDJPY", "GBPJPY", "EURJPY");
+  if (text.includes("pound") || text.includes("boe") || text.includes("gbp") || text.includes("uk")) symbols.push("GBPUSD", "GBPJPY");
+  if (text.includes("dollar") || text.includes("fed") || text.includes("treasury") || text.includes("fomc") || text.includes("powell") || text.includes("cpi") || text.includes("inflation") || text.includes("rate cut") || text.includes("rate hike")) {
+    symbols.push("XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "SPY");
+  }
+  if (text.includes("s&p") || text.includes("wall street") || text.includes("stocks") || text.includes("nasdaq") || text.includes("dow")) symbols.push("SPY");
   if (text.includes("nvidia") || text.includes("ai chip")) symbols.push("NVDA");
   if (text.includes("tesla") || text.includes("musk") || text.includes("ev")) symbols.push("TSLA");
   return symbols;
@@ -165,7 +169,7 @@ interface CachedNews {
   timestamp: number;
 }
 let memoryNewsCache: CachedNews | null = null;
-const NEWS_CACHE_TTL_MS = 90 * 1000; // 90s memory cache to eliminate redundant RSS roundtrips
+const NEWS_CACHE_TTL_MS = 60 * 1000; // 60s memory cache for ultra-fresh news
 
 export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
   const now = Date.now();
@@ -177,12 +181,40 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
 
   const feeds = [
     {
+      url: "https://www.fxstreet.com/rss/news",
+      source: "FXStreet News",
+    },
+    {
+      url: "https://www.fxstreet.com/rss/analysis",
+      source: "FXStreet Analysis",
+    },
+    {
+      url: "https://finance.yahoo.com/rss/commodities",
+      source: "Yahoo Commodities",
+    },
+    {
       url: "https://finance.yahoo.com/news/rssindex",
       source: "Yahoo Finance",
     },
     {
-      url: "https://news.google.com/rss/search?q=Federal+Reserve+Inflation+Gold+Forex+Bitcoin&hl=en-US&gl=US&ceid=US:en",
-      source: "Google Financial News",
+      url: "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+      source: "MarketWatch",
+    },
+    {
+      url: "https://news.google.com/rss/search?q=Gold+price+OR+XAUUSD+when:1d&hl=en-US&gl=US&ceid=US:en",
+      source: "Google News (Gold)",
+    },
+    {
+      url: "https://news.google.com/rss/search?q=Forex+trading+OR+EURUSD+when:1d&hl=en-US&gl=US&ceid=US:en",
+      source: "Google News (Forex)",
+    },
+    {
+      url: "https://news.google.com/rss/search?q=Federal+Reserve+Inflation+when:1d&hl=en-US&gl=US&ceid=US:en",
+      source: "Google News (Macro)",
+    },
+    {
+      url: "https://cointelegraph.com/rss",
+      source: "CoinTelegraph",
     },
     {
       url: "https://www.coindesk.com/arc/outboundfeeds/rss/",
@@ -193,8 +225,8 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
   const feedPromises = feeds.map(async (feed) => {
     try {
       const res = await fetch(feed.url, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(2500),
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        signal: AbortSignal.timeout(3500),
         next: { revalidate: 60 },
       });
       if (res.ok) {
@@ -214,10 +246,22 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
     }
   }
 
+  // Deduplicate articles by title similarity
+  const seenTitles = new Set<string>();
+  const dedupedNews = allNews.filter((n) => {
+    const key = n.title.toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 35);
+    if (seenTitles.has(key)) return false;
+    seenTitles.add(key);
+    return true;
+  });
+
+  // Sort by published date descending (Latest news first)
+  dedupedNews.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
   // Fallback news if external feeds are blocked
   // ⚠️ sentimentConfidence = 0.0: ห้ามให้ข่าว hardcoded นี้ส่งผลต่อ confluence engine
-  if (allNews.length === 0) {
-    allNews.push(
+  if (dedupedNews.length === 0) {
+    dedupedNews.push(
       {
         id: "fallback-1",
         title: "Federal Reserve Signals Data-Dependent Approach on Future Interest Rate Moves",
@@ -277,12 +321,12 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
     );
   }
 
-  if (allNews.length > 0) {
+  if (dedupedNews.length > 0) {
     memoryNewsCache = {
-      data: allNews,
+      data: dedupedNews,
       timestamp: Date.now(),
     };
   }
 
-  return allNews;
+  return dedupedNews;
 }
