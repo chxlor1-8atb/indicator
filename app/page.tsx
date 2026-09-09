@@ -7,8 +7,9 @@ import AssetSelector from "@/components/AssetSelector";
 import NewsFeed from "@/components/NewsFeed";
 import AnalysisCard from "@/components/AnalysisCard";
 import SignalJournalCard from "@/components/SignalJournalCard";
+import MarketOpportunityRadar from "@/components/MarketOpportunityRadar";
 import TelegramSettingsModal from "@/components/TelegramSettingsModal";
-import { Candle, IndicatorData, NewsItem, AnalysisResult } from "@/lib/types";
+import { Candle, IndicatorData, NewsItem, AnalysisResult, AssetScannerSummary } from "@/lib/types";
 import { calculateAllIndicators } from "@/lib/indicators";
 import { Bot, Radio, Zap, ShieldCheck, Activity } from "lucide-react";
 
@@ -66,6 +67,8 @@ export default function DashboardPage() {
   const [activeBridgeOrders, setActiveBridgeOrders] = useState<any[]>([]);
   const [latestTelemetry, setLatestTelemetry] = useState<string>("ระบบ AI ตัดสินใจอัตโนมัติทำงาน • Watchlist ซิงค์เรียลไทม์ 100%");
   const [lastSyncTime, setLastSyncTime] = useState<string>("เพิ่งอัปเดต");
+  const [scannerSummaries, setScannerSummaries] = useState<AssetScannerSummary[]>([]);
+  const [isLoadingScanner, setIsLoadingScanner] = useState<boolean>(true);
 
   // Fetch Market Candles & Technicals (Ultra-fresh with cache-busting)
   const loadMarketData = useCallback(async (symbol: string, tf: string, isSilent = false) => {
@@ -329,8 +332,6 @@ export default function DashboardPage() {
 
   // Continuous Real-Time Autonomous Scanner Loop (adaptive 25s cadence to prevent rate limits & serverless load)
   useEffect(() => {
-    if (!isAutoPilot) return;
-
     let isMounted = true;
     const runAutonomousSync = async () => {
       if (!isMounted) return;
@@ -343,11 +344,15 @@ export default function DashboardPage() {
           const data = await res.json();
           if (data.success) {
             if (data.activeOrders) setActiveBridgeOrders(data.activeOrders);
+            if (data.scannerSummaries && data.scannerSummaries.length > 0) {
+              setScannerSummaries(data.scannerSummaries);
+            }
             if (data.telemetryLogs && data.telemetryLogs.length > 0) {
               setLatestTelemetry(data.telemetryLogs[0].message);
             }
             const now = new Date();
             setLastSyncTime(now.toTimeString().split(" ")[0]);
+            setIsLoadingScanner(false);
           }
         }
       } catch {
@@ -355,7 +360,7 @@ export default function DashboardPage() {
       }
     };
 
-    const initialTimer = setTimeout(runAutonomousSync, 2000);
+    const initialTimer = setTimeout(runAutonomousSync, 1000);
     const syncInterval = setInterval(runAutonomousSync, 25000);
 
     return () => {
@@ -363,7 +368,21 @@ export default function DashboardPage() {
       clearTimeout(initialTimer);
       clearInterval(syncInterval);
     };
-  }, [isAutoPilot]);
+  }, []);
+
+  const handleToggleAutoPilot = async () => {
+    const nextVal = !isAutoPilot;
+    setIsAutoPilot(nextVal);
+    try {
+      await fetch("/api/autonomous-scanner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isEnabled: nextVal }),
+      });
+    } catch (err) {
+      console.error("Failed to update auto-pilot on server:", err);
+    }
+  };
 
   // Auto trigger AI analysis immediately on mount and debounced on change
   const isInitialMount = useRef(true);
@@ -441,7 +460,7 @@ export default function DashboardPage() {
 
             {/* Auto-Pilot Toggle Button */}
             <button
-              onClick={() => setIsAutoPilot((prev) => !prev)}
+              onClick={handleToggleAutoPilot}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-sm ${
                 isAutoPilot
                   ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/30 shadow-emerald-600/20"
@@ -453,6 +472,17 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
+
+        {/* Live Multi-Asset Opportunity Radar (15+ Assets Institutional Confluence Scanner) */}
+        <MarketOpportunityRadar
+          summaries={scannerSummaries}
+          selectedAsset={selectedAsset}
+          onSelectAsset={(sym) => {
+            setSelectedAsset(sym);
+          }}
+          lastSyncTime={lastSyncTime}
+          isLoading={isLoadingScanner && scannerSummaries.length === 0}
+        />
 
         {/* Asset & Timeframe Bar */}
         <AssetSelector
