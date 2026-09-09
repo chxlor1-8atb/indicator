@@ -214,14 +214,13 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
   if (!sql) return { saved: false, reason: "No database connection" };
   const { symbol, timeframe, signal, tradeSetup, masterConfluence, setupGrade } = analysis;
 
-  // Only store high-conviction Grade A and A+ actionable trades (Confluence >= 75)
+  // Store all actionable trades (Grade B, B+, A, A+ with Confluence >= 52)
   if (
     signal === "WAIT" ||
     tradeSetup.orderType === "WAIT_NO_ORDER" ||
-    (masterConfluence && masterConfluence.totalScore < 75) ||
-    (setupGrade && (setupGrade.includes("B") || setupGrade.includes("C")) && (!masterConfluence || masterConfluence.totalScore < 75))
+    (masterConfluence && masterConfluence.totalScore < 52)
   ) {
-    return { saved: false, reason: "Signal skipped: Below Grade A sniper threshold (Confluence < 75)" };
+    return { saved: false, reason: "Signal skipped: Non-actionable or below confluence threshold (< 52)" };
   }
 
   try {
@@ -393,7 +392,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
     const updates: Promise<unknown>[] = [];
 
     for (const sig of activeSignals) {
-      const isBuy = sig.action === "BUY";
+      const isBuy = sig.action.includes("BUY");
       const sym = symbol.toUpperCase();
       const isGold = sym.includes("XAU") || sym === "GOLD";
       const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some((c) => sym.includes(c));
