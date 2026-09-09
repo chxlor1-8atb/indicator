@@ -368,6 +368,19 @@ export default function AnalysisCard({
             <span>Grade: {analysis.setupGrade || "A"} Setup</span>
           </div>
 
+          {/* Analysis Timestamp */}
+          {analysis.timestamp && (
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-100 border border-slate-700/80 text-xs font-mono text-slate-300"
+              title="เวลาที่ระบบรันการสังเคราะห์ AI ล่าสุด"
+            >
+              <Clock className="w-3.5 h-3.5 text-indigo-400" />
+              <span>
+                วิเคราะห์เมื่อ: {new Date(analysis.timestamp).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </span>
+            </div>
+          )}
+
           {/* Confluence Score Gauge */}
           <div>
             <div className="flex items-center gap-2">

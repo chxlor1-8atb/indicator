@@ -31,7 +31,8 @@ export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
   minConfluenceThreshold: 75, // Grade A sniper entry
   riskPercentPerTrade: 1.5,
   accountType: "STANDARD",
-  scanIntervalMs: 8000,
+  scanIntervalMs: 25000,
+  approvalMode: "AUTO",
 };
 
 /**
@@ -207,6 +208,7 @@ export async function evaluateAssetAutonomous(
       decisionTriggered = true;
       const lotSize = config.accountType === "CENT" ? 0.10 : 0.02;
 
+      const requiresApproval = config.approvalMode === "SEMI_AUTO";
       newOrder = {
         id: `ord_${sym}_${Date.now()}`,
         symbol: sym,
@@ -219,12 +221,16 @@ export async function evaluateAssetAutonomous(
         confluenceScore: totalScore,
         setupGrade,
         comment: `Aegis_Auto_${setupGrade.split(" ")[0]}`,
-        status: "PENDING",
+        status: requiresApproval ? "PENDING_HUMAN_APPROVAL" : "PENDING",
         timestamp: Date.now(),
         expiresAt: Date.now() + 4 * 60 * 60 * 1000, // 4 hours validity
+        aiRiskFlags: [],
+        requiresHumanApproval: requiresApproval,
       };
 
-      activeOrdersStore.set(newOrder.id, newOrder);
+      if (newOrder) {
+        activeOrdersStore.set(newOrder.id, newOrder);
+      }
 
       addTelemetryLog(
         sym,

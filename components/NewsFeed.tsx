@@ -9,9 +9,10 @@ interface NewsFeedProps {
   news: NewsItem[];
   isLoading: boolean;
   selectedAsset: string;
+  lastNewsTime?: number | null;
 }
 
-export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedProps) {
+export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime }: NewsFeedProps) {
   const [viewMode, setViewMode] = useState<"NEWS" | "CALENDAR">("NEWS");
   const [filter, setFilter] = useState<"ALL" | "RELEVANT" | "HIGH_IMPACT">("ALL");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -92,6 +93,11 @@ export default function NewsFeed({ news, isLoading, selectedAsset }: NewsFeedPro
             </h3>
             <p className="text-[11px] text-slate-400">
               {viewMode === "NEWS" ? "เกาะติดพาดหัวข่าวสำคัญระดับโลกแบบ Real-time" : "กล่องแดง 🔴 ส้ม 🟠 เหลือง 🟡 เทา ⚪ (เวลาไทย GMT+7)"}
+              {lastNewsTime && (
+                <span className="text-[10px] text-slate-500 font-mono ml-1.5 border-l border-slate-700 pl-1.5">
+                  ดึงข่าว: {new Date(lastNewsTime).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                </span>
+              )}
             </p>
           </div>
         </div>

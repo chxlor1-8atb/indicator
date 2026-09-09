@@ -90,14 +90,40 @@ function parseRssItems(xmlText: string, source: string): NewsItem[] {
       const bearishKeywords = ["plunge", "drop", "fall", "slump", "rate hike", "hawkish", "inflation spikes", "war", "selloff", "crash", "bearish", "tariff"];
       const highImpactKeywords = ["fed", "fomc", "powell", "cpi", "nfp", "interest rate", "sec", "central bank", "gdp", "geopolitical"];
 
-      const isBull = bullishKeywords.some((w) => lower.includes(w));
-      const isBear = bearishKeywords.some((w) => lower.includes(w));
+      // นับจำนวน keyword ที่ match แต่ละฝั่ง
+      const bullMatches = bullishKeywords.filter((w) => lower.includes(w));
+      const bearMatches = bearishKeywords.filter((w) => lower.includes(w));
+      const totalMatches = bullMatches.length + bearMatches.length;
+
+      const isBull = bullMatches.length > 0;
+      const isBear = bearMatches.length > 0;
+
+      // ถ้าขัดแย้งกัน → force NEUTRAL เพื่อป้องกัน hallucination
+      const isContradictory = isBull && isBear;
       if (isBull && !isBear) sentiment = "BULLISH";
       else if (isBear && !isBull) sentiment = "BEARISH";
+      // isContradictory → sentiment stays NEUTRAL (reset ไม่ให้ไปทางใดทางหนึ่ง)
 
       if (highImpactKeywords.some((w) => lower.includes(w))) {
         impact = "HIGH";
       }
+
+      // ─── SENTIMENT CONFIDENCE SCORING ───
+      // 0.0 = ไม่รู้เลย, 1.0 = มั่นใจมาก
+      let sentimentConfidence: number;
+      if (totalMatches === 0) {
+        // ไม่มี keyword match → แทบตีความไม่ได้
+        sentimentConfidence = 0.10;
+      } else if (isContradictory) {
+        // ฝั่งที่แพ้ยิ่งมาก → confidence ยิ่งต่ำ
+        const minSide = Math.min(bullMatches.length, bearMatches.length);
+        const maxSide = Math.max(bullMatches.length, bearMatches.length);
+        sentimentConfidence = Math.max(0.15, 0.30 - (minSide / (maxSide + 1)) * 0.15);
+      } else {
+        // One-sided: ยิ่ง match เยอะ ยิ่ง confident (cap 0.90)
+        sentimentConfidence = Math.min(0.90, 0.40 + totalMatches * 0.10);
+      }
+
 
       items.push({
         id: Buffer.from(title).toString("base64").substring(0, 16),
@@ -109,6 +135,9 @@ function parseRssItems(xmlText: string, source: string): NewsItem[] {
         sentiment,
         impact,
         relatedSymbols: detectRelatedSymbols(lower),
+        sentimentConfidence,
+        isContradictory,
+        isFallback: false,
       });
     }
   }
@@ -186,6 +215,7 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
   }
 
   // Fallback news if external feeds are blocked
+  // ⚠️ sentimentConfidence = 0.0: ห้ามให้ข่าว hardcoded นี้ส่งผลต่อ confluence engine
   if (allNews.length === 0) {
     allNews.push(
       {
@@ -198,6 +228,9 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
         sentiment: "NEUTRAL",
         impact: "HIGH",
         relatedSymbols: ["XAUUSD", "EURUSD", "SPY"],
+        sentimentConfidence: 0.0,
+        isContradictory: false,
+        isFallback: true,
       },
       {
         id: "fallback-2",
@@ -206,9 +239,12 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
         url: "https://finance.yahoo.com",
         source: "Commodity Insights",
         publishedAt: new Date().toISOString(),
-        sentiment: "BULLISH",
+        sentiment: "NEUTRAL",
         impact: "HIGH",
         relatedSymbols: ["XAUUSD"],
+        sentimentConfidence: 0.0,
+        isContradictory: false,
+        isFallback: true,
       },
       {
         id: "fallback-3",
@@ -217,9 +253,12 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
         url: "https://finance.yahoo.com",
         source: "MarketWatch",
         publishedAt: new Date().toISOString(),
-        sentiment: "BULLISH",
+        sentiment: "NEUTRAL",
         impact: "MEDIUM",
         relatedSymbols: ["NVDA", "SPY"],
+        sentimentConfidence: 0.0,
+        isContradictory: false,
+        isFallback: true,
       },
       {
         id: "fallback-4",
@@ -231,6 +270,9 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
         sentiment: "NEUTRAL",
         impact: "MEDIUM",
         relatedSymbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+        sentimentConfidence: 0.0,
+        isContradictory: false,
+        isFallback: true,
       }
     );
   }

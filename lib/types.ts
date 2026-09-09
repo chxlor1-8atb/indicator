@@ -727,6 +727,12 @@ export interface NewsItem {
   sentiment: "BULLISH" | "BEARISH" | "NEUTRAL";
   impact: "HIGH" | "MEDIUM" | "LOW";
   relatedSymbols: string[];
+  /** 0–1: ความน่าเชื่อถือของ sentiment ที่ตรวจจับได้ (ต่ำ = keyword น้อย/ขัดแย้ง) */
+  sentimentConfidence: number;
+  /** true = ข่าวมีทั้ง bullish และ bearish keywords ปะทะกัน → ตีความยาก */
+  isContradictory: boolean;
+  /** true = มาจาก fallback/hardcoded data ไม่ใช่ข่าวจริง */
+  isFallback?: boolean;
 }
 
 export interface ConfluenceCheckItem {
@@ -1825,9 +1831,17 @@ export interface MtBridgeOrder {
   confluenceScore: number;
   setupGrade: string;
   comment: string;
-  status: "PENDING" | "FILLED" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCELLED";
+  status: "PENDING_HUMAN_APPROVAL" | "PENDING" | "FILLED" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCELLED";
   timestamp: number;
   expiresAt: number;
+  /** Flags ที่ AI ตั้งใจให้มนุษย์ตรวจสอบก่อนส่ง order (เช่น "LOW_NEWS_CONFIDENCE", "NEWS_SIGNAL_CONFLICT") */
+  aiRiskFlags: string[];
+  /** true = ต้องรอมนุษย์ approve ก่อนจะส่งไป MT4/MT5 */
+  requiresHumanApproval: boolean;
+  /** ผู้ที่ approve (เช่น "HUMAN", หรือ username) */
+  approvedBy?: string;
+  /** Unix timestamp ที่ approve */
+  approvedAt?: number;
 }
 
 export interface TelemetryLog {
@@ -1850,6 +1864,13 @@ export interface AutonomousPilotConfig {
   riskPercentPerTrade: number;
   accountType: "STANDARD" | "CENT";
   scanIntervalMs: number;
+  /**
+   * โหมดการทำงานของ Autonomous Pilot:
+   * - "AUTO"        = สร้าง order และส่ง MT4/MT5 ทันที (ใช้เฉพาะ demo/paper trading)
+   * - "SEMI_AUTO"   = สร้าง order แต่ status = PENDING_HUMAN_APPROVAL รอมนุษย์ confirm
+   * - "SIGNAL_ONLY" = ไม่สร้าง order เลย ส่งเฉพาะ Telegram alert
+   */
+  approvalMode: "AUTO" | "SEMI_AUTO" | "SIGNAL_ONLY";
 }
 
 export interface ClassicTrioInfo {

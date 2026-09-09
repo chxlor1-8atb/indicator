@@ -55,6 +55,12 @@ export default function DashboardPage() {
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // ─── Data Freshness & Last Updated Timestamps (ข้อ 7) ───
+  const [marketLastUpdated, setMarketLastUpdated] = useState<number | null>(null);
+  const [newsLastUpdated, setNewsLastUpdated] = useState<number | null>(null);
+  const [analysisLastUpdated, setAnalysisLastUpdated] = useState<number | null>(null);
+  const [liveTickLastUpdated, setLiveTickLastUpdated] = useState<number | null>(null);
+
   // ─── Autonomous AI Auto-Pilot State ───
   const [isAutoPilot, setIsAutoPilot] = useState<boolean>(true);
   const [activeBridgeOrders, setActiveBridgeOrders] = useState<any[]>([]);
@@ -72,6 +78,9 @@ export default function DashboardPage() {
       if (data.success && data.candles && data.candles.length > 0) {
         setCandles(data.candles);
         setIndicators(data.indicators);
+        const t = data.timestamp || Date.now();
+        setMarketLastUpdated(t);
+        setLiveTickLastUpdated(t);
       }
     } catch (err) {
       console.error("Failed to load market data:", err);
@@ -89,6 +98,7 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.success) {
         setNews(data.news);
+        setNewsLastUpdated(data.timestamp || Date.now());
       }
     } catch (err) {
       console.error("Failed to load news:", err);
@@ -120,6 +130,7 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.success && data.analysis) {
         setAnalysis(data.analysis);
+        setAnalysisLastUpdated(Date.now());
       }
     } catch (err) {
       console.error("AI Analysis failed:", err);
@@ -189,15 +200,20 @@ export default function DashboardPage() {
       (selectedAsset.length === 6 && !selectedAsset.includes("USDT"));
 
     if (isInstitutionalAsset) {
-      // Direct TradingView Institutional OANDA/Interbank Feed Polling (every 1.5s)
+      // Direct TradingView Institutional OANDA/Interbank Feed Polling (adaptive 2.5s active / 12s inactive)
       const pollLiveTicker = async () => {
         if (!isMounted) return;
+        // If tab is in background, skip some polls to conserve bandwidth and prevent rate limiting
+        if (typeof document !== "undefined" && document.hidden && Math.random() > 0.25) {
+          return;
+        }
         try {
           const res = await fetch(`/api/live-ticker?symbol=${selectedAsset}`, { cache: "no-store" });
           if (res.ok) {
             const data = await res.json();
             if (data.success && typeof data.price === "number" && data.price > 0 && isMounted) {
               const livePrice = data.price;
+              setLiveTickLastUpdated(data.timestamp || Date.now());
               setCandles((prevCandles) => {
                 if (prevCandles.length === 0) return prevCandles;
                 const newCandles = [...prevCandles];
@@ -220,9 +236,9 @@ export default function DashboardPage() {
         }
       };
 
-      // Poll immediately and then every 1500ms
+      // Poll immediately and then every 2500ms
       pollLiveTicker();
-      tickerInterval = setInterval(pollLiveTicker, 1500);
+      tickerInterval = setInterval(pollLiveTicker, 2500);
     } else {
       // Map symbol to Binance Live Trade WebSocket for Cryptocurrencies
       let wsSymbol: string | null = null;
@@ -265,6 +281,7 @@ export default function DashboardPage() {
                   ...prev,
                   currentPrice: formattedPrice,
                 }));
+                setLiveTickLastUpdated(Date.now());
               }
             } catch {
               // Ignore malformed tick
@@ -310,13 +327,16 @@ export default function DashboardPage() {
     };
   }, [selectedAsset, selectedTimeframe, loadMarketData, loadNews]);
 
-  // Continuous Real-Time Autonomous Scanner Loop (every 8 seconds)
+  // Continuous Real-Time Autonomous Scanner Loop (adaptive 25s cadence to prevent rate limits & serverless load)
   useEffect(() => {
     if (!isAutoPilot) return;
 
     let isMounted = true;
     const runAutonomousSync = async () => {
       if (!isMounted) return;
+      // Skip autonomous scan when user is not viewing the tab
+      if (typeof document !== "undefined" && document.hidden) return;
+
       try {
         const res = await fetch(`/api/autonomous-scanner?scan=true&_t=${Date.now()}`);
         if (res.ok && isMounted) {
@@ -336,7 +356,7 @@ export default function DashboardPage() {
     };
 
     const initialTimer = setTimeout(runAutonomousSync, 2000);
-    const syncInterval = setInterval(runAutonomousSync, 8000);
+    const syncInterval = setInterval(runAutonomousSync, 25000);
 
     return () => {
       isMounted = false;
@@ -372,6 +392,7 @@ export default function DashboardPage() {
         onRefreshAll={handleRefreshAll}
         isLoading={isLoadingMarket || isLoadingNews || isAnalyzing}
         onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+        lastSyncTimestamp={liveTickLastUpdated || marketLastUpdated}
       />
 
       {/* Main Container */}
@@ -444,6 +465,7 @@ export default function DashboardPage() {
           currentPrice={indicators.currentPrice}
           priceChangePercent={indicators.priceChangePercent24h}
           isLoadingPrice={isLoadingMarket || !indicators.currentPrice || indicators.currentPrice <= 0}
+          lastPriceUpdate={liveTickLastUpdated || marketLastUpdated}
         />
 
         {/* 2-Column Responsive Grid Layout */}
@@ -458,6 +480,7 @@ export default function DashboardPage() {
               timeframe={selectedTimeframe}
               isLiveUpdating={true}
               optimizedConfig={analysis?.optimizedConfig}
+              lastTickTime={liveTickLastUpdated || marketLastUpdated}
             />
 
             {/* AI Hybrid Analysis & Signals Card (3-Tier Hierarchy & Auto-Tuning inside) */}
@@ -480,6 +503,7 @@ export default function DashboardPage() {
                 news={news}
                 isLoading={isLoadingNews}
                 selectedAsset={selectedAsset}
+                lastNewsTime={newsLastUpdated}
               />
             </div>
           </div>
