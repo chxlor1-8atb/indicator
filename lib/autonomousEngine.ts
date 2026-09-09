@@ -14,14 +14,23 @@ const activeOrdersStore = new Map<string, MtBridgeOrder>();
 const telemetryLogsStore: TelemetryLog[] = [];
 const MAX_LOGS = 60;
 
-// Watchlist of high-conviction institutional assets
+// Watchlist of high-conviction institutional assets (Gold, Oil, Silver, Crypto, Forex Majors & Crosses)
 export const AUTONOMOUS_WATCHLIST = [
   "XAUUSD",
   "BTCUSDT",
-  "ETHUSDT",
   "EURUSD",
   "GBPUSD",
+  "USDJPY",
+  "ETHUSDT",
+  "SOLUSDT",
   "USOIL",
+  "XAGUSD",
+  "GBPJPY",
+  "EURJPY",
+  "AUDUSD",
+  "USDCAD",
+  "USDCHF",
+  "NZDUSD",
 ];
 
 export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
