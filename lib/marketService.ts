@@ -154,8 +154,17 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
 
 export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKey: string): Promise<Candle[]> {
   try {
-    const timespan = interval === "1D" ? "day" : interval === "4h" ? "hour" : interval === "15m" ? "minute" : "hour";
-    const multiplier = interval === "15m" ? 15 : interval === "4h" ? 4 : 1;
+    const timespan =
+      interval === "1W" ? "week" :
+      interval === "1D" ? "day" :
+      interval === "4h" ? "hour" :
+      interval === "1h" ? "hour" : "minute";
+    const multiplier =
+      interval === "1m" ? 1 :
+      interval === "5m" ? 5 :
+      interval === "15m" ? 15 :
+      interval === "30m" ? 30 :
+      interval === "4h" ? 4 : 1;
     
     let ticker = symbol;
     if (symbol.length === 6 && !symbol.includes("USDT") && !symbol.startsWith("C:")) {
@@ -167,7 +176,14 @@ export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKe
     }
 
     const toDate = new Date().toISOString().split("T")[0];
-    const daysBack = interval === "1D" ? 365 : interval === "4h" ? 90 : interval === "15m" ? 10 : 45;
+    const daysBack =
+      interval === "1m" ? 2 :
+      interval === "5m" ? 5 :
+      interval === "15m" ? 15 :
+      interval === "30m" ? 30 :
+      interval === "4h" ? 90 :
+      interval === "1D" ? 365 :
+      interval === "1W" ? 1000 : 45;
     const fromDate = new Date(Date.now() - daysBack * 86400000).toISOString().split("T")[0];
 
     const url = `https://api.massive.com/v2/aggs/ticker/${ticker}/range/${multiplier}/${timespan}/${fromDate}/${toDate}?adjusted=true&sort=desc&limit=250&apiKey=${apiKey}`;
@@ -196,10 +212,14 @@ export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKe
 
 export async function fetchCryptoCandles(symbol: string, interval = "1h", limit = 500): Promise<Candle[]> {
   const binanceIntervalMap: Record<string, string> = {
+    "1m": "1m",
+    "5m": "5m",
     "15m": "15m",
+    "30m": "30m",
     "1h": "1h",
     "4h": "4h",
     "1D": "1d",
+    "1W": "1w",
   };
   const intervalKey = binanceIntervalMap[interval] || "1h";
   const bSymbol = symbol.endsWith("USDT") ? symbol : `${symbol}USDT`;
@@ -343,13 +363,24 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
   }
 
   const yahooIntervalMap: Record<string, string> = {
+    "1m": "1m",
+    "5m": "5m",
     "15m": "15m",
+    "30m": "30m",
     "1h": "60m",
     "4h": "60m",
     "1D": "1d",
+    "1W": "1wk",
   };
   const yInterval = yahooIntervalMap[interval] || "60m";
-  const yRange = interval === "15m" ? "5d" : interval === "4h" ? "3mo" : interval === "1D" ? "2y" : "3mo";
+  const yRange =
+    interval === "1m" ? "2d" :
+    interval === "5m" ? "5d" :
+    interval === "15m" ? "1mo" :
+    interval === "30m" ? "1mo" :
+    interval === "4h" ? "3mo" :
+    interval === "1D" ? "2y" :
+    interval === "1W" ? "5y" : "3mo";
 
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySymbol)}?interval=${yInterval}&range=${yRange}&_t=${Date.now()}`;
   

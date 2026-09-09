@@ -724,8 +724,8 @@ export default function MarketChart({
         <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-base sm:text-lg font-bold text-white tracking-wide">{symbol}</span>
-            <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700 text-slate-300 font-mono font-semibold">
-              {timeframe}
+            <span className="text-[11px] px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-mono font-bold">
+              {timeframe === "1m" ? "M1" : timeframe === "5m" ? "M5" : timeframe === "15m" ? "M15" : timeframe === "30m" ? "M30" : timeframe === "1h" ? "H1" : timeframe === "4h" ? "H4" : timeframe === "1D" ? "D1" : timeframe === "1W" ? "W1" : timeframe.toUpperCase()}
             </span>
           </div>
 

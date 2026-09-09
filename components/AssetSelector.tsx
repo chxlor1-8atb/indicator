@@ -24,7 +24,23 @@ const CATEGORIES: { id: "all" | AssetCategory; label: string }[] = [
   { id: "stocks", label: "Indices & Stocks" },
 ];
 
-const TIMEFRAMES = ["15m", "1h", "4h", "1D"];
+export interface TimeframeItem {
+  id: string;
+  label: string;
+  tooltip: string;
+  isCore?: boolean;
+}
+
+const TIMEFRAMES: TimeframeItem[] = [
+  { id: "1m", label: "M1", tooltip: "1 นาที • Sniper Scalping" },
+  { id: "5m", label: "M5", tooltip: "5 นาที • Fast Scalping" },
+  { id: "15m", label: "M15", tooltip: "15 นาที • Day Trading" },
+  { id: "30m", label: "M30", tooltip: "30 นาที • Intraday Swing" },
+  { id: "1h", label: "H1", tooltip: "1 ชั่วโมง • Institutional Anchor (Win Rate สูงสุด)", isCore: true },
+  { id: "4h", label: "H4", tooltip: "4 ชั่วโมง • Structural Trend" },
+  { id: "1D", label: "D1", tooltip: "1 วัน • Macro Bias" },
+  { id: "1W", label: "W1", tooltip: "1 สัปดาห์ • Major Cycle" },
+];
 
 export default function AssetSelector({
   selectedAsset,
@@ -209,21 +225,28 @@ export default function AssetSelector({
 
         {/* Right: Timeframes & AI Trigger Button */}
         <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5">
-          {/* Timeframe Chips */}
-          <div className="flex items-center bg-surface-50 p-0.5 rounded-lg border border-slate-800">
-            {TIMEFRAMES.map((tf) => (
-              <button
-                key={tf}
-                onClick={() => onSelectTimeframe(tf)}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold font-mono transition-all ${
-                  selectedTimeframe === tf
-                    ? "bg-zinc-700 text-white shadow-sm border border-zinc-600/50"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                {tf}
-              </button>
-            ))}
+          {/* Timeframe Chips with MT4/MT5 Standards */}
+          <div className="flex items-center gap-1 bg-surface-50 p-1 rounded-xl border border-slate-800 overflow-x-auto max-w-full scrollbar-none">
+            {TIMEFRAMES.map((tf) => {
+              const isSelected = selectedTimeframe === tf.id;
+              return (
+                <button
+                  key={tf.id}
+                  onClick={() => onSelectTimeframe(tf.id)}
+                  title={`${tf.label} (${tf.id}) - ${tf.tooltip}`}
+                  className={`px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold font-mono transition-all relative shrink-0 flex items-center gap-1 ${
+                    isSelected
+                      ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-500/30 border border-indigo-400/50"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-surface-100"
+                  }`}
+                >
+                  <span>{tf.label}</span>
+                  {tf.isCore && !isSelected && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="Institutional Anchor" />
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* AI Run Button */}
