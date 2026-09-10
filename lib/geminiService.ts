@@ -753,12 +753,12 @@ export function generateRuleBasedAnalysis(
     (marketStructureShift.detected && marketStructureShift.type === "BEARISH_MSS");
 
   // เสาหลัก 2: Auto Fibonacci Retracement (Golden Pocket 50% - 61.8% / 38.2%)
-  const isBullFib = autoFibonacci.trendDirection === "UP" && autoFibonacci.isPullbackActive;
-  const isBearFib = autoFibonacci.trendDirection === "DOWN" && autoFibonacci.isPullbackActive;
+  const isBullFib = autoFibonacci.trendDirection === "UP" && (autoFibonacci.isPullbackActive || autoFibonacci.currentZone !== "EXTENSION" || currentPrice >= autoFibonacci.fib500);
+  const isBearFib = autoFibonacci.trendDirection === "DOWN" && (autoFibonacci.isPullbackActive || autoFibonacci.currentZone !== "EXTENSION" || currentPrice <= autoFibonacci.fib500);
 
   // เสาหลัก 3: Standard Pivot Points (Position relative to Central Pivot P)
-  const isBullPivot = pivotPoints.marketPosition === "ABOVE_PIVOT_BULLISH" || currentPrice >= pivotPoints.pivot;
-  const isBearPivot = pivotPoints.marketPosition === "BELOW_PIVOT_BEARISH" || currentPrice <= pivotPoints.pivot;
+  const isBullPivot = currentPrice >= pivotPoints.pivot;
+  const isBearPivot = currentPrice < pivotPoints.pivot;
 
   // เสาหลัก 4: Auto Clustered S&R (Multi-touch support/resistance confluence)
   const isNearSupport = clusteredSR.nearestSupport ? (currentPrice - clusteredSR.nearestSupport.price) <= currentATR * 1.5 : inBuyValueZone;
@@ -768,8 +768,8 @@ export function generateRuleBasedAnalysis(
   const donchianLower = donchian.lower;
   const donchianUpper = donchian.upper;
   const donchianMid = (donchianLower + donchianUpper) / 2;
-  const isBullDynamic = currentPrice <= donchianMid * 1.01 || currentPrice >= donchianLower;
-  const isBearDynamic = currentPrice >= donchianMid * 0.99 || currentPrice <= donchianUpper;
+  const isBullDynamic = currentPrice >= donchianMid || donchian.breakoutState === "BULLISH_BREAKOUT_20";
+  const isBearDynamic = currentPrice <= donchianMid || donchian.breakoutState === "BEARISH_BREAKOUT_20";
 
   let bullPillars = 0;
   if (isBullSMC) bullPillars++;
@@ -797,50 +797,54 @@ export function generateRuleBasedAnalysis(
     summary: `5 Core Pillars Score: ${Math.round(Math.max(bullPillars, bearPillars) * 20)}% (${bullPillars} Bull vs ${bearPillars} Bear)`,
   };
 
-  // ─── 4. DECISIVE SIGNAL TRIGGERING (5 CORE PILLARS & CONFLUENCE DRIVEN) ───
+  // ─── 4. TREND-DOMINANT & STABLE SIGNAL TRIGGERING (ELIMINATES FLIP-FLOPPING) ───
+  // กฎเหล็กสถาบัน: ทิศทางแนวโน้มหลัก (Trend Bias & Classic Trio & SuperTrend) คือ "หัวหน้าใหญ่ (The Boss)"
+  // ห้ามออกสัญญาณสลับไปมาระหว่าง BUY และ SELL ทุกครั้งที่ราคาขยับเล็กน้อยในกรอบ
+  const isBullTrendDominant =
+    tier1Bias === "BULLISH" ||
+    (classicTrio.isAligned && classicTrio.signalBias === "BULLISH") ||
+    (currentPrice >= lastEMA50 && lastEMA20 >= lastEMA50);
+
+  const isBearTrendDominant =
+    tier1Bias === "BEARISH" ||
+    (classicTrio.isAligned && classicTrio.signalBias === "BEARISH") ||
+    (currentPrice < lastEMA50 && lastEMA20 <= lastEMA50);
+
   if (isCircuitBreakerTripped) {
     signal = "WAIT";
     setupGrade = "C (Wait)";
     confidence = Math.min(confidence, 30);
-  } else if (bullPillars > bearPillars && (bullPillars >= 2 || tier1Bias === "BULLISH" || inBuyValueZone || masterConfluence.totalScore >= 45)) {
-    // 🐂 BULLISH SIGNAL: ฝั่งซื้อได้เปรียบทางสถิติ
-    const isStrong = bullPillars >= 3 || masterConfluence.totalScore >= 68;
+  } else if (isBullTrendDominant && !isBearTrendDominant) {
+    // 🐂 ตลาดเป็นแนวโน้มขาขึ้น (Uptrend) -> ทิศทางหลักคือ BUY อย่างมั่นคงเสมอ
+    // หากราคาอยู่ที่แนวต้าน จะสั่ง BUY LIMIT ดักย่อที่แนวรับ/โซน OTE แทนที่จะสลับไป SELL
+    const isStrong = bullPillars >= 2 || masterConfluence.totalScore >= 65 || (classicTrio.isAligned && classicTrio.signalBias === "BULLISH");
     signal = isStrong ? "STRONG_BUY" : "BUY";
     setupGrade = isStrong && confidence >= 68 ? "A+" : confidence >= 55 ? "A" : "B";
     if (isInstitutionalAligned) confidence = Math.min(98, confidence + 4);
-    if (classicTrio.isAligned && classicTrio.signalBias === "BULLISH") confidence = Math.min(99, confidence + 4);
+    if (classicTrio.isAligned && classicTrio.signalBias === "BULLISH") confidence = Math.min(99, confidence + 5);
     if (isOrbBullBreak) confidence = Math.min(98, confidence + 3);
-  } else if (bearPillars > bullPillars && (bearPillars >= 2 || tier1Bias === "BEARISH" || inSellValueZone || masterConfluence.totalScore >= 45)) {
-    // 🐻 BEARISH SIGNAL: ฝั่งขายได้เปรียบทางสถิติ
-    const isStrong = bearPillars >= 3 || masterConfluence.totalScore >= 68;
+  } else if (isBearTrendDominant && !isBullTrendDominant) {
+    // 🐻 ตลาดเป็นแนวโน้มขาลง (Downtrend) -> ทิศทางหลักคือ SELL อย่างมั่นคงเสมอ
+    // หากราคาอยู่ที่แนวรับ จะสั่ง SELL LIMIT ดักเด้งที่แนวต้าน/โซน OTE แทนที่จะสลับไป BUY
+    const isStrong = bearPillars >= 2 || masterConfluence.totalScore >= 65 || (classicTrio.isAligned && classicTrio.signalBias === "BEARISH");
     signal = isStrong ? "STRONG_SELL" : "SELL";
     setupGrade = isStrong && confidence >= 68 ? "A+" : confidence >= 55 ? "A" : "B";
     if (isInstitutionalAligned) confidence = Math.min(98, confidence + 4);
-    if (classicTrio.isAligned && classicTrio.signalBias === "BEARISH") confidence = Math.min(99, confidence + 4);
+    if (classicTrio.isAligned && classicTrio.signalBias === "BEARISH") confidence = Math.min(99, confidence + 5);
     if (isOrbBearBreak) confidence = Math.min(98, confidence + 3);
-  } else if (bullPillars >= 2) {
-    // Bull pillars active
-    signal = "BUY";
-    setupGrade = "B";
-    confidence = Math.max(52, confidence);
-  } else if (bearPillars >= 2) {
-    // Bear pillars active
-    signal = "SELL";
-    setupGrade = "B";
-    confidence = Math.max(52, confidence);
-  } else if (tier1Bias === "BULLISH" || currentPrice >= pivotPoints.pivot) {
-    // ราคาอยู่เหนือ Central Pivot P หรือโครงสร้างโน้มเอียงขึ้น
-    signal = "BUY";
-    setupGrade = "B";
-    confidence = Math.max(50, confidence);
-  } else if (tier1Bias === "BEARISH" || currentPrice < pivotPoints.pivot) {
-    // ราคาอยู่ใต้ Central Pivot P หรือโครงสร้างโน้มเอียงลง
-    signal = "SELL";
-    setupGrade = "B";
-    confidence = Math.max(50, confidence);
   } else {
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
+    // ⚖️ ตลาดไซด์เวย์ไร้เทรนด์ชัดเจน (Neutral / Range-Bound): ใช้ 5 เสาหลัก และตำแหน่ง Pivot ตัดสิน
+    if (bullPillars > bearPillars || (bullPillars === bearPillars && currentPrice >= pivotPoints.pivot)) {
+      const isStrong = bullPillars >= 3 || masterConfluence.totalScore >= 68;
+      signal = isStrong ? "STRONG_BUY" : "BUY";
+      setupGrade = "B";
+      confidence = Math.max(52, confidence);
+    } else {
+      const isStrong = bearPillars >= 3 || masterConfluence.totalScore >= 68;
+      signal = isStrong ? "STRONG_SELL" : "SELL";
+      setupGrade = "B";
+      confidence = Math.max(52, confidence);
+    }
   }
 
   // ─── ANTI-CLASH DIRECTIONAL HARMONIZATION (SOFT CONFIDENCE TUNING, NEVER HARD WAIT) ───
@@ -864,7 +868,8 @@ export function generateRuleBasedAnalysis(
 
   // ─── BATCH 3 QUANT CALIBRATION (PLANS 11-15) ───
   // [แผน 11] Institutional Optimal Trade Entry (OTE - Fibonacci 61.8% – 78.6% Golden Pocket)
-  const oteZone = indicators.oteZone || calculateOTEZones(candles, tier1Bias === "BEARISH" ? "BEARISH" : "BULLISH", precision);
+  const tradeDirection = (signal === "STRONG_SELL" || signal === "SELL") ? "BEARISH" : "BULLISH";
+  const oteZone = calculateOTEZones(candles, tradeDirection, precision);
 
   // [แผน 13] Volume Delta & Order Flow Imbalance Approximation
   const volumeDelta = indicators.volumeDelta || calculateVolumeDelta(candles);
@@ -893,8 +898,9 @@ export function generateRuleBasedAnalysis(
     const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
     stopLoss = Number((structuralSL.stopLoss - slBufferExtra).toFixed(precision));
 
-    // [แผน 11] OTE Zone Entry & Sweet Spot 70.5%
-    pendingPrice = oteZone.sweetSpot || Number(Math.min(currentPrice, lastEMA20 * 1.002).toFixed(precision));
+    // [แผน 11] OTE Zone Entry & Sweet Spot 70.5% (ย่อซื้อที่แนวรับ/โซน OTE ห้ามตั้งซื้อสูงกว่าราคาตลาด)
+    const defaultBuyEntry = Number(Math.min(currentPrice, lastEMA20 * 1.002).toFixed(precision));
+    pendingPrice = (oteZone.sweetSpot && oteZone.sweetSpot <= currentPrice) ? oteZone.sweetSpot : defaultBuyEntry;
     entryZone = { min: oteZone.oteMin, max: oteZone.oteMax };
 
     // [แผน 31] FVG Consequent Encroachment (50%) Limit Refinement
@@ -952,8 +958,9 @@ export function generateRuleBasedAnalysis(
     const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
     stopLoss = Number((structuralSL.stopLoss + slBufferExtra).toFixed(precision));
 
-    // [แผน 11] OTE Zone Entry & Sweet Spot 70.5%
-    pendingPrice = oteZone.sweetSpot || Number(Math.max(currentPrice, lastEMA20 * 0.998).toFixed(precision));
+    // [แผน 11] OTE Zone Entry & Sweet Spot 70.5% (เด้งขายที่แนวต้าน/โซน OTE ห้ามตั้งขายต่ำกว่าราคาตลาด)
+    const defaultSellEntry = Number(Math.max(currentPrice, lastEMA20 * 0.998).toFixed(precision));
+    pendingPrice = (oteZone.sweetSpot && oteZone.sweetSpot >= currentPrice) ? oteZone.sweetSpot : defaultSellEntry;
     entryZone = { min: oteZone.oteMin, max: oteZone.oteMax };
 
     // [แผน 31] FVG Consequent Encroachment (50%) Limit Refinement
