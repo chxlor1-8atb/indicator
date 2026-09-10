@@ -15,12 +15,12 @@ export async function POST(request: NextRequest) {
     const timeframe = body.timeframe || "1h";
     const customApiKey = body.customApiKey;
 
-    // 1. Fetch market candles & calculate technical indicators
-    const candles = await getMarketCandles(symbol, timeframe);
+    // 1. Fetch market candles and live news concurrently (eliminates sequential waterfall latency)
+    const [candles, news] = await Promise.all([
+      getMarketCandles(symbol, timeframe),
+      fetchLiveNews(),
+    ]);
     const indicators = calculateAllIndicators(candles, symbol);
-
-    // 2. Fetch live market news
-    const news = await fetchLiveNews();
 
     // 3. Run AI Hybrid Analysis (Gemini)
     const analysis = await analyzeWithGemini(

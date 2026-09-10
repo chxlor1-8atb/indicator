@@ -1672,15 +1672,24 @@ export function computeMtfAlignment(
  * Computes true Multi-Timeframe Alignment (M15, H1, H4, D1) directly from
  * actual historical candlestick data in Neon PostgreSQL with dynamic asset-class weighting.
  */
+const mtfMatrixMemoryCache = new Map<string, { data: AnalysisResult["timeframeMatrix"]; timestamp: number }>();
+const MTF_MATRIX_TTL_MS = 30 * 1000; // 30s memory cache to eliminate 4 repeated DB queries per analysis
+
 export async function calculateTrueMultiTimeframeMatrix(
   symbol: string
 ): Promise<AnalysisResult["timeframeMatrix"]> {
+  const sym = symbol.toUpperCase();
+  const cached = mtfMatrixMemoryCache.get(sym);
+  if (cached && Date.now() - cached.timestamp < MTF_MATRIX_TTL_MS) {
+    return cached.data;
+  }
+
   try {
     const [c15m, c1h, c4h, c1d] = await Promise.all([
-      getCachedCandles(symbol, "15m", 50),
-      getCachedCandles(symbol, "1h", 50),
-      getCachedCandles(symbol, "4h", 50),
-      getCachedCandles(symbol, "1D", 50),
+      getCachedCandles(sym, "15m", 50),
+      getCachedCandles(sym, "1h", 50),
+      getCachedCandles(sym, "4h", 50),
+      getCachedCandles(sym, "1D", 50),
     ]);
 
     const determineBias = (candles: Candle[]): "BULLISH" | "BEARISH" | "NEUTRAL" => {
@@ -1701,7 +1710,7 @@ export async function calculateTrueMultiTimeframeMatrix(
       d1: determineBias(c1d),
     };
 
-    const alignment = computeMtfAlignment(symbol, rawMtf);
+    const alignment = computeMtfAlignment(sym, rawMtf);
 
     // [แผน 8] Quad-EMA 200 Confluence Analysis across 15m, 1h, 4h, 1D
     const currentPrice = c15m[c15m.length - 1]?.close || c1h[c1h.length - 1]?.close || 0;
@@ -1725,13 +1734,15 @@ export async function calculateTrueMultiTimeframeMatrix(
       scoreBonus: isQuadGoldenStack ? 10 : isQuadDeathStack ? -10 : 0,
     };
 
-    return {
+    const result: AnalysisResult["timeframeMatrix"] = {
       ...rawMtf,
       alignmentScore: alignment.alignmentScore,
       assetCategory: alignment.assetCategory,
       summary: alignment.summary,
       quadEma,
     };
+    mtfMatrixMemoryCache.set(sym, { data: result, timestamp: Date.now() });
+    return result;
   } catch (err) {
     console.warn("Failed to calculate true MTF matrix from Neon:", err);
     const category = detectAssetCategory(symbol);

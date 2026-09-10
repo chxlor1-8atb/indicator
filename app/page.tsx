@@ -55,6 +55,7 @@ export default function DashboardPage() {
 
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const marketDataInFlightRef = useRef<boolean>(false);
 
   // ─── Data Freshness & Last Updated Timestamps (ข้อ 7) ───
   const [marketLastUpdated, setMarketLastUpdated] = useState<number | null>(null);
@@ -78,7 +79,10 @@ export default function DashboardPage() {
       setActiveTab("ALL");
     }
   }, []);
+
   const loadMarketData = useCallback(async (symbol: string, tf: string, isSilent = false) => {
+    if (marketDataInFlightRef.current) return;
+    marketDataInFlightRef.current = true;
     if (!isSilent) setIsLoadingMarket(true);
     try {
       const res = await fetch(`/api/market-data?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(tf)}&_t=${Date.now()}`, {
@@ -95,6 +99,7 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to load market data:", err);
     } finally {
+      marketDataInFlightRef.current = false;
       if (!isSilent) setIsLoadingMarket(false);
     }
   }, []);
@@ -340,11 +345,13 @@ export default function DashboardPage() {
   // Continuous Real-Time Autonomous Scanner Loop (adaptive 25s cadence to prevent rate limits & serverless load)
   useEffect(() => {
     let isMounted = true;
+    let inFlight = false;
     const runAutonomousSync = async () => {
-      if (!isMounted) return;
+      if (!isMounted || inFlight) return;
       // Skip autonomous scan when user is not viewing the tab
       if (typeof document !== "undefined" && document.hidden) return;
 
+      inFlight = true;
       try {
         const res = await fetch(`/api/autonomous-scanner?scan=true&_t=${Date.now()}`);
         if (res.ok && isMounted) {
@@ -364,6 +371,8 @@ export default function DashboardPage() {
         }
       } catch {
         // Silently handle transient network issue
+      } finally {
+        inFlight = false;
       }
     };
 

@@ -541,6 +541,9 @@ export async function saveTelegramSubscriber(chatId: string, username?: string, 
  * Automatically prunes the oldest candles past `maxRetention` using PostgreSQL OFFSET,
  * preventing database bloat and maintaining a constant storage footprint (<200KB per symbol/timeframe).
  */
+const candleBufferSaveThrottle = new Map<string, number>();
+const CANDLE_BUFFER_THROTTLE_MS = 60 * 1000; // Throttle Neon DB persistence to at most once per 60s per symbol/tf
+
 export async function saveCandlesRollingBuffer(
   symbol: string,
   timeframe: string,
@@ -548,6 +551,13 @@ export async function saveCandlesRollingBuffer(
   maxRetention = 200
 ): Promise<void> {
   if (!sql || !candles || candles.length === 0) return;
+
+  const throttleKey = `${symbol.toUpperCase()}_${timeframe}`;
+  const lastSave = candleBufferSaveThrottle.get(throttleKey) || 0;
+  if (Date.now() - lastSave < CANDLE_BUFFER_THROTTLE_MS) {
+    return;
+  }
+  candleBufferSaveThrottle.set(throttleKey, Date.now());
 
   try {
     // Only process the latest `maxRetention` candles to minimize bandwidth & query size
@@ -668,7 +678,17 @@ export interface AdaptiveWeightsConfig {
 /**
  * Retrieves recent closed-loop trading lessons for Gemini AI Few-Shot Contextual Learning.
  */
+const recentLessonsMemoryCache = new Map<string, { data: string[]; timestamp: number }>();
+const RECENT_LESSONS_TTL_MS = 60 * 1000; // 60s memory cache
+
 export async function getRecentLessons(symbol: string, limit = 4): Promise<string[]> {
+  const sym = symbol.toUpperCase();
+  const cacheKey = `${sym}_${limit}`;
+  const cachedMem = recentLessonsMemoryCache.get(cacheKey);
+  if (cachedMem && Date.now() - cachedMem.timestamp < RECENT_LESSONS_TTL_MS) {
+    return cachedMem.data;
+  }
+
   if (!sql) return [];
   try {
     const rows = (await sql.query(
@@ -679,7 +699,7 @@ export async function getRecentLessons(symbol: string, limit = 4): Promise<strin
       ORDER BY created_at DESC
       LIMIT $2;
       `,
-      [symbol.toUpperCase(), limit]
+      [sym, limit]
     )) as unknown as Array<{
       outcome: string;
       pnl_pips: number;
@@ -687,18 +707,22 @@ export async function getRecentLessons(symbol: string, limit = 4): Promise<strin
       lesson_summary: string;
     }>;
 
+    let result: string[];
     if (!rows || rows.length === 0) {
-      return [
+      result = [
         `การเข้าเทรดทองคำ (XAUUSD) และคู่เงินหลัก ให้รอราคาย่อตัวเข้าสู่ Value Zone ใกล้เส้น EMA20/50 ก่อนเสมอ ห้ามไล่ราคาเกิน 2.0 ATR`,
         `ในตลาดที่มีความผันผวนสูง (High Volatility) สัญญาณเกรด A/A+ ที่มี Confluence Score >= 80% ให้ความแม่นยำสูงสุด`,
         `หลีกเลี่ยงการเปิดสถานะใหม่ช่วงก่อนข่าวแดง (High-Impact News) ออก 15 นาที เพื่อป้องกัน Slippage และ False Breakout`,
       ];
+    } else {
+      result = rows.map(
+        (r) =>
+          `[${r.outcome === "HIT_TP2" ? "WIN_TP2" : r.outcome === "HIT_TP1" ? "WIN_TP1" : "LOSS_SL"}] ${r.lesson_summary}`
+      );
     }
 
-    return rows.map(
-      (r) =>
-        `[${r.outcome === "HIT_TP2" ? "WIN_TP2" : r.outcome === "HIT_TP1" ? "WIN_TP1" : "LOSS_SL"}] ${r.lesson_summary}`
-    );
+    recentLessonsMemoryCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
   } catch (err) {
     console.error(`Error getting recent lessons for ${symbol}:`, err);
     return [];
@@ -709,7 +733,16 @@ export async function getRecentLessons(symbol: string, limit = 4): Promise<strin
  * Dynamically self-tunes indicator pillar weights and gating thresholds
  * based on actual live win/loss performance from Neon DB.
  */
+const adaptiveWeightsMemoryCache = new Map<string, { data: AdaptiveWeightsConfig; timestamp: number }>();
+const ADAPTIVE_WEIGHTS_TTL_MS = 60 * 1000; // 60s memory cache
+
 export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeightsConfig> {
+  const sym = symbol.toUpperCase();
+  const cachedMem = adaptiveWeightsMemoryCache.get(sym);
+  if (cachedMem && Date.now() - cachedMem.timestamp < ADAPTIVE_WEIGHTS_TTL_MS) {
+    return cachedMem.data;
+  }
+
   const defaults: AdaptiveWeightsConfig = {
     trendWeight: 25,
     momentumWeight: 20,
@@ -740,7 +773,7 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
 
     if (cached && cached.length > 0) {
       const c = cached[0];
-      return {
+      const result: AdaptiveWeightsConfig = {
         trendWeight: Number(c.trend_weight) || 25,
         momentumWeight: Number(c.momentum_weight) || 20,
         squeezeWeight: Number(c.squeeze_weight) || 20,
@@ -750,6 +783,8 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
         recentWinRate: Number(c.recent_win_rate) || 0,
         isSelfTuned: true,
       };
+      adaptiveWeightsMemoryCache.set(sym, { data: result, timestamp: Date.now() });
+      return result;
     }
 
     // Query historical outcomes for this symbol
@@ -817,7 +852,7 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
       [symbol.toUpperCase(), trend, momentum, squeeze, volume, smc, minThreshold, winRate]
     );
 
-    return {
+    const result: AdaptiveWeightsConfig = {
       trendWeight: trend,
       momentumWeight: momentum,
       squeezeWeight: squeeze,
@@ -827,6 +862,8 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
       recentWinRate: winRate,
       isSelfTuned,
     };
+    adaptiveWeightsMemoryCache.set(sym, { data: result, timestamp: Date.now() });
+    return result;
   } catch (err) {
     console.error(`Error calculating adaptive weights for ${symbol}:`, err);
     return defaults;
@@ -864,32 +901,47 @@ export async function saveBacktestResults(
     await initBacktestTable();
 
     let saved = 0;
-    for (const t of trades) {
-      try {
-        await resilientQuery(
-          `INSERT INTO backtest_results
-            (symbol, timeframe, trade_type, entry_price, exit_price, stop_loss, take_profit1, take_profit2, result, pnl_r, pnl_pips, entry_time, exit_time, source)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'BACKTEST')
-           ON CONFLICT (symbol, timeframe, entry_time, trade_type) DO NOTHING`,
-          [
-            symbol.toUpperCase(),
-            timeframe,
-            t.type,
-            t.entryPrice,
-            t.exitPrice,
-            t.sl,
-            t.tp1,
-            t.tp2,
-            t.result,
-            t.pnlR,
-            t.pnlPips,
-            t.entryTime,
-            t.exitTime,
-          ]
+    const CHUNK_SIZE = 50;
+    const sym = symbol.toUpperCase();
+
+    for (let i = 0; i < trades.length; i += CHUNK_SIZE) {
+      const chunk = trades.slice(i, i + CHUNK_SIZE);
+      const valueClauses: string[] = [];
+      const params: unknown[] = [];
+      let paramIdx = 1;
+
+      for (const t of chunk) {
+        valueClauses.push(
+          `($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, 'BACKTEST')`
         );
-        saved++;
-      } catch {
-        // Skip individual insert errors (duplicates handled by ON CONFLICT)
+        params.push(
+          sym,
+          timeframe,
+          t.type,
+          t.entryPrice,
+          t.exitPrice,
+          t.sl,
+          t.tp1,
+          t.tp2,
+          t.result,
+          t.pnlR,
+          t.pnlPips,
+          t.entryTime,
+          t.exitTime
+        );
+      }
+
+      try {
+        const queryText = `
+          INSERT INTO backtest_results
+            (symbol, timeframe, trade_type, entry_price, exit_price, stop_loss, take_profit1, take_profit2, result, pnl_r, pnl_pips, entry_time, exit_time, source)
+          VALUES ${valueClauses.join(", ")}
+          ON CONFLICT (symbol, timeframe, entry_time, trade_type) DO NOTHING
+        `;
+        await resilientQuery(queryText, params);
+        saved += chunk.length;
+      } catch (err) {
+        console.warn(`Chunk insert failed for backtest results of ${sym}:`, err);
       }
     }
     return { saved, skipped: trades.length - saved };
