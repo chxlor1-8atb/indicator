@@ -235,7 +235,48 @@ export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKe
   return [];
 }
 
-export async function fetchCryptoCandles(symbol: string, interval = "1h", limit = 500): Promise<Candle[]> {
+export async function fetchCryptoCandles(symbol: string, interval = "1h", limit = 200): Promise<Candle[]> {
+  const bSymbol = symbol.endsWith("USDT") ? symbol : `${symbol}USDT`;
+  const cappedLimit = Math.min(limit, 200);
+
+  // 1. Primary: Bybit Spot Public API (Fastest, ~100ms, zero geoblocking on Vercel/AWS)
+  try {
+    const bybitIntervalMap: Record<string, string> = {
+      "1m": "1",
+      "5m": "5",
+      "15m": "15",
+      "30m": "30",
+      "1h": "60",
+      "4h": "240",
+      "1D": "D",
+      "1W": "W",
+    };
+    const bInterval = bybitIntervalMap[interval] || "60";
+    const bybitUrl = `https://api.bybit.com/v5/market/kline?category=spot&symbol=${bSymbol}&interval=${bInterval}&limit=${cappedLimit}`;
+    const bybitRes = await fetch(bybitUrl, { signal: AbortSignal.timeout(3500), cache: "no-store" });
+    if (bybitRes.ok) {
+      const bybitJson = await bybitRes.json();
+      const list = bybitJson?.result?.list;
+      if (Array.isArray(list) && list.length >= 20) {
+        // Bybit returns newest first, reverse to chronological ascending
+        const candles: Candle[] = list
+          .map((item: string[]) => ({
+            time: Math.floor(Number(item[0]) / 1000),
+            open: parseFloat(item[1]),
+            high: parseFloat(item[2]),
+            low: parseFloat(item[3]),
+            close: parseFloat(item[4]),
+            volume: parseFloat(item[5]),
+          }))
+          .reverse();
+        return candles;
+      }
+    }
+  } catch {
+    // Proceed to Binance
+  }
+
+  // 2. Secondary: Binance Public Cloud Endpoints (data-api.binance.vision & api1)
   const binanceIntervalMap: Record<string, string> = {
     "1m": "1m",
     "5m": "5m",
@@ -247,13 +288,11 @@ export async function fetchCryptoCandles(symbol: string, interval = "1h", limit 
     "1W": "1w",
   };
   const intervalKey = binanceIntervalMap[interval] || "1h";
-  const bSymbol = symbol.endsWith("USDT") ? symbol : `${symbol}USDT`;
   
-  // Binance public endpoints: data-api.binance.vision is officially unblocked for AWS/Vercel serverless IPs
   const endpoints = [
-    `https://data-api.binance.vision/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${limit}`,
-    `https://api1.binance.com/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${limit}`,
-    `https://api.binance.com/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${limit}`,
+    `https://data-api.binance.vision/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${cappedLimit}`,
+    `https://api1.binance.com/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${cappedLimit}`,
+    `https://api.binance.com/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${cappedLimit}`,
   ];
 
   let lastError: Error | null = null;
@@ -278,7 +317,7 @@ export async function fetchCryptoCandles(symbol: string, interval = "1h", limit 
     }
   }
 
-  throw lastError || new Error(`Binance endpoints unavailable for ${bSymbol}`);
+  throw lastError || new Error(`Crypto feed unavailable for ${bSymbol}`);
 }
 
 /**
