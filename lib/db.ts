@@ -12,8 +12,8 @@ export const sql = connectionString ? neon(connectionString) : null;
 export async function resilientQuery<T = unknown[]>(
   queryText: string,
   params: unknown[] = [],
-  retries = 1,
-  delayMs = 200
+  retries = 2,
+  delayMs = 250
 ): Promise<T> {
   if (!sql) return [] as unknown as T;
   try {
@@ -68,14 +68,14 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
         id SERIAL PRIMARY KEY,
         symbol VARCHAR(20) NOT NULL,
         timeframe VARCHAR(10) NOT NULL,
-        action VARCHAR(10) NOT NULL,
-        order_type VARCHAR(30) NOT NULL,
+        action VARCHAR(30) NOT NULL,
+        order_type VARCHAR(50) NOT NULL,
         entry_price NUMERIC(14, 4) NOT NULL,
         stop_loss NUMERIC(14, 4) NOT NULL,
         take_profit1 NUMERIC(14, 4) NOT NULL,
         take_profit2 NUMERIC(14, 4) NOT NULL,
         confluence_score INT DEFAULT 0,
-        setup_grade VARCHAR(15) DEFAULT 'B',
+        setup_grade VARCHAR(30) DEFAULT 'B',
         status VARCHAR(20) DEFAULT 'ACTIVE',
         pnl_pips NUMERIC(10, 2) DEFAULT 0,
         notes TEXT,
@@ -83,6 +83,17 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
         resolved_at TIMESTAMP WITH TIME ZONE
       )
     `);
+
+    // Auto-migration for existing tables with smaller columns
+    try {
+      await sql.query(`
+        ALTER TABLE ai_signals ALTER COLUMN action TYPE VARCHAR(30);
+        ALTER TABLE ai_signals ALTER COLUMN setup_grade TYPE VARCHAR(30);
+        ALTER TABLE ai_signals ALTER COLUMN order_type TYPE VARCHAR(50);
+      `);
+    } catch {
+      // Ignored if already altered or no permission
+    }
 
     await sql.query(`
       CREATE INDEX IF NOT EXISTS idx_ai_signals_symbol_status ON ai_signals (symbol, status)
@@ -179,13 +190,13 @@ export async function initBacktestTable(): Promise<void> {
         id SERIAL PRIMARY KEY,
         symbol VARCHAR(20) NOT NULL,
         timeframe VARCHAR(10) NOT NULL,
-        trade_type VARCHAR(10) NOT NULL,
+        trade_type VARCHAR(30) NOT NULL,
         entry_price NUMERIC(14, 4) NOT NULL,
         exit_price NUMERIC(14, 4) NOT NULL,
         stop_loss NUMERIC(14, 4),
         take_profit1 NUMERIC(14, 4),
         take_profit2 NUMERIC(14, 4),
-        result VARCHAR(10) NOT NULL,
+        result VARCHAR(20) NOT NULL,
         pnl_r NUMERIC(6, 2) DEFAULT 0,
         pnl_pips NUMERIC(10, 2) DEFAULT 0,
         entry_time BIGINT,
@@ -195,6 +206,17 @@ export async function initBacktestTable(): Promise<void> {
         CONSTRAINT uq_bt_sym_entry UNIQUE (symbol, timeframe, entry_time, trade_type)
       )
     `);
+
+    // Auto-migration for existing backtest_results tables
+    try {
+      await sql.query(`
+        ALTER TABLE backtest_results ALTER COLUMN trade_type TYPE VARCHAR(30);
+        ALTER TABLE backtest_results ALTER COLUMN result TYPE VARCHAR(20);
+      `);
+    } catch {
+      // Ignored if already altered
+    }
+
     await sql.query(`
       CREATE INDEX IF NOT EXISTS idx_bt_results_symbol ON backtest_results (symbol, result)
     `);
@@ -270,16 +292,16 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ACTIVE')
       `,
       [
-        symbol,
-        timeframe,
-        signal,
-        tradeSetup.orderType,
+        String(symbol || "").substring(0, 20),
+        String(timeframe || "").substring(0, 10),
+        String(signal || "BUY").substring(0, 30),
+        String(tradeSetup.orderType || "BUY_LIMIT").substring(0, 50),
         entryPrice,
         tradeSetup.stopLoss,
         tradeSetup.takeProfit1,
         tradeSetup.takeProfit2,
         masterConfluence?.totalScore || 0,
-        setupGrade || "B",
+        String(setupGrade || "B").substring(0, 30),
         analysis.summary?.substring(0, 300) || "",
       ]
     );
@@ -611,7 +633,7 @@ export async function saveCandlesRollingBuffer(
       [symbol.toUpperCase(), timeframe, maxRetention]
     );
   } catch (err) {
-    console.error(`Error saving candles rolling buffer for ${symbol} (${timeframe}):`, err);
+    console.warn(`[Neon Buffer] Transient issue saving candles rolling buffer for ${symbol} (${timeframe}):`, (err as Error)?.message || err);
   }
 }
 
