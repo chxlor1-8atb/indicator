@@ -168,8 +168,11 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
         }
       }
     }
-  } catch (err) {
-    console.warn(`TradingView scanner quote fetch failed for ${sym}:`, err);
+  } catch (err: unknown) {
+    const isTimeout = (err instanceof Error && err.name === "TimeoutError") || String(err).includes("timeout");
+    if (!isTimeout) {
+      console.warn(`[TradingView] Scanner quote fetch note for ${sym}:`, (err as Error)?.message || err);
+    }
   }
   return cached ? cached.data : null;
 }
@@ -245,22 +248,37 @@ export async function fetchCryptoCandles(symbol: string, interval = "1h", limit 
   };
   const intervalKey = binanceIntervalMap[interval] || "1h";
   const bSymbol = symbol.endsWith("USDT") ? symbol : `${symbol}USDT`;
-  const url = `https://api.binance.com/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${limit}`;
-
-  const res = await fetch(url, { signal: AbortSignal.timeout(4500), cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Binance API error: ${res.statusText}`);
-  }
-  const data = await res.json();
   
-  return data.map((item: (string | number)[]) => ({
-    time: Math.floor(Number(item[0]) / 1000),
-    open: parseFloat(item[1] as string),
-    high: parseFloat(item[2] as string),
-    low: parseFloat(item[3] as string),
-    close: parseFloat(item[4] as string),
-    volume: parseFloat(item[5] as string),
-  }));
+  // Binance public endpoints: data-api.binance.vision is officially unblocked for AWS/Vercel serverless IPs
+  const endpoints = [
+    `https://data-api.binance.vision/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${limit}`,
+    `https://api1.binance.com/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${limit}`,
+    `https://api.binance.com/api/v3/klines?symbol=${bSymbol}&interval=${intervalKey}&limit=${limit}`,
+  ];
+
+  let lastError: Error | null = null;
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000), cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          return data.map((item: (string | number)[]) => ({
+            time: Math.floor(Number(item[0]) / 1000),
+            open: parseFloat(item[1] as string),
+            high: parseFloat(item[2] as string),
+            low: parseFloat(item[3] as string),
+            close: parseFloat(item[4] as string),
+            volume: parseFloat(item[5] as string),
+          }));
+        }
+      }
+    } catch (err) {
+      lastError = err as Error;
+    }
+  }
+
+  throw lastError || new Error(`Binance endpoints unavailable for ${bSymbol}`);
 }
 
 /**
@@ -569,7 +587,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
         return cacheAndPersist(symbol, interval, candles);
       }
     } catch (err) {
-      console.warn(`Binance fetch failed for ${symbol}, trying Yahoo...`, err);
+      console.warn(`[Market Feed] Binance fetch note for ${symbol}, trying Yahoo:`, (err as Error)?.message || err);
     }
   }
 
