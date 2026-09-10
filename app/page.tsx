@@ -490,8 +490,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ─── PWA VIEW SELECTOR (หัวข้อเมนูสลับหน้าจอ สำหรับทั้งมือถือและคอม) ─── */}
-        <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5">
+        {/* ─── DESKTOP VIEW SELECTOR (แถบเมนูสลับหน้าจอสำหรับ Desktop/Tablet ส่วนมือถือจะใช้แถบด้านล่างอย่างเดียวเพื่อไม่ให้ซ้อนกัน) ─── */}
+        <div className="hidden md:flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5">
           <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-surface-100/95 border border-slate-800 shrink-0">
             <button
               onClick={() => setActiveTab("SIGNALS")}
@@ -721,12 +721,14 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {/* ─── MOBILE PWA BOTTOM NAVIGATION BAR (แถบเมนูด้านล่างสำหรับมือถือ สไตล์แอปแท้) ─── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface-100/95 backdrop-blur-md border-t border-slate-800 md:hidden px-3 py-2 flex items-center justify-around shadow-2xl shadow-black">
+      {/* ─── MOBILE PWA BOTTOM NAVIGATION BAR (แถบเมนูด้านล่างสำหรับมือถือ สไตล์แอปแท้ ปราศจากเมนูซ้ำซ้อน) ─── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface-100/95 backdrop-blur-md border-t border-slate-800 md:hidden px-2 py-2 flex items-center justify-around shadow-2xl shadow-black pb-[max(0.6rem,env(safe-area-inset-bottom))]">
         <button
           onClick={() => setActiveTab("SIGNALS")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
-            activeTab === "SIGNALS" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+            activeTab === "SIGNALS"
+              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
+              : "text-slate-400 hover:text-slate-200 border border-transparent"
           }`}
         >
           <Target className="w-5 h-5" />
@@ -735,8 +737,10 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setActiveTab("CHART")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
-            activeTab === "CHART" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+            activeTab === "CHART"
+              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
+              : "text-slate-400 hover:text-slate-200 border border-transparent"
           }`}
         >
           <BarChart3 className="w-5 h-5" />
@@ -745,8 +749,10 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setActiveTab("RADAR")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
-            activeTab === "RADAR" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+            activeTab === "RADAR"
+              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
+              : "text-slate-400 hover:text-slate-200 border border-transparent"
           }`}
         >
           <Radio className="w-5 h-5" />
@@ -755,8 +761,10 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setActiveTab("NEWS")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
-            activeTab === "NEWS" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+            activeTab === "NEWS"
+              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
+              : "text-slate-400 hover:text-slate-200 border border-transparent"
           }`}
         >
           <Newspaper className="w-5 h-5" />
@@ -765,8 +773,10 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setActiveTab("JOURNAL")}
-          className={`flex flex-col items-center gap-1 px-3 py-1 rounded-xl transition-all active:scale-95 ${
-            activeTab === "JOURNAL" ? "text-indigo-400 font-bold" : "text-slate-400 hover:text-slate-200"
+          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+            activeTab === "JOURNAL"
+              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
+              : "text-slate-400 hover:text-slate-200 border border-transparent"
           }`}
         >
           <BookOpen className="w-5 h-5" />
