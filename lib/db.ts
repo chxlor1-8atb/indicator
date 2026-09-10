@@ -478,13 +478,13 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
     }
 
     // Trigger background data hygiene check (debounced every 6 hours)
-    runDataHygiene().catch((err) => console.error("Data hygiene trigger error:", err));
+    runDataHygiene().catch((err) => console.warn("[Neon Hygiene] Background note:", (err as Error)?.message || err));
   } catch (err) {
-    console.error("Error resolving open signals in batch:", err);
+    console.warn("[Neon Resolver] Note resolving open signals:", (err as Error)?.message || err);
   }
 }
 
-let lastPurgeTime = 0;
+let lastPurgeTime = Date.now(); // Do NOT trigger immediately on cold start
 const PURGE_INTERVAL_MS = 6 * 3600 * 1000; // 6 hours
 
 /**
@@ -499,13 +499,11 @@ export async function runDataHygiene(): Promise<void> {
   lastPurgeTime = now;
 
   try {
-    await Promise.all([
-      sql.query(`DELETE FROM market_snapshots WHERE created_at < NOW() - INTERVAL '14 days'`),
-      sql.query(`DELETE FROM signal_feedback_lessons WHERE created_at < NOW() - INTERVAL '30 days'`),
-      sql.query(`DELETE FROM ai_signals WHERE status != 'ACTIVE' AND created_at < NOW() - INTERVAL '60 days'`),
-    ]);
+    await resilientQuery(`DELETE FROM market_snapshots WHERE created_at < NOW() - INTERVAL '14 days'`);
+    await resilientQuery(`DELETE FROM signal_feedback_lessons WHERE created_at < NOW() - INTERVAL '30 days'`);
+    await resilientQuery(`DELETE FROM ai_signals WHERE status != 'ACTIVE' AND created_at < NOW() - INTERVAL '60 days'`);
   } catch (err) {
-    console.error("Error during background data hygiene purge:", err);
+    console.warn("[Neon Hygiene] Housekeeping purge deferred:", (err as Error)?.message || err);
   }
 }
 
