@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get("symbol") || undefined;
-    const limit = Number(searchParams.get("limit")) || 20;
+    const limit = Number(searchParams.get("limit")) || 60;
 
     const [data, analytics] = await Promise.all([
       getSignalsAndStats(limit, symbol),

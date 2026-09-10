@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { DbAiSignal, WinRateStats, PerSymbolStat, QuantitativeAnalytics, EquityPoint } from "@/lib/db";
 import { AVAILABLE_ASSETS } from "@/lib/marketService";
 import {
@@ -24,6 +24,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Activity,
+  Layers,
+  ListFilter,
 } from "lucide-react";
 
 export default function SignalJournalCard() {
@@ -50,6 +52,13 @@ export default function SignalJournalCard() {
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
   const hasAutoTriggeredRef = useRef(false);
   const cancelScanRef = useRef(false);
+
+  // ─── Trade History Tab (TRADES View) Multi-Pair Filtering & Grouping State ───
+  const [tradeSymbolFilter, setTradeSymbolFilter] = useState<string>("ALL");
+  const [tradeGroupByPair, setTradeGroupByPair] = useState<boolean>(false);
+  const [tradeSearchQuery, setTradeSearchQuery] = useState<string>("");
+  const [tradeActionFilter, setTradeActionFilter] = useState<"ALL" | "BUY" | "SELL">("ALL");
+  const [tradeStatusFilter, setTradeStatusFilter] = useState<"ALL" | "ACTIVE" | "WIN" | "LOSS">("ALL");
 
   // ─── Chunked Batch Scanning State (Eliminates Vercel Serverless 504 Timeout) ───
   const [scanProgress, setScanProgress] = useState<{
@@ -264,6 +273,67 @@ export default function SignalJournalCard() {
         );
     }
   };
+
+  const formatTradeTime = (dateStr?: string | Date) => {
+    if (!dateStr) return "";
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString("th-TH", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    } catch {
+      return "";
+    }
+  };
+
+  const availableSymbolsInTrades = useMemo(() => {
+    const counts: Record<string, number> = {};
+    signals.forEach((s) => {
+      counts[s.symbol] = (counts[s.symbol] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [signals]);
+
+  const filteredTrades = useMemo(() => {
+    return signals.filter((s) => {
+      if (tradeSymbolFilter !== "ALL" && s.symbol !== tradeSymbolFilter) {
+        return false;
+      }
+      if (tradeActionFilter !== "ALL" && s.action !== tradeActionFilter) {
+        return false;
+      }
+      if (tradeStatusFilter !== "ALL") {
+        if (tradeStatusFilter === "ACTIVE" && s.status !== "ACTIVE") return false;
+        if (tradeStatusFilter === "WIN" && s.status !== "HIT_TP1" && s.status !== "HIT_TP2") return false;
+        if (tradeStatusFilter === "LOSS" && s.status !== "HIT_SL") return false;
+      }
+      if (tradeSearchQuery.trim()) {
+        const q = tradeSearchQuery.toLowerCase();
+        const matchSymbol = s.symbol.toLowerCase().includes(q);
+        const matchAction = s.action.toLowerCase().includes(q);
+        const matchGrade = (s.setup_grade || "").toLowerCase().includes(q);
+        const matchOrderType = (s.order_type || "").toLowerCase().includes(q);
+        const matchStatus = (s.status || "").toLowerCase().includes(q);
+        if (!matchSymbol && !matchAction && !matchGrade && !matchOrderType && !matchStatus) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [signals, tradeSymbolFilter, tradeActionFilter, tradeStatusFilter, tradeSearchQuery]);
+
+  const groupedTradesByPair = useMemo(() => {
+    const groups: Record<string, DbAiSignal[]> = {};
+    filteredTrades.forEach((s) => {
+      if (!groups[s.symbol]) groups[s.symbol] = [];
+      groups[s.symbol].push(s);
+    });
+    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
+  }, [filteredTrades]);
 
   const renderEquityCurve = () => {
     const points = analytics?.equityCurve || [];
@@ -715,7 +785,7 @@ export default function SignalJournalCard() {
           }`}
         >
           <Clock className="w-3.5 h-3.5 text-amber-400" />
-          <span>📝 ประวัติออเดอร์ ({signals.length})</span>
+          <span>📑 ประวัติออเดอร์ ({signals.length})</span>
         </button>
       </div>
 
@@ -859,13 +929,184 @@ export default function SignalJournalCard() {
         </div>
       ))}
 
-      {/* VIEW 3: Recent Recorded Signals List */}
+      {/* VIEW 3: Multi-Pair Trade History Journal */}
       {viewTab === "TRADES" && (
-        <div className="space-y-2">
-          <span className="text-[11px] font-semibold text-slate-400 block">
-            ประวัติสัญญาณล่าสุดที่บันทึกลง Database:
-          </span>
+        <div className="space-y-3">
+          {/* Header & View Mode Switcher */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-800/80">
+            <div>
+              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>ประวัติออเดอร์ในฐานข้อมูล (Neon Postgres)</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-50 border border-slate-700 text-slate-300">
+                  {filteredTrades.length} / {signals.length} ไม้
+                </span>
+              </span>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                แยกดูตามรายคู่เงิน กรองผลลัพธ์ หรือสลับมุมมองจัดกลุ่มได้ทันที
+              </p>
+            </div>
 
+            {/* View Mode Toggle: Timeline vs Group by Pair */}
+            <div className="flex items-center gap-1 bg-surface-50 p-1 rounded-xl border border-slate-800 text-xs self-start sm:self-auto">
+              <button
+                onClick={() => setTradeGroupByPair(false)}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                  !tradeGroupByPair
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                title="แสดงเรียงตามลำดับเวลาล่าสุด"
+              >
+                <Clock className="w-3 h-3" />
+                <span>📋 เรียงตามเวลา</span>
+              </button>
+
+              <button
+                onClick={() => setTradeGroupByPair(true)}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                  tradeGroupByPair
+                    ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                title="แยกจัดกลุ่มตามคู่เงิน"
+              >
+                <Layers className="w-3 h-3" />
+                <span>🗂️ แยกตามคู่เงิน</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Filters: Search Bar + Action & Status Chips */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="ค้นหาคู่เงิน (XAUUSD, EUR...), BUY/SELL, Grade A, TP..."
+                value={tradeSearchQuery}
+                onChange={(e) => setTradeSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-surface-50 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+              />
+              {tradeSearchQuery && (
+                <button
+                  onClick={() => setTradeSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs px-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Action Filter Pills */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 sm:pb-0 scrollbar-none">
+              {(["ALL", "BUY", "SELL"] as const).map((act) => (
+                <button
+                  key={act}
+                  onClick={() => setTradeActionFilter(act)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                    tradeActionFilter === act
+                      ? act === "BUY"
+                        ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/20"
+                        : act === "SELL"
+                        ? "bg-rose-500 text-white shadow-sm shadow-rose-500/20"
+                        : "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
+                      : "bg-surface-50 text-slate-400 hover:text-slate-200 border border-slate-800"
+                  }`}
+                >
+                  {act === "ALL" ? "ทุกทิศทาง" : act === "BUY" ? "🟢 BUY" : "🔴 SELL"}
+                </button>
+              ))}
+
+              {/* Status Filter Pills */}
+              {(["ALL", "ACTIVE", "WIN", "LOSS"] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setTradeStatusFilter(st)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                    tradeStatusFilter === st
+                      ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
+                      : "bg-surface-50 text-slate-400 hover:text-slate-200 border border-slate-800"
+                  }`}
+                >
+                  {st === "ALL"
+                    ? "ทุกสถานะ"
+                    : st === "ACTIVE"
+                    ? "🟡 เปิดอยู่"
+                    : st === "WIN"
+                    ? "🟢 ชนะ (TP)"
+                    : "🔴 แพ้ (SL)"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Currency Pair Chips Row (แยกคู่เงิน) */}
+          {availableSymbolsInTrades.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span className="font-semibold flex items-center gap-1">
+                  <ListFilter className="w-3 h-3 text-indigo-400" />
+                  <span>แยกตามคู่เงิน ({availableSymbolsInTrades.length} คู่ที่มีประวัติ):</span>
+                </span>
+                {tradeSymbolFilter !== "ALL" && (
+                  <button
+                    onClick={() => setTradeSymbolFilter("ALL")}
+                    className="text-indigo-400 hover:text-indigo-300 font-medium hover:underline text-[10.5px]"
+                  >
+                    ล้างตัวกรองคู่เงิน (แสดงทั้งหมด)
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-700">
+                <button
+                  onClick={() => setTradeSymbolFilter("ALL")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1 ${
+                    tradeSymbolFilter === "ALL"
+                      ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                      : "bg-surface-50 hover:bg-slate-800 text-slate-300 border border-slate-800"
+                  }`}
+                >
+                  <span>ทั้งหมด</span>
+                  <span className="text-[10px] px-1 py-0.2 rounded bg-black/30 font-mono">
+                    {signals.length}
+                  </span>
+                </button>
+
+                {availableSymbolsInTrades.map(([sym, count]) => {
+                  const isSelected = tradeSymbolFilter === sym;
+                  const asset = AVAILABLE_ASSETS.find((a) => a.symbol === sym);
+                  return (
+                    <button
+                      key={sym}
+                      onClick={() => setTradeSymbolFilter(isSelected ? "ALL" : sym)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                        isSelected
+                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20 ring-1 ring-indigo-400"
+                          : "bg-surface-50 hover:bg-slate-800 text-slate-300 border border-slate-800"
+                      }`}
+                    >
+                      <span className="font-mono">{sym}</span>
+                      {asset?.category === "commodities" && (
+                        <span className="text-[8px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300">GOLD</span>
+                      )}
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                          isSelected ? "bg-black/30 text-white" : "bg-surface-100 text-slate-400 border border-slate-700"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Trade List Rendering */}
           {signals.length === 0 ? (
             <div className="p-6 rounded-xl bg-surface-50 border border-slate-800/80 text-center space-y-1.5 text-xs text-slate-400">
               <ShieldCheck className="w-6 h-6 text-indigo-400 mx-auto opacity-70" />
@@ -874,30 +1115,180 @@ export default function SignalJournalCard() {
                 เมื่อระบบตรวจพบสัญญาณเทรดที่เข้าเงื่อนไข (Grade A หรือ B+) สัญญาณจะถูกบันทึกและวัดผลอัตโนมัติที่นี่ครับ
               </p>
             </div>
+          ) : filteredTrades.length === 0 ? (
+            <div className="p-6 rounded-xl bg-surface-50 border border-slate-800 text-center space-y-2 text-xs text-slate-400">
+              <Search className="w-5 h-5 text-slate-500 mx-auto" />
+              <p className="font-semibold text-slate-300">ไม่พบออเดอร์ที่ตรงตามตัวกรองที่เลือก</p>
+              <p className="text-[11px] text-slate-500">
+                ลองปรับคำค้นหา หรือรีเซ็ตตัวกรองคู่เงิน/สถานะดูครับ
+              </p>
+              <button
+                onClick={() => {
+                  setTradeSymbolFilter("ALL");
+                  setTradeSearchQuery("");
+                  setTradeActionFilter("ALL");
+                  setTradeStatusFilter("ALL");
+                }}
+                className="mt-1 px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all inline-block"
+              >
+                รีเซ็ตตัวกรองทั้งหมด
+              </button>
+            </div>
+          ) : tradeGroupByPair ? (
+            /* GROUPED BY PAIR VIEW (🗂️ แยกตามคู่เงิน) */
+            <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+              {groupedTradesByPair.map(([sym, pairSignals]) => {
+                const asset = AVAILABLE_ASSETS.find((a) => a.symbol === sym);
+                const stat = perSymbolStats.find((p) => p.symbol === sym);
+                const buyCount = pairSignals.filter((s) => s.action === "BUY").length;
+                const sellCount = pairSignals.filter((s) => s.action === "SELL").length;
+                const winsInGroup = pairSignals.filter((s) => s.status === "HIT_TP1" || s.status === "HIT_TP2").length;
+                const resolvedInGroup = pairSignals.filter((s) => s.status !== "ACTIVE").length;
+                const localWinRate = resolvedInGroup > 0 ? Math.round((winsInGroup / resolvedInGroup) * 100) : null;
+
+                return (
+                  <div
+                    key={sym}
+                    className="p-3 rounded-xl bg-surface-50 border border-slate-800/90 space-y-2 hover:border-slate-700 transition-all"
+                  >
+                    {/* Pair Header Card */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-white font-mono">{sym}</span>
+                        {asset?.category && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-surface-100 text-slate-300 border border-slate-700 uppercase">
+                            {asset.category === "commodities" ? "GOLD/COMMODITY" : asset.category}
+                          </span>
+                        )}
+                        {asset?.name && (
+                          <span className="hidden sm:inline text-[11px] text-slate-400">
+                            {asset.name}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap text-xs">
+                        <span className="text-[10.5px] font-mono px-2 py-0.5 rounded bg-surface-100 border border-slate-700 text-slate-300">
+                          {pairSignals.length} ออเดอร์ ({buyCount} BUY / {sellCount} SELL)
+                        </span>
+
+                        {stat ? (
+                          <span className="text-[10.5px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+                            WR: {stat.winRatePct}% ({stat.netPips >= 0 ? `+${stat.netPips}` : stat.netPips} pips)
+                          </span>
+                        ) : localWinRate !== null ? (
+                          <span className="text-[10.5px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+                            WR: {localWinRate}%
+                          </span>
+                        ) : null}
+
+                        <button
+                          onClick={() => setTradeSymbolFilter(tradeSymbolFilter === sym ? "ALL" : sym)}
+                          className={`text-[10.5px] font-semibold px-2 py-0.5 rounded transition-all ${
+                            tradeSymbolFilter === sym
+                              ? "bg-indigo-600 text-white"
+                              : "bg-surface-100 text-indigo-400 hover:text-white border border-indigo-500/30"
+                          }`}
+                        >
+                          {tradeSymbolFilter === sym ? "กำลังแสดงเฉพาะคู่นี้" : "ดูเฉพาะคู่นี้"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Orders in this Pair Group */}
+                    <div className="space-y-1.5">
+                      {pairSignals.map((sig) => (
+                        <div
+                          key={sig.id}
+                          className="p-2 rounded-lg bg-surface-100 hover:bg-slate-800/70 border border-slate-800/70 transition-all flex flex-wrap items-center justify-between gap-2"
+                        >
+                          {/* Left info */}
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-black font-mono ${
+                                sig.action === "BUY"
+                                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                  : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                              }`}
+                            >
+                              {sig.action}
+                            </span>
+
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-slate-300 font-mono font-bold">
+                                  {sig.timeframe}
+                                </span>
+                                <span className="text-[10px] font-medium text-slate-400 px-1.5 py-0.2 rounded bg-surface-50 border border-slate-700">
+                                  {sig.order_type}
+                                </span>
+                                {sig.created_at && (
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    🕒 {formatTradeTime(sig.created_at)}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                                <span>เข้า: <strong className="text-amber-300">{formatJournalPrice(sig.entry_price, sig.symbol)}</strong></span>
+                                <span>SL: <strong className="text-rose-400">{formatJournalPrice(sig.stop_loss, sig.symbol)}</strong></span>
+                                <span>TP1: <strong className="text-emerald-400">{formatJournalPrice(sig.take_profit1, sig.symbol)}</strong></span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right status */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-50 border border-slate-700 text-slate-300">
+                              {sig.setup_grade}
+                            </span>
+                            {getStatusBadge(sig.status, Number(sig.pnl_pips))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
-            <div className="space-y-1.5 max-h-[340px] overflow-y-auto pr-1">
-              {signals.map((sig) => (
+            /* TIMELINE VIEW (📋 เรียงตามเวลาล่าสุด) */
+            <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-1">
+              {filteredTrades.map((sig) => (
                 <div
                   key={sig.id}
                   className="p-2.5 rounded-xl bg-surface-50 hover:bg-slate-800/60 border border-slate-800/80 transition-all flex flex-wrap items-center justify-between gap-2"
                 >
                   {/* Left info */}
                   <div className="flex items-center gap-2.5">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-black font-mono ${
-                      sig.action === "BUY"
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                        : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                    }`}>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-black font-mono ${
+                        sig.action === "BUY"
+                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                          : "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                      }`}
+                    >
                       {sig.action}
                     </span>
 
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-white font-mono">{sig.symbol}</span>
+                        <button
+                          onClick={() => setTradeSymbolFilter(sig.symbol)}
+                          className="text-xs font-bold text-white font-mono hover:text-indigo-400 hover:underline cursor-pointer"
+                          title={`กรองเฉพาะคู่ ${sig.symbol}`}
+                        >
+                          {sig.symbol}
+                        </button>
                         <span className="text-[10px] text-slate-400 font-mono">({sig.timeframe})</span>
                         <span className="text-[10px] font-bold text-slate-300 px-1.5 py-0.2 rounded bg-surface-100 border border-slate-700">
                           {sig.order_type}
                         </span>
+                        {sig.created_at && (
+                          <span className="text-[10px] text-slate-400 font-mono hidden xs:inline">
+                            🕒 {formatTradeTime(sig.created_at)}
+                          </span>
+                        )}
                       </div>
 
                       <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
