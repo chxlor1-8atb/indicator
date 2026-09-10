@@ -343,32 +343,36 @@ export async function scanWatchlistAutonomous(
   const actionableAnalyses: AnalysisResult[] = [];
   const preWarningAnalyses: AnalysisResult[] = [];
 
-  // Parallel scanning across watchlist assets
-  const scanPromises = AUTONOMOUS_WATCHLIST.map(async (sym) => {
-    try {
-      const candles = await getMarketCandles(sym, "1h");
-      if (!candles || candles.length < 20) return null;
+  // Process watchlist in controlled batches of 4 to prevent network congestion & rate limits
+  const BATCH_SIZE = 4;
+  for (let i = 0; i < AUTONOMOUS_WATCHLIST.length; i += BATCH_SIZE) {
+    const batch = AUTONOMOUS_WATCHLIST.slice(i, i + BATCH_SIZE);
+    const batchPromises = batch.map(async (sym) => {
+      try {
+        const candles = await getMarketCandles(sym, "1h");
+        if (!candles || candles.length < 20) return null;
 
-      const evalResult = await evaluateAssetAutonomous(sym, candles, "1h", config);
-      return evalResult;
-    } catch (err) {
-      console.warn(`Autonomous scan error for ${sym}:`, err);
-      return null;
-    }
-  });
-
-  const results = await Promise.allSettled(scanPromises);
-
-  for (const res of results) {
-    if (res.status === "fulfilled" && res.value) {
-      summaries.push(res.value.scannerSummary);
-      if (res.value.newOrder) {
-        newOrders.push(res.value.newOrder);
+        const evalResult = await evaluateAssetAutonomous(sym, candles, "1h", config);
+        return evalResult;
+      } catch (err) {
+        console.warn(`Autonomous scan note for ${sym}:`, (err as Error)?.message || err);
+        return null;
       }
-      if (res.value.decisionTriggered && res.value.analysis) {
-        actionableAnalyses.push(res.value.analysis);
-      } else if (res.value.isPreWarning && res.value.analysis) {
-        preWarningAnalyses.push(res.value.analysis);
+    });
+
+    const results = await Promise.allSettled(batchPromises);
+
+    for (const res of results) {
+      if (res.status === "fulfilled" && res.value) {
+        summaries.push(res.value.scannerSummary);
+        if (res.value.newOrder) {
+          newOrders.push(res.value.newOrder);
+        }
+        if (res.value.decisionTriggered && res.value.analysis) {
+          actionableAnalyses.push(res.value.analysis);
+        } else if (res.value.isPreWarning && res.value.analysis) {
+          preWarningAnalyses.push(res.value.analysis);
+        }
       }
     }
   }

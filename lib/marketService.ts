@@ -422,64 +422,83 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
     interval === "1D" ? "2y" :
     interval === "1W" ? "5y" : "3mo";
 
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySymbol)}?interval=${yInterval}&range=${yRange}&_t=${Date.now()}`;
-  
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    },
-    signal: AbortSignal.timeout(4500),
-    cache: "no-store",
-  });
+  const yahooHosts = [
+    "https://query1.finance.yahoo.com",
+    "https://query2.finance.yahoo.com",
+  ];
 
-  if (!res.ok) {
-    throw new Error(`Yahoo Finance API error: ${res.statusText}`);
-  }
+  let lastError: Error | null = null;
 
-  const data = await res.json();
-  const result = data?.chart?.result?.[0];
-  if (!result || !result.timestamp) {
-    throw new Error("Invalid Yahoo Finance response");
-  }
-
-  const timestamps: number[] = result.timestamp;
-  const quote = result.indicators.quote[0];
-  const candles: Candle[] = [];
-
-  for (let i = 0; i < timestamps.length; i++) {
-    const o = quote.open?.[i];
-    const h = quote.high?.[i];
-    const l = quote.low?.[i];
-    const c = quote.close?.[i];
-    const v = quote.volume?.[i] || 1000;
-
-    if (o !== null && h !== null && l !== null && c !== null && !isNaN(o) && !isNaN(c)) {
-      candles.push({
-        time: timestamps[i],
-        open: Number(o.toFixed(4)),
-        high: Number(h.toFixed(4)),
-        low: Number(l.toFixed(4)),
-        close: Number(c.toFixed(4)),
-        volume: Number(v),
+  for (const host of yahooHosts) {
+    const url = `${host}/v8/finance/chart/${encodeURIComponent(ySymbol)}?interval=${yInterval}&range=${yRange}&_t=${Date.now()}`;
+    
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+        signal: AbortSignal.timeout(6000),
+        cache: "no-store",
       });
+
+      if (!res.ok) {
+        continue;
+      }
+
+      const data = await res.json();
+      const result = data?.chart?.result?.[0];
+      if (!result || !result.timestamp) {
+        continue;
+      }
+
+      const timestamps: number[] = result.timestamp;
+      const quote = result.indicators?.quote?.[0];
+      if (!quote) continue;
+
+      const candles: Candle[] = [];
+
+      for (let i = 0; i < timestamps.length; i++) {
+        const o = quote.open?.[i];
+        const h = quote.high?.[i];
+        const l = quote.low?.[i];
+        const c = quote.close?.[i];
+        const v = quote.volume?.[i] || 1000;
+
+        if (o !== null && h !== null && l !== null && c !== null && !isNaN(o) && !isNaN(c)) {
+          candles.push({
+            time: timestamps[i],
+            open: Number(o.toFixed(4)),
+            high: Number(h.toFixed(4)),
+            low: Number(l.toFixed(4)),
+            close: Number(c.toFixed(4)),
+            volume: Number(v),
+          });
+        }
+      }
+
+      if (candles.length === 0) continue;
+
+      // Update latest candle close with the ultra-fresh regularMarketPrice if available
+      const currentLivePrice = result.meta?.regularMarketPrice;
+      if (currentLivePrice && candles.length > 0) {
+        const last = candles[candles.length - 1];
+        last.close = Number(currentLivePrice.toFixed(4));
+        last.high = Math.max(last.high, last.close);
+        last.low = Math.min(last.low, last.close);
+      }
+
+      // If 4h requested, resample hourly candles into accurate 4h bars
+      if (interval === "4h") {
+        return resampleCandlesTo4H(candles);
+      }
+
+      return candles;
+    } catch (err) {
+      lastError = err as Error;
     }
   }
 
-  // Update latest candle close with the ultra-fresh regularMarketPrice if available
-  const currentLivePrice = result.meta?.regularMarketPrice;
-  if (currentLivePrice && candles.length > 0) {
-    const last = candles[candles.length - 1];
-    last.close = Number(currentLivePrice.toFixed(4));
-    last.high = Math.max(last.high, last.close);
-    last.low = Math.min(last.low, last.close);
-  }
-
-  // If 4h requested, resample hourly candles into accurate 4h bars
-  if (interval === "4h") {
-    return resampleCandlesTo4H(candles);
-  }
-
-  return candles;
+  throw lastError || new Error(`Yahoo Finance API error for ${symbol}`);
 }
 
 export function generateRealisticCandles(symbol: string, basePrice = 2500, count = 120): Candle[] {
@@ -531,7 +550,7 @@ function cacheAndPersist(sym: string, tf: string, candles: Candle[]): Candle[] {
   candleCache.set(cacheKey, { candles, timestamp: Date.now() });
   // Non-blocking fire-and-forget save to Neon rolling FIFO buffer
   saveCandlesRollingBuffer(sym, tf, candles).catch((err) => {
-    console.error(`Background saveCandlesRollingBuffer error for ${sym}:`, err);
+    console.warn(`[Neon Buffer] Background save note for ${sym}:`, (err as Error)?.message || err);
   });
   return candles;
 }
@@ -630,8 +649,11 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
       }
       return cacheAndPersist(symbol, interval, candles);
     }
-  } catch (err) {
-    console.warn(`Yahoo fetch failed for ${symbol}, using fallback data...`, err);
+  } catch (err: unknown) {
+    const isTimeout = (err instanceof Error && err.name === "TimeoutError") || String(err).includes("timeout");
+    if (!isTimeout) {
+      console.warn(`[Market Feed] Yahoo fetch note for ${symbol}:`, (err as Error)?.message || err);
+    }
   }
 
   // 5. High-Availability Fallback: Fetch from Neon PostgreSQL Rolling Buffer
