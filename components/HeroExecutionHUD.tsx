@@ -81,16 +81,14 @@ export default function HeroExecutionHUD({
     triggerMessage = `ตลาดกำลังเผชิญข่าวกล่องแดง/ส้ม (${cal?.freezeReason || "ความเสี่ยงผันผวนรุนแรง"}) ห้ามเปิดสถานะเด็ดขาดจนกว่าตลาดจะนิ่ง`;
     triggerStatusIcon = <AlertOctagon className="w-5 h-5 text-rose-400 shrink-0" />;
   } else if (isBuy) {
-    triggerTitle = isLimit
-      ? "⏳ จังหวะเข้า: ตั้งคำสั่ง BUY LIMIT รอราคาเกี่ยวที่แนวรับ"
-      : "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด BUY ทันที";
-    triggerMessage = `วิเคราะห์ผ่านเกณฑ์ 5 เสาหลัก (${analysis.fiveCorePillars?.passedPillarsCount ?? 3}/5) • ราคาเข้าเป้าหมาย ${entryPrice} (ห่างประมาณ ${distancePips} pips) • เป้า TP1 ${ts.takeProfit1} (+${ts.tp1Pips || 0} pips)`;
+    const mtName = ts.mtOrderLabel || (ts.orderType === "BUY_LIMIT" ? "Buy Limit" : ts.orderType === "BUY_STOP" ? "Buy Stop" : ts.orderType === "BUY_STOP_LIMIT" ? "Buy Stop Limit" : isLimit ? "Buy Limit" : "Market Execution");
+    triggerTitle = `📱 MT5 คำสั่งแนะนำ: 【 ${mtName} 】`;
+    triggerMessage = `${ts.mtOrderAdvice ? `${ts.mtOrderAdvice} • ` : ""}ราคาเป้าหมาย ${entryPrice} (ห่าง ${distancePips} pips) • เป้า TP1 ${ts.takeProfit1} (+${ts.tp1Pips || 0} pips)`;
     triggerStatusIcon = isLimit ? <Clock className="w-5 h-5 text-emerald-400 shrink-0" /> : <Zap className="w-5 h-5 text-emerald-400 shrink-0 animate-bounce" />;
   } else if (isSell) {
-    triggerTitle = isLimit
-      ? "⏳ จังหวะเข้า: ตั้งคำสั่ง SELL LIMIT รอราคาเกี่ยวที่แนวต้าน"
-      : "⚡ จังหวะเข้า: สัญญาณพร้อมเปิด SELL ทันที";
-    triggerMessage = `วิเคราะห์ผ่านเกณฑ์ 5 เสาหลัก (${analysis.fiveCorePillars?.passedPillarsCount ?? 3}/5) • ราคาเข้าเป้าหมาย ${entryPrice} (ห่างประมาณ ${distancePips} pips) • เป้า TP1 ${ts.takeProfit1} (+${ts.tp1Pips || 0} pips)`;
+    const mtName = ts.mtOrderLabel || (ts.orderType === "SELL_LIMIT" ? "Sell Limit" : ts.orderType === "SELL_STOP" ? "Sell Stop" : ts.orderType === "SELL_STOP_LIMIT" ? "Sell Stop Limit" : isLimit ? "Sell Limit" : "Market Execution");
+    triggerTitle = `📱 MT5 คำสั่งแนะนำ: 【 ${mtName} 】`;
+    triggerMessage = `${ts.mtOrderAdvice ? `${ts.mtOrderAdvice} • ` : ""}ราคาเป้าหมาย ${entryPrice} (ห่าง ${distancePips} pips) • เป้า TP1 ${ts.takeProfit1} (+${ts.tp1Pips || 0} pips)`;
     triggerStatusIcon = isLimit ? <Clock className="w-5 h-5 text-rose-400 shrink-0" /> : <Zap className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />;
   } else {
     triggerTitle = "⚪ สถานะ: พักดูจังหวะ (ตลาดยังไม่ให้แต้มต่อ)";
@@ -185,6 +183,10 @@ export default function HeroExecutionHUD({
               ? "bg-sky-500/20 text-sky-300 border-sky-500/50"
               : ts.orderType === "SELL_STOP"
               ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
+              : ts.orderType === "BUY_STOP_LIMIT"
+              ? "bg-teal-500/20 text-teal-300 border-teal-500/50"
+              : ts.orderType === "SELL_STOP_LIMIT"
+              ? "bg-purple-500/20 text-purple-300 border-purple-500/50"
               : "bg-surface-50 text-slate-400 border-slate-700"
           }`}>
             {isFreeze
@@ -201,6 +203,10 @@ export default function HeroExecutionHUD({
               ? "🚀 BUY STOP (ดักซื้อเมื่อทะลุ)"
               : ts.orderType === "SELL_STOP"
               ? "🔻 SELL STOP (ดักขายเมื่อหลุด)"
+              : ts.orderType === "BUY_STOP_LIMIT"
+              ? "💎 BUY STOP LIMIT (MT5)"
+              : ts.orderType === "SELL_STOP_LIMIT"
+              ? "💎 SELL STOP LIMIT (MT5)"
               : "⚪ พักดูจังหวะ (WAIT)"}
           </span>
 

@@ -1264,6 +1264,74 @@ export function generateRuleBasedAnalysis(
     ? `[🛡️ ANTI-CLASH VETO] ${orchestrator.vetoReason} `
     : "";
 
+  // ─── MT4 / MT5 Order Type Recommendation Engine (Matching MetaTrader 5 Dropdown) ───
+  let calculatedOrderType: "BUY_LIMIT" | "SELL_LIMIT" | "BUY_STOP" | "SELL_STOP" | "BUY_STOP_LIMIT" | "SELL_STOP_LIMIT" | "MARKET_EXECUTION" | "WAIT_NO_ORDER" = "WAIT_NO_ORDER";
+  let mtOrderLabel = "Market Execution";
+  let mtOrderAdvice = "รอประเมินสภาวะตลาด";
+  let mtStopLimitPrice: number | undefined = undefined;
+
+  if (signal === "WAIT" || tradeAction === "NO_TRADE") {
+    calculatedOrderType = "WAIT_NO_ORDER";
+    mtOrderLabel = "Wait / No Order";
+    mtOrderAdvice = "ยังไม่มีจังหวะได้เปรียบทางสถิติ นั่งทับมือรอการยืนยันโครงสร้าง";
+  } else if (tradeAction === "BUY") {
+    const isBreakout = donchian.breakoutState === "BULLISH_BREAKOUT_20" || regimeInfo.title.includes("BREAKOUT");
+    const isNearMarket = Math.abs(currentPrice - pendingPrice) < currentATR * 0.18;
+
+    if (isNearMarket) {
+      calculatedOrderType = "MARKET_EXECUTION";
+      mtOrderLabel = "Market Execution";
+      mtOrderAdvice = "ราคาอยู่ตรงโซนเข้าได้เปรียบพอดี แนะนำกด BUY ทันทีที่ราคาตลาด";
+    } else if (pendingPrice < currentPrice) {
+      calculatedOrderType = "BUY_LIMIT";
+      mtOrderLabel = "Buy Limit";
+      mtOrderAdvice = "ราคากำลังพักตัว แนะนำตั้ง Buy Limit ดักซื้อของถูกที่แนวรับ OTE / FVG ด้านล่าง (ไม่ต้องเฝ้าจอ)";
+    } else if (isBreakout && pendingPrice > currentPrice) {
+      if (currentATR > 0 && Math.abs(pendingPrice - currentPrice) > currentATR * 0.5) {
+        calculatedOrderType = "BUY_STOP_LIMIT";
+        mtOrderLabel = "Buy Stop Limit";
+        mtStopLimitPrice = Number((pendingPrice - currentATR * 0.2).toFixed(precision));
+        mtOrderAdvice = `ดักซื้อจังหวะเบรกเอาท์แล้วย่อตัว: ตั้ง Stop Price ที่ ${pendingPrice} และ Limit Price ที่ ${mtStopLimitPrice}`;
+      } else {
+        calculatedOrderType = "BUY_STOP";
+        mtOrderLabel = "Buy Stop";
+        mtOrderAdvice = `ดักซื้อตามโมเมนตัมเมื่อราคาทะลุแนวต้าน: ตั้ง Buy Stop ที่ ${pendingPrice}`;
+      }
+    } else {
+      calculatedOrderType = "BUY_LIMIT";
+      mtOrderLabel = "Buy Limit";
+      mtOrderAdvice = "แนะนำตั้ง Buy Limit รอราคาย่อตัวลงมาเกี่ยวที่โซนแนวรับ OTE";
+    }
+  } else if (tradeAction === "SELL") {
+    const isBreakdown = donchian.breakoutState === "BEARISH_BREAKOUT_20" || regimeInfo.title.includes("BREAKDOWN");
+    const isNearMarket = Math.abs(currentPrice - pendingPrice) < currentATR * 0.18;
+
+    if (isNearMarket) {
+      calculatedOrderType = "MARKET_EXECUTION";
+      mtOrderLabel = "Market Execution";
+      mtOrderAdvice = "ราคาอยู่ตรงโซนเข้าได้เปรียบพอดี แนะนำกด SELL ทันทีที่ราคาตลาด";
+    } else if (pendingPrice > currentPrice) {
+      calculatedOrderType = "SELL_LIMIT";
+      mtOrderLabel = "Sell Limit";
+      mtOrderAdvice = "ราคากำลังเด้งขึ้น แนะนำตั้ง Sell Limit ดักขายของแพงที่แนวต้าน OTE / FVG ด้านบน (ไม่ต้องเฝ้าจอ)";
+    } else if (isBreakdown && pendingPrice < currentPrice) {
+      if (currentATR > 0 && Math.abs(currentPrice - pendingPrice) > currentATR * 0.5) {
+        calculatedOrderType = "SELL_STOP_LIMIT";
+        mtOrderLabel = "Sell Stop Limit";
+        mtStopLimitPrice = Number((pendingPrice + currentATR * 0.2).toFixed(precision));
+        mtOrderAdvice = `ดักขายจังหวะหลุดแนวรับแล้วเด้งรีเทส: ตั้ง Stop Price ที่ ${pendingPrice} และ Limit Price ที่ ${mtStopLimitPrice}`;
+      } else {
+        calculatedOrderType = "SELL_STOP";
+        mtOrderLabel = "Sell Stop";
+        mtOrderAdvice = `ดักขายตามโมเมนตัมเมื่อราคาหลุดแนวรับ: ตั้ง Sell Stop ที่ ${pendingPrice}`;
+      }
+    } else {
+      calculatedOrderType = "SELL_LIMIT";
+      mtOrderLabel = "Sell Limit";
+      mtOrderAdvice = "แนะนำตั้ง Sell Limit รอราคาเด้งขึ้นไปเกี่ยวที่โซนแนวต้าน OTE";
+    }
+  }
+
   return {
     symbol,
     timeframe,
@@ -1494,13 +1562,10 @@ export function generateRuleBasedAnalysis(
     },
     tradeSetup: {
       action: tradeAction,
-      orderType: signal === "WAIT" || tradeAction === "NO_TRADE"
-        ? "WAIT_NO_ORDER"
-        : tradeAction === "BUY"
-        ? (currentPrice > pendingPrice || Math.abs(currentPrice - pendingPrice) >= currentATR * 0.25 ? "BUY_LIMIT" : "MARKET_EXECUTION")
-        : tradeAction === "SELL"
-        ? (currentPrice < pendingPrice || Math.abs(currentPrice - pendingPrice) >= currentATR * 0.25 ? "SELL_LIMIT" : "MARKET_EXECUTION")
-        : "WAIT_NO_ORDER",
+      orderType: calculatedOrderType,
+      mtOrderLabel,
+      mtStopLimitPrice,
+      mtOrderAdvice,
       pendingPrice,
       entryZone,
       stopLoss,

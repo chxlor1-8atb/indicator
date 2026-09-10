@@ -1013,7 +1013,10 @@ export interface AnalysisResult {
   };
   tradeSetup: {
     action: "BUY" | "SELL" | "NO_TRADE";
-    orderType: "BUY_LIMIT" | "SELL_LIMIT" | "BUY_STOP" | "SELL_STOP" | "MARKET_EXECUTION" | "WAIT_NO_ORDER";
+    orderType: "BUY_LIMIT" | "SELL_LIMIT" | "BUY_STOP" | "SELL_STOP" | "BUY_STOP_LIMIT" | "SELL_STOP_LIMIT" | "MARKET_EXECUTION" | "WAIT_NO_ORDER";
+    mtOrderLabel?: string;
+    mtStopLimitPrice?: number;
+    mtOrderAdvice?: string;
     pendingPrice: number;
     entryZone: { min: number; max: number };
     stopLoss: number;
