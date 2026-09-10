@@ -86,23 +86,59 @@ function parseRssItems(xmlText: string, source: string): NewsItem[] {
       let sentiment: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL";
       let impact: "HIGH" | "MEDIUM" | "LOW" = "MEDIUM";
 
-      const bullishKeywords = ["surge", "jump", "rally", "gain", "record high", "cut rate", "dovish", "optimism", "soar", "bullish", "approval", "breakout"];
-      const bearishKeywords = ["plunge", "drop", "fall", "slump", "rate hike", "hawkish", "inflation spikes", "war", "selloff", "crash", "bearish", "tariff"];
-      const highImpactKeywords = ["fed", "fomc", "powell", "cpi", "nfp", "interest rate", "sec", "central bank", "gdp", "geopolitical"];
+      // 1. Precise Word-Boundary Regex Patterns for Bullish Sentiment
+      const bullishPatterns = [
+        /\b(rise|rises|rising|rose)\b/i,
+        /\b(surge|surges|surging|surged)\b/i,
+        /\b(jump|jumps|jumped|jumping)\b/i,
+        /\b(rally|rallies|rallied|rallying)\b/i,
+        /\b(gain|gains|gained|gaining)\b/i,
+        /\b(climb|climbs|climbed|climbing)\b/i,
+        /\b(soar|soars|soared|soaring)\b/i,
+        /\b(advance|advances|advanced|advancing)\b/i,
+        /\b(rebound|rebounds|rebounded|rebounding)\b/i,
+        /\b(higher|record high|all-time high|ath|breakout)\b/i,
+        /\b(bull|bulls|bullish)\b/i,
+        /\b(uptrend|recovery|expansion|optimism|outperform)\b/i,
+        /\b(rate cut|cut rates|dovish|policy easing|stimulus)\b/i,
+        /\b(weaker dollar|weak dollar|dollar weakens|dollar drops|dollar falls|dollar slides)\b/i,
+      ];
 
-      // นับจำนวน keyword ที่ match แต่ละฝั่ง
-      const bullMatches = bullishKeywords.filter((w) => lower.includes(w));
-      const bearMatches = bearishKeywords.filter((w) => lower.includes(w));
+      // 2. Precise Word-Boundary Regex Patterns for Bearish Sentiment
+      // (Uses word boundaries \b to strictly avoid false matches like 'toward' -> 'war', 'software' -> 'war', 'shortfall' -> 'fall')
+      const bearishPatterns = [
+        /\b(plunge|plunges|plunged|plunging)\b/i,
+        /\b(drop|drops|dropped|dropping)\b/i,
+        /\b(fall|falls|fell|falling)\b/i,
+        /\b(slump|slumps|slumped|slumping)\b/i,
+        /\b(tumble|tumbles|tumbled|tumbling)\b/i,
+        /\b(sink|sinks|sank|sinking)\b/i,
+        /\b(slide|slides|slid|sliding)\b/i,
+        /\b(crash|crashes|crashed|crashing)\b/i,
+        /\b(selloff|sell-off|dump|dumping)\b/i,
+        /\b(lower|record low|breakdown|downtrend)\b/i,
+        /\b(bear|bears|bearish)\b/i,
+        /\b(rate hike|hike rates|hawkish|tightening)\b/i,
+        /\b(war|military conflict|invasion|geopolitical crisis)\b/i,
+        /\b(tariff|tariffs|trade conflict)\b/i,
+        /\b(stronger dollar|strong dollar|dollar surges|dollar strengthens|dollar rallies)\b/i,
+      ];
+
+      const highImpactKeywords = ["fed", "fomc", "powell", "cpi", "nfp", "interest rate", "sec", "central bank", "gdp", "geopolitical", "inflation", "nonfarm"];
+
+      // นับจำนวน pattern ที่ match แต่ละฝั่ง
+      const bullMatches = bullishPatterns.filter((p) => p.test(lower));
+      const bearMatches = bearishPatterns.filter((p) => p.test(lower));
       const totalMatches = bullMatches.length + bearMatches.length;
 
       const isBull = bullMatches.length > 0;
       const isBear = bearMatches.length > 0;
 
-      // ถ้าขัดแย้งกัน → force NEUTRAL เพื่อป้องกัน hallucination
+      // ถ้าขัดแย้งกัน หรือจำนวนเท่ากัน → NEUTRAL เพื่อป้องกัน bias
       const isContradictory = isBull && isBear;
-      if (isBull && !isBear) sentiment = "BULLISH";
-      else if (isBear && !isBull) sentiment = "BEARISH";
-      // isContradictory → sentiment stays NEUTRAL (reset ไม่ให้ไปทางใดทางหนึ่ง)
+      if (bullMatches.length > bearMatches.length) sentiment = "BULLISH";
+      else if (bearMatches.length > bullMatches.length) sentiment = "BEARISH";
+      else sentiment = "NEUTRAL";
 
       if (highImpactKeywords.some((w) => lower.includes(w))) {
         impact = "HIGH";
