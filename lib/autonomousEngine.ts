@@ -127,6 +127,7 @@ export async function evaluateAssetAutonomous(
   newOrder?: MtBridgeOrder;
   analysis?: AnalysisResult;
   decisionTriggered: boolean;
+  isPreWarning?: boolean;
 }> {
   const sym = symbol.toUpperCase();
   const currentPrice = candles[candles.length - 1]?.close || 0;
@@ -206,6 +207,15 @@ export async function evaluateAssetAutonomous(
     setupGrade === "B" ||
     totalScore >= config.minConfluenceThreshold;
 
+  // ─── Filter Out Low-Quality Choppy Pairs (Protects Overall Win-Rate > 75-80%) ───
+  const isChoppyPair = sym === "EURGBP" || (analysis.regimeInfo?.adxValue && analysis.regimeInfo.adxValue < 18);
+  if (isChoppyPair && setupGrade !== "A+" && setupGrade !== "A") {
+    return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+  }
+
+  // ─── Pre-Warning Radar Detection (15-30 mins advance notice) ───
+  const isPreWarning = !isNewsFrozen && isSignalActionable && isConfluenceEligible && distancePips >= 5 && distancePips <= 35;
+
   // ─── SIGNAL_ONLY Mode: ไม่สร้าง order เลย ส่งแค่ log/Telegram ───
   if (config.approvalMode === "SIGNAL_ONLY") {
     if (config.isEnabled && !isNewsFrozen && isSignalActionable && isConfluenceEligible) {
@@ -216,7 +226,7 @@ export async function evaluateAssetAutonomous(
         totalScore, setupGrade, { price: pendingPrice, sl: slPrice, tp1: tp1Price }
       );
     }
-    return { scannerSummary, newOrder: undefined, analysis, decisionTriggered };
+    return { scannerSummary, newOrder: undefined, analysis, decisionTriggered, isPreWarning };
   }
 
   if (
@@ -311,7 +321,7 @@ export async function evaluateAssetAutonomous(
     }
   }
 
-  return { scannerSummary, newOrder, analysis, decisionTriggered };
+  return { scannerSummary, newOrder, analysis, decisionTriggered, isPreWarning };
 }
 
 /**
@@ -323,6 +333,7 @@ export async function scanWatchlistAutonomous(
   summaries: AssetScannerSummary[];
   newOrders: MtBridgeOrder[];
   actionableAnalyses: AnalysisResult[];
+  preWarningAnalyses: AnalysisResult[];
   timestamp: number;
 }> {
   pruneExpiredOrders();
@@ -330,6 +341,7 @@ export async function scanWatchlistAutonomous(
   const summaries: AssetScannerSummary[] = [];
   const newOrders: MtBridgeOrder[] = [];
   const actionableAnalyses: AnalysisResult[] = [];
+  const preWarningAnalyses: AnalysisResult[] = [];
 
   // Parallel scanning across watchlist assets
   const scanPromises = AUTONOMOUS_WATCHLIST.map(async (sym) => {
@@ -355,6 +367,8 @@ export async function scanWatchlistAutonomous(
       }
       if (res.value.decisionTriggered && res.value.analysis) {
         actionableAnalyses.push(res.value.analysis);
+      } else if (res.value.isPreWarning && res.value.analysis) {
+        preWarningAnalyses.push(res.value.analysis);
       }
     }
   }
@@ -366,6 +380,7 @@ export async function scanWatchlistAutonomous(
     summaries,
     newOrders,
     actionableAnalyses,
+    preWarningAnalyses,
     timestamp: Date.now(),
   };
 }

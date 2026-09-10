@@ -1101,11 +1101,11 @@ export function calculateBreakevenRules(
 
   if (action === "BUY") {
     breakevenPrice = Number((entryPrice + bufferVal).toFixed(precision));
-    earlyBETriggerPrice = Number((entryPrice + riskDist * 0.8).toFixed(precision));
+    earlyBETriggerPrice = Number((entryPrice + riskDist * 0.5).toFixed(precision)); // Instant +0.5R Risk-Free Shield
     earlyBEPrice = Number((entryPrice + bufferVal * 0.5).toFixed(precision));
   } else if (action === "SELL") {
     breakevenPrice = Number((entryPrice - bufferVal).toFixed(precision));
-    earlyBETriggerPrice = Number((entryPrice - riskDist * 0.8).toFixed(precision));
+    earlyBETriggerPrice = Number((entryPrice - riskDist * 0.5).toFixed(precision)); // Instant +0.5R Risk-Free Shield
     earlyBEPrice = Number((entryPrice - bufferVal * 0.5).toFixed(precision));
   }
 

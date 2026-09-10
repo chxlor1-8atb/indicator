@@ -152,14 +152,70 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
   return lines.join("\n");
 }
 
+export function formatTelegramPreWarningMessage(analysis: AnalysisResult): string {
+  const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
+  const isGold = sym.includes("XAU") || sym.includes("GOLD");
+  const pipMultiplier = isGold ? 10 : sym.includes("JPY") ? 100 : 10000;
+  const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
+  const currentP = analysis.currentPrice || entryPrice;
+  const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);
+
+  const mtOrderType = analysis.tradeSetup.mtOrderLabel || (
+    analysis.tradeSetup.action === "BUY" ? "Buy Limit" : "Sell Limit"
+  );
+  const mtOrderIcon = analysis.tradeSetup.action === "BUY" ? "🟢" : "🔴";
+  const actionText = analysis.tradeSetup.action === "BUY" ? "ฝั่งซื้อ (BUY)" : "ฝั่งขาย (SELL)";
+
+  const lines = [
+    `⏳ <b>[PRE-SIGNAL RADAR: เตรียมตัวล่วงหน้า 15-30 นาที]</b> ⏳`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `📊 <b>สินทรัพย์:</b> <code>${analysis.symbol}</code>  |  ⏱️ <b>TF:</b> <code>${analysis.timeframe}</code>`,
+    `💰 <b>ราคาตลาดปัจจุบัน:</b> <code>${formatPrice(analysis.currentPrice, analysis.symbol)}</code>`,
+    `🎯 <b>เรดาร์สถาบัน:</b> ตรวจพบโครงสร้าง ${actionText} กำลังเคลื่อนตัวเข้าหาโซนสไนเปอร์ OTE 70.5% / FVG`,
+    `📍 <b>ระยะห่าง:</b> อีกประมาณ <b>${distancePips} pips</b> จะถึงจุดเข้า`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `📱 <b>คำสั่งใน MT4 / MT5 แนะนำให้ตั้งรอ:</b>`,
+    `👉 <b>ประเภทคำสั่ง:</b> ${mtOrderIcon} <b><code>${mtOrderType}</code></b>`,
+    `• <b>ราคาเปิดรอ (Entry Price):</b> <code>${formatPrice(entryPrice, analysis.symbol)}</code>`,
+    analysis.tradeSetup.mtStopLimitPrice ? `• <b>ราคา Limit (Stop Limit Price):</b> <code>${formatPrice(analysis.tradeSetup.mtStopLimitPrice, analysis.symbol)}</code>` : "",
+    `• <b>จุดตัดขาดทุน (SL):</b> <code>${formatPrice(analysis.tradeSetup.stopLoss, analysis.symbol)}</code> (-${analysis.tradeSetup.slPips || 0} pips)`,
+    `• <b>จุดทำกำไร (TP1):</b> <code>${formatPrice(analysis.tradeSetup.takeProfit1, analysis.symbol)}</code> (+${analysis.tradeSetup.tp1Pips || 0} pips)`,
+    `• <b>ความคุ้มค่า (R:R Ratio):</b> <b>${analysis.tradeSetup.riskRewardRatio}</b>`,
+    ``,
+    `💡 <b>Action Plan:</b>`,
+    `<i>เปิดแอป MT5 ตอนนี้ แล้วตั้งคำสั่ง <b>${mtOrderType}</b> ล่วงหน้าทิ้งไว้ได้เลยครับ (Set & Forget) เมื่อราคาย่อมาเกี่ยว จะติดออเดอร์ที่จุดได้เปรียบอัตโนมัติ ไม่ต้องเฝ้าจอ</i>`,
+    ``,
+    `📋 <b>คัดลอกตัวเลขตั้งใน MT5 (แตะตัวเลขเพื่อ Copy):</b>`,
+    `ราคาเปิด: <code>${analysis.tradeSetup.pendingPrice}</code>`,
+    `Stop Loss: <code>${analysis.tradeSetup.stopLoss}</code>`,
+    `Take Profit: <code>${analysis.tradeSetup.takeProfit1}</code>`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `🕒 <b>เวลาแจ้งเตือน:</b> <code>${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,
+  ];
+
+  return lines.join("\n");
+}
+
+export interface SendTelegramOptions {
+  botToken: string;
+  chatId: string;
+  message?: string;
+  analysis?: AnalysisResult;
+  isPreWarning?: boolean;
+}
+
 export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; error?: string }> {
-  const { botToken, chatId, message, analysis } = options;
+  const { botToken, chatId, message, analysis, isPreWarning } = options;
 
   if (!botToken || !chatId) {
     return { success: false, error: "Telegram Bot Token and Chat ID are required." };
   }
 
-  const textToSend = analysis ? formatTelegramAnalysisMessage(analysis) : escapeHtml(message || "Test Notification from AI Indicator Bot");
+  const textToSend = analysis
+    ? isPreWarning
+      ? formatTelegramPreWarningMessage(analysis)
+      : formatTelegramAnalysisMessage(analysis)
+    : escapeHtml(message || "Test Notification from AI Indicator Bot");
 
   try {
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;

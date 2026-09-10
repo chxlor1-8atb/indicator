@@ -11,6 +11,9 @@ import { sendTelegramMessage } from "@/lib/telegramService";
 
 export const dynamic = "force-dynamic";
 
+const preWarningAlertThrottle = new Map<string, number>();
+const PRE_WARNING_COOLDOWN_MS = 25 * 60 * 1000; // 25 minutes cooldown per asset
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -39,6 +42,26 @@ export async function GET(request: NextRequest) {
             }
           })
         ).catch((err) => console.warn("Autonomous dispatch error:", err));
+      }
+
+      // 2. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) เพื่อให้ผู้ใช้มีเวลาเปิด MT5 ตั้ง Limit Order ได้ทัน
+      if (scanResult.preWarningAnalyses && scanResult.preWarningAnalyses.length > 0) {
+        Promise.allSettled(
+          scanResult.preWarningAnalyses.map(async (analysis) => {
+            try {
+              const now = Date.now();
+              const lastAlert = preWarningAlertThrottle.get(analysis.symbol) || 0;
+              if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {
+                preWarningAlertThrottle.set(analysis.symbol, now);
+                if (botToken && chatId && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
+                  await sendTelegramMessage({ botToken, chatId, analysis, isPreWarning: true });
+                }
+              }
+            } catch (e) {
+              console.warn("Could not dispatch pre-warning telegram:", e);
+            }
+          })
+        ).catch((err) => console.warn("Pre-warning dispatch error:", err));
       }
     }
 

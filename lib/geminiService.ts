@@ -898,10 +898,19 @@ export function generateRuleBasedAnalysis(
     const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
     stopLoss = Number((structuralSL.stopLoss - slBufferExtra).toFixed(precision));
 
-    // [แผน 11] OTE Zone Entry & Sweet Spot 70.5% (ย่อซื้อที่แนวรับ/โซน OTE ห้ามตั้งซื้อสูงกว่าราคาตลาด)
-    const defaultBuyEntry = Number(Math.min(currentPrice, lastEMA20 * 1.002).toFixed(precision));
-    pendingPrice = (oteZone.sweetSpot && oteZone.sweetSpot <= currentPrice) ? oteZone.sweetSpot : defaultBuyEntry;
-    entryZone = { min: oteZone.oteMin, max: oteZone.oteMax };
+    // [Sniper Entry Engine] OTE Zone Entry & Sweet Spot 70.5% (ย่อซื้อที่แนวรับ/โซน OTE ห้ามตั้งซื้อไล่ราคาตลาด)
+    const sniperBuyDiscount = Number(Math.min(currentPrice - currentATR * 0.25, lastEMA20).toFixed(precision));
+    const nearestBullishOB = orderBlocks.activeBlocks.find(b => b.type === "BULLISH_OB" && b.priceMax < currentPrice);
+    const obPrice = nearestBullishOB?.priceMax;
+    pendingPrice = (oteZone.sweetSpot && oteZone.sweetSpot < currentPrice)
+      ? oteZone.sweetSpot
+      : (obPrice && obPrice < currentPrice)
+      ? obPrice
+      : sniperBuyDiscount;
+    entryZone = {
+      min: oteZone.oteMin ? Math.min(oteZone.oteMin, pendingPrice) : Number((pendingPrice - currentATR * 0.2).toFixed(precision)),
+      max: oteZone.oteMax ? Math.max(oteZone.oteMax, pendingPrice) : Number((pendingPrice + currentATR * 0.2).toFixed(precision))
+    };
 
     // [แผน 31] FVG Consequent Encroachment (50%) Limit Refinement
     if (fvgMitigation.recommendedEntryLimit && fvgMitigation.recommendedEntryLimit < currentPrice && fvgMitigation.recommendedEntryLimit >= stopLoss) {
@@ -911,6 +920,11 @@ export function generateRuleBasedAnalysis(
     // [แผน 41] Liquidity Inducement Trap Avoidance (Do not enter directly on trap)
     if (liquidityInducement.isInducementTrap && liquidityInducement.idmLevel !== null && Math.abs(pendingPrice - liquidityInducement.idmLevel) < currentATR * 0.6) {
       pendingPrice = Number((liquidityInducement.idmLevel - currentATR * 0.35).toFixed(precision));
+    }
+
+    // Institutional Liquidity Sweep (Turtle Soup) Precision Confirmation Boost
+    if (sessionSweep.sweepType === "BULLISH_SWEEP" || (candleMicrostructure.rejectionStrength === "STRONG_BUY_REJECTION" && candleMicrostructure.wickRatio >= 30)) {
+      confidence = Math.min(95, confidence + 4);
     }
 
     // [แผน 14] Dynamic Multi-Stage Take Profit
@@ -958,10 +972,19 @@ export function generateRuleBasedAnalysis(
     const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
     stopLoss = Number((structuralSL.stopLoss + slBufferExtra).toFixed(precision));
 
-    // [แผน 11] OTE Zone Entry & Sweet Spot 70.5% (เด้งขายที่แนวต้าน/โซน OTE ห้ามตั้งขายต่ำกว่าราคาตลาด)
-    const defaultSellEntry = Number(Math.max(currentPrice, lastEMA20 * 0.998).toFixed(precision));
-    pendingPrice = (oteZone.sweetSpot && oteZone.sweetSpot >= currentPrice) ? oteZone.sweetSpot : defaultSellEntry;
-    entryZone = { min: oteZone.oteMin, max: oteZone.oteMax };
+    // [Sniper Entry Engine] OTE Zone Entry & Sweet Spot 70.5% (เด้งขายที่แนวต้าน/โซน OTE ห้ามตั้งขายไล่ราคาตลาด)
+    const sniperSellPremium = Number(Math.max(currentPrice + currentATR * 0.25, lastEMA20).toFixed(precision));
+    const nearestBearishOB = orderBlocks.activeBlocks.find(b => b.type === "BEARISH_OB" && b.priceMin > currentPrice);
+    const obPrice = nearestBearishOB?.priceMin;
+    pendingPrice = (oteZone.sweetSpot && oteZone.sweetSpot > currentPrice)
+      ? oteZone.sweetSpot
+      : (obPrice && obPrice > currentPrice)
+      ? obPrice
+      : sniperSellPremium;
+    entryZone = {
+      min: oteZone.oteMin ? Math.min(oteZone.oteMin, pendingPrice) : Number((pendingPrice - currentATR * 0.2).toFixed(precision)),
+      max: oteZone.oteMax ? Math.max(oteZone.oteMax, pendingPrice) : Number((pendingPrice + currentATR * 0.2).toFixed(precision))
+    };
 
     // [แผน 31] FVG Consequent Encroachment (50%) Limit Refinement
     if (fvgMitigation.recommendedEntryLimit && fvgMitigation.recommendedEntryLimit > currentPrice && fvgMitigation.recommendedEntryLimit <= stopLoss) {
@@ -971,6 +994,11 @@ export function generateRuleBasedAnalysis(
     // [แผน 41] Liquidity Inducement Trap Avoidance (Do not enter directly on trap)
     if (liquidityInducement.isInducementTrap && liquidityInducement.idmLevel !== null && Math.abs(pendingPrice - liquidityInducement.idmLevel) < currentATR * 0.6) {
       pendingPrice = Number((liquidityInducement.idmLevel + currentATR * 0.35).toFixed(precision));
+    }
+
+    // Institutional Liquidity Sweep (Turtle Soup) Precision Confirmation Boost
+    if (sessionSweep.sweepType === "BEARISH_SWEEP" || (candleMicrostructure.rejectionStrength === "STRONG_SELL_REJECTION" && candleMicrostructure.wickRatio >= 30)) {
+      confidence = Math.min(95, confidence + 4);
     }
 
     // [แผน 14] Dynamic Multi-Stage Take Profit
