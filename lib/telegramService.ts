@@ -40,15 +40,6 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
     STRONG_SELL: "🔴🔴 <b>STRONG SELL</b>",
   }[analysis.signal] || "⚪ <b>NEUTRAL</b>";
 
-  const sentimentBadge = {
-    BULLISH: "🟢 Bullish (แรงซื้อหนุน)",
-    BEARISH: "🔴 Bearish (แรงขายกดดัน)",
-    NEUTRAL: "⚪ Neutral (ทรงตัว)",
-  }[analysis.newsSentimentAnalysis.overallSentiment];
-
-  const cal = analysis.calendarSafety;
-  const sess = analysis.sessionStatus;
-
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const isGold = sym.includes("XAU") || sym.includes("GOLD");
   const pipMultiplier = isGold ? 10 : sym.includes("JPY") ? 100 : 10000;
@@ -56,10 +47,10 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
   const currentP = analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);
   const distanceText = entryPrice === currentP || Number(distancePips) <= 2
-    ? "📍 ราคา ณ ปัจจุบัน"
+    ? "ราคาตลาด"
     : entryPrice > currentP
-    ? `📈 สูงกว่าตลาด ${distancePips} pips`
-    : `📉 ต่ำกว่าตลาด ${distancePips} pips (โซนย่อตัว)`;
+    ? `สูงกว่าตลาด ${distancePips} p`
+    : `ย่อตัว ${distancePips} p`;
 
   // MT4 / MT5 Order Label matching exact MT5 mobile dropdown options
   const mtOrderType = analysis.tradeSetup.mtOrderLabel || (
@@ -76,77 +67,34 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
   );
 
   const mtOrderIcon = analysis.tradeSetup.action === "BUY" ? "🟢" : analysis.tradeSetup.action === "SELL" ? "🔴" : "⚪";
-  const mtOrderAdvice = analysis.tradeSetup.mtOrderAdvice || (
-    mtOrderType === "Buy Limit" ? "ตั้ง Buy Limit ดักซื้อของถูกที่แนวรับ OTE / FVG (ไม่ต้องเฝ้าจอ)" :
-    mtOrderType === "Sell Limit" ? "ตั้ง Sell Limit ดักขายของแพงที่แนวต้าน OTE / FVG (ไม่ต้องเฝ้าจอ)" :
-    mtOrderType === "Buy Stop" ? "ตั้ง Buy Stop ซื้อตามเมื่อราคาทะลุแนวต้าน Breakout" :
-    mtOrderType === "Sell Stop" ? "ตั้ง Sell Stop ขายตามเมื่อราคาหลุดแนวรับ Breakdown" :
-    mtOrderType === "Buy Stop Limit" ? "ตั้ง Buy Stop Limit ดักซื้อจังหวะเบรกเอาท์แล้วย่อรีเทส" :
-    mtOrderType === "Sell Stop Limit" ? "ตั้ง Sell Stop Limit ดักขายจังหวะหลุดแนวรับแล้วเด้งรีเทส" :
-    "กดเปิดออเดอร์ทันทีที่ราคาตลาด (Market Execution)"
-  );
+  const cal = analysis.calendarSafety?.badgeText || "SAFE";
+  const grade = analysis.setupGrade || "A";
+  const conf = analysis.confidence;
+
+  const newsSentiment = analysis.newsSentimentAnalysis.overallSentiment === "BULLISH"
+    ? "🟢 ข่าวหนุน (Bullish)"
+    : analysis.newsSentimentAnalysis.overallSentiment === "BEARISH"
+    ? "🔴 ข่าวกดดัน (Bearish)"
+    : "⚪ ข่าวเป็นกลาง";
 
   const lines = [
-    `🚀 <b>AI MARKET & NEWS INTELLIGENCE ALERT</b> 🚀`,
+    `⚡ <b>AI SIGNAL: ${analysis.symbol} (${analysis.timeframe})</b>`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `📊 <b>Asset:</b> <code>${analysis.symbol}</code>  |  ⏱️ <b>TF:</b> <code>${analysis.timeframe}</code>`,
-    `💰 <b>Live Price:</b> <code>${formatPrice(analysis.currentPrice, analysis.symbol)} USD</code>`,
-    `🎯 <b>AI Signal:</b> ${signalBadge} (Score: <b>${analysis.confidence}%</b> | Grade: <b>${analysis.setupGrade || "A"}</b>)`,
-    `📱 <b>MT5 Order:</b> ${mtOrderIcon} <b><code>${mtOrderType}</code></b>`,
-    cal ? `🛡️ <b>News Shield:</b> <code>${cal.badgeText || "SAFE"}</code>` : "",
-    sess ? `🕒 <b>Market Session:</b> ${sess.sessionBadge?.text || "NORMAL"} (${sess.thaiTimeStr || ""})` : "",
+    `🎯 <b>คำสั่ง MT5:</b> ${mtOrderIcon} <b><code>${mtOrderType}</code></b> (${signalBadge})`,
+    `💰 <b>ราคาตลาด:</b> <code>${formatPrice(currentP, analysis.symbol)}</code>`,
+    ``,
+    `📋 <b>ตั๋วเทรด MT5 (แตะตัวเลขเพื่อ Copy):</b>`,
+    `• <b>Entry:</b> <code>${analysis.tradeSetup.pendingPrice}</code> <i>(${distanceText})</i>`,
+    analysis.tradeSetup.mtStopLimitPrice ? `• <b>Stop Limit:</b> <code>${analysis.tradeSetup.mtStopLimitPrice}</code>` : "",
+    `• <b>Stop Loss:</b> <code>${analysis.tradeSetup.stopLoss}</code> (-${analysis.tradeSetup.slPips || 0} pips)`,
+    `• <b>TP1 (หลัก):</b> <code>${analysis.tradeSetup.takeProfit1}</code> (+${analysis.tradeSetup.tp1Pips || 0} pips)`,
+    analysis.tradeSetup.takeProfit2 ? `• <b>TP2 (สวิง):</b> <code>${analysis.tradeSetup.takeProfit2}</code> (+${analysis.tradeSetup.tp2Pips || 0} pips)` : "",
+    `• <b>R:R:</b> <b>${analysis.tradeSetup.riskRewardRatio}</b> | เกรด: <b>${grade}</b> (${conf}%)`,
+    ``,
+    `💡 <b>เทคนิค:</b> ${escapeHtml(analysis.technicalAnalysis.trend)} (${escapeHtml(analysis.technicalAnalysis.rsiStatus)})`,
+    `📰 <b>ข่าว:</b> ${newsSentiment} | Shield: <code>${cal}</code>`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `📈 <b>TECHNICAL STRUCTURE:</b>`,
-    `• Trend: <b>${escapeHtml(analysis.technicalAnalysis.trend)}</b>`,
-    `• RSI Status: <b>${escapeHtml(analysis.technicalAnalysis.rsiStatus)}</b>`,
-    `• EMA Ribbon: <b>${escapeHtml(analysis.technicalAnalysis.emaStatus)}</b>`,
-    `• Support: <code>${analysis.technicalAnalysis.keySupport}</code>`,
-    `• Resistance: <code>${analysis.technicalAnalysis.keyResistance}</code>`,
-    ``,
-    `📰 <b>NEWS & MACRO SENTIMENT:</b>`,
-    `• Sentiment: ${sentimentBadge} (Score: <b>${analysis.newsSentimentAnalysis.sentimentScore}</b>)`,
-    `• Key Catalysts:`,
-    ...analysis.newsSentimentAnalysis.topHeadlines.slice(0, 2).map((h) => `  ▪️ <i>${escapeHtml(h.title)}</i>`),
-    ``,
-    analysis.fiveCorePillars
-      ? [
-          `🏛️ <b>5 CORE PILLARS CONFLUENCE (${analysis.fiveCorePillars.passedPillarsCount}/5):</b>`,
-          `• 1️⃣ SMC: <b>${escapeHtml(analysis.fiveCorePillars.pillar1_SMC.note)}</b>`,
-          `• 2️⃣ Auto Fib: <b>${escapeHtml(analysis.fiveCorePillars.pillar2_AutoFib.note)}</b>`,
-          `• 3️⃣ Pivot Point: <b>${escapeHtml(analysis.fiveCorePillars.pillar3_PivotPoints.note)}</b>`,
-          `• 4️⃣ Auto S&R: <b>${escapeHtml(analysis.fiveCorePillars.pillar4_ClusteredSR.note)}</b>`,
-          `• 5️⃣ Dynamic Bands: <b>${escapeHtml(analysis.fiveCorePillars.pillar5_DynamicBands.note)}</b>`,
-          ``,
-        ].join("\n")
-      : "",
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `📱 <b>คำสั่งใน MT4 / MT5 แนะนำ (ORDER TICKET):</b>`,
-    `👉 <b>ประเภทคำสั่ง:</b> ${mtOrderIcon} <b><code>${mtOrderType}</code></b>`,
-    `• <b>สินทรัพย์ (Symbol):</b> <code>${analysis.symbol}</code> (${analysis.timeframe})`,
-    `• <b>ราคาเปิด (Entry Price):</b> <code>${formatPrice(analysis.tradeSetup.pendingPrice, analysis.symbol)}</code> <i>(${distanceText})</i>`,
-    analysis.tradeSetup.mtStopLimitPrice ? `• <b>ราคา Limit (Stop Limit Price):</b> <code>${formatPrice(analysis.tradeSetup.mtStopLimitPrice, analysis.symbol)}</code>` : "",
-    `• <b>จุดตัดขาดทุน (Stop Loss):</b> <code>${formatPrice(analysis.tradeSetup.stopLoss, analysis.symbol)}</code> (-${analysis.tradeSetup.slPips || 0} pips)`,
-    `• <b>จุดทำกำไร 1 (TP1):</b> <code>${formatPrice(analysis.tradeSetup.takeProfit1, analysis.symbol)}</code> (+${analysis.tradeSetup.tp1Pips || 0} pips) [เป้าหลัก R1/S1]`,
-    `• <b>จุดทำกำไร 2 (TP2):</b> <code>${formatPrice(analysis.tradeSetup.takeProfit2, analysis.symbol)}</code> (+${analysis.tradeSetup.tp2Pips || 0} pips) [เป้าสวิง R2/S2]`,
-    `• <b>ความคุ้มค่า (R:R Ratio):</b> <b>${analysis.tradeSetup.riskRewardRatio}</b>`,
-    `• <b>โซนเข้าที่ได้เปรียบ:</b> <code>${formatPrice(analysis.tradeSetup.entryZone.min, analysis.symbol)} - ${formatPrice(analysis.tradeSetup.entryZone.max, analysis.symbol)}</code>`,
-    ``,
-    `💡 <b>วิธีตั้งในแอป MT5:</b>`,
-    `<i>1. เปิดแอป MT5 ในมือถือ ➔ แตะคู่ ${analysis.symbol} ➔ กดส่งคำสั่ง</i>`,
-    `<i>2. แตะเลือกประเภทคำสั่งเป็น 👉 <b>${mtOrderType}</b></i>`,
-    `<i>3. กรอกตัวเลขตามตั๋วด้านบน แล้วกดยืนยัน Place Order (ไม่ต้องเฝ้าจอ)</i>`,
-    `<i>(${mtOrderAdvice})</i>`,
-    ``,
-    `📋 <b>คัดลอกตัวเลขวางใน MT5 (แตะตัวเลขเพื่อ Copy):</b>`,
-    `ราคาเปิด: <code>${analysis.tradeSetup.pendingPrice}</code>`,
-    `Stop Loss: <code>${analysis.tradeSetup.stopLoss}</code>`,
-    `Take Profit 1: <code>${analysis.tradeSetup.takeProfit1}</code>`,
-    `Take Profit 2: <code>${analysis.tradeSetup.takeProfit2}</code>`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `💡 <b>AI Confluence Summary:</b>`,
-    `<i>${escapeHtml(analysis.summary)}</i>`,
-    ``,
-    `🕒 <b>Time:</b> <code>${new Date(analysis.timestamp).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,
+    `🕒 <code>${new Date(analysis.timestamp).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,
   ].filter(Boolean);
 
   return lines.join("\n");
@@ -164,34 +112,26 @@ export function formatTelegramPreWarningMessage(analysis: AnalysisResult): strin
     analysis.tradeSetup.action === "BUY" ? "Buy Limit" : "Sell Limit"
   );
   const mtOrderIcon = analysis.tradeSetup.action === "BUY" ? "🟢" : "🔴";
-  const actionText = analysis.tradeSetup.action === "BUY" ? "ฝั่งซื้อ (BUY)" : "ฝั่งขาย (SELL)";
+  const actionText = analysis.tradeSetup.action === "BUY" ? "BUY" : "SELL";
 
   const lines = [
-    `⏳ <b>[PRE-SIGNAL RADAR: เตรียมตัวล่วงหน้า 15-30 นาที]</b> ⏳`,
+    `⏳ <b>เรดาร์ล่วงหน้า (15-30 นาที): ${analysis.symbol} (${analysis.timeframe})</b>`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `📊 <b>สินทรัพย์:</b> <code>${analysis.symbol}</code>  |  ⏱️ <b>TF:</b> <code>${analysis.timeframe}</code>`,
-    `💰 <b>ราคาตลาดปัจจุบัน:</b> <code>${formatPrice(analysis.currentPrice, analysis.symbol)}</code>`,
-    `🎯 <b>เรดาร์สถาบัน:</b> ตรวจพบโครงสร้าง ${actionText} กำลังเคลื่อนตัวเข้าหาโซนสไนเปอร์ OTE 70.5% / FVG`,
-    `📍 <b>ระยะห่าง:</b> อีกประมาณ <b>${distancePips} pips</b> จะถึงจุดเข้า`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `📱 <b>คำสั่งใน MT4 / MT5 แนะนำให้ตั้งรอ:</b>`,
-    `👉 <b>ประเภทคำสั่ง:</b> ${mtOrderIcon} <b><code>${mtOrderType}</code></b>`,
-    `• <b>ราคาเปิดรอ (Entry Price):</b> <code>${formatPrice(entryPrice, analysis.symbol)}</code>`,
-    analysis.tradeSetup.mtStopLimitPrice ? `• <b>ราคา Limit (Stop Limit Price):</b> <code>${formatPrice(analysis.tradeSetup.mtStopLimitPrice, analysis.symbol)}</code>` : "",
-    `• <b>จุดตัดขาดทุน (SL):</b> <code>${formatPrice(analysis.tradeSetup.stopLoss, analysis.symbol)}</code> (-${analysis.tradeSetup.slPips || 0} pips)`,
-    `• <b>จุดทำกำไร (TP1):</b> <code>${formatPrice(analysis.tradeSetup.takeProfit1, analysis.symbol)}</code> (+${analysis.tradeSetup.tp1Pips || 0} pips)`,
-    `• <b>ความคุ้มค่า (R:R Ratio):</b> <b>${analysis.tradeSetup.riskRewardRatio}</b>`,
+    `🎯 ทรงสไนเปอร์ <b>${actionText}</b> (ห่างจุดเข้า ~${distancePips} pips)`,
+    `📱 <b>แนะนำตั้ง:</b> ${mtOrderIcon} <b><code>${mtOrderType}</code></b>`,
+    `💰 <b>ราคาตลาด:</b> <code>${formatPrice(currentP, analysis.symbol)}</code>`,
     ``,
-    `💡 <b>Action Plan:</b>`,
-    `<i>เปิดแอป MT5 ตอนนี้ แล้วตั้งคำสั่ง <b>${mtOrderType}</b> ล่วงหน้าทิ้งไว้ได้เลยครับ (Set & Forget) เมื่อราคาย่อมาเกี่ยว จะติดออเดอร์ที่จุดได้เปรียบอัตโนมัติ ไม่ต้องเฝ้าจอ</i>`,
+    `📋 <b>ตั๋วตั้งรอใน MT5 (แตะตัวเลขเพื่อ Copy):</b>`,
+    `• <b>Entry:</b> <code>${analysis.tradeSetup.pendingPrice}</code>`,
+    analysis.tradeSetup.mtStopLimitPrice ? `• <b>Stop Limit:</b> <code>${analysis.tradeSetup.mtStopLimitPrice}</code>` : "",
+    `• <b>Stop Loss:</b> <code>${analysis.tradeSetup.stopLoss}</code> (-${analysis.tradeSetup.slPips || 0} pips)`,
+    `• <b>Take Profit:</b> <code>${analysis.tradeSetup.takeProfit1}</code> (+${analysis.tradeSetup.tp1Pips || 0} pips)`,
+    `• <b>R:R:</b> <b>${analysis.tradeSetup.riskRewardRatio}</b>`,
     ``,
-    `📋 <b>คัดลอกตัวเลขตั้งใน MT5 (แตะตัวเลขเพื่อ Copy):</b>`,
-    `ราคาเปิด: <code>${analysis.tradeSetup.pendingPrice}</code>`,
-    `Stop Loss: <code>${analysis.tradeSetup.stopLoss}</code>`,
-    `Take Profit: <code>${analysis.tradeSetup.takeProfit1}</code>`,
+    `💡 <i>ตั้ง ${mtOrderType} ทิ้งไว้ใน MT5 ได้เลย เมื่อราคาแตะจะเกี่ยวออเดอร์อัตโนมัติ</i>`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `🕒 <b>เวลาแจ้งเตือน:</b> <code>${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,
-  ];
+    `🕒 <code>${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,
+  ].filter(Boolean);
 
   return lines.join("\n");
 }
