@@ -1,12 +1,5 @@
 import { AnalysisResult } from "./types";
 
-export interface SendTelegramOptions {
-  botToken: string;
-  chatId: string;
-  message?: string;
-  analysis?: AnalysisResult;
-}
-
 function escapeHtml(text: string): string {
   if (!text) return "";
   return text
@@ -136,25 +129,108 @@ export function formatTelegramPreWarningMessage(analysis: AnalysisResult): strin
   return lines.join("\n");
 }
 
+export interface OrderResultData {
+  id?: number | string;
+  symbol: string;
+  timeframe: string;
+  action: string;
+  orderType: string;
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2?: number;
+  outcome: "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CLOSED_BE";
+  pnlPips: number;
+  setupGrade?: string;
+  confluenceScore?: number;
+}
+
+export function formatTelegramOrderResultMessage(data: OrderResultData): string {
+  const isTP2 = data.outcome === "HIT_TP2";
+  const isTP1 = data.outcome === "HIT_TP1";
+  const isBE = data.outcome === "CLOSED_BE";
+
+  const headerTitle = isTP2
+    ? "🏆 <b>[ORDER RESULT: TAKE PROFIT 2 (MAX WIN)]</b> 🏆"
+    : isTP1
+    ? "🎯 <b>[ORDER RESULT: TAKE PROFIT 1]</b> 🎯"
+    : isBE
+    ? "🛡️ <b>[ORDER RESULT: CLOSED AT BREAK-EVEN]</b> 🛡️"
+    : "🛑 <b>[ORDER RESULT: STOP LOSS]</b> 🛑";
+
+  const orderIcon = data.action.includes("BUY") ? "🟢" : "🔴";
+  const mtOrderType = data.orderType || (data.action.includes("BUY") ? "Buy Limit" : "Sell Limit");
+
+  const signStr = data.pnlPips > 0 ? `+${data.pnlPips.toFixed(1)}` : `${data.pnlPips.toFixed(1)}`;
+  const pnlBadge = isTP2
+    ? `🎉 <b>MAX WIN (${signStr} pips)</b>`
+    : isTP1
+    ? `✅ <b>WIN TP1 (${signStr} pips)</b>`
+    : isBE
+    ? `🛡️ <b>BREAK-EVEN (0.0 pips)</b>`
+    : `⚠️ <b>CUT LOSS (${signStr} pips)</b>`;
+
+  const targetHitPrice = isTP2
+    ? (data.takeProfit2 || data.takeProfit1)
+    : isTP1
+    ? data.takeProfit1
+    : isBE
+    ? data.entryPrice
+    : data.stopLoss;
+
+  const hitTargetName = isTP2 ? "TP2" : isTP1 ? "TP1" : isBE ? "Entry (BE)" : "SL";
+
+  const adviceNote = isTP2
+    ? "ราคาแตะเป้าสวิงสูงสุด TP2 สำเร็จ 100%! ปิดรอบทำกำไรสมบูรณ์แบบ"
+    : isTP1
+    ? "ราคาแตะเป้าหมายหลัก TP1 สำเร็จ! แนะนำขยับ Stop Loss มาบังทุน (Break-Even) เพื่อล็อกกำไร"
+    : isBE
+    ? "ราคาถอยกลับมาแตะจุดบังทุน ออเดอร์ปิดปลอดภัยโดยไม่เสียเงินต้น"
+    : "ราคาหลุดแนวรับต้านสำคัญ ระบบตัดขาดทุนตามวินัยความเสี่ยง รอรอบสัญญาณใหม่";
+
+  const grade = data.setupGrade || "A";
+  const conf = data.confluenceScore || 85;
+
+  const lines = [
+    headerTitle,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `📊 <b>สินทรัพย์:</b> <code>${data.symbol}</code> (${data.timeframe})`,
+    `📱 <b>คำสั่ง:</b> ${orderIcon} <b><code>${mtOrderType}</code></b> (เกรด: <b>${grade}</b> | ${conf}%)`,
+    `💰 <b>ราคาเข้า:</b> <code>${formatPrice(data.entryPrice, data.symbol)}</code> ➔ <b>ชน ${hitTargetName}:</b> <code>${formatPrice(targetHitPrice, data.symbol)}</code>`,
+    `💵 <b>ผลลัพธ์:</b> ${pnlBadge}`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `💡 <i>${adviceNote}</i>`,
+    `🕒 <code>${new Date().toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,
+  ];
+
+  return lines.join("\n");
+}
+
 export interface SendTelegramOptions {
   botToken: string;
   chatId: string;
   message?: string;
   analysis?: AnalysisResult;
   isPreWarning?: boolean;
+  orderResult?: OrderResultData;
+  rawHtml?: boolean;
 }
 
 export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; error?: string }> {
-  const { botToken, chatId, message, analysis, isPreWarning } = options;
+  const { botToken, chatId, message, analysis, isPreWarning, orderResult, rawHtml } = options;
 
   if (!botToken || !chatId) {
     return { success: false, error: "Telegram Bot Token and Chat ID are required." };
   }
 
-  const textToSend = analysis
+  const textToSend = orderResult
+    ? formatTelegramOrderResultMessage(orderResult)
+    : analysis
     ? isPreWarning
       ? formatTelegramPreWarningMessage(analysis)
       : formatTelegramAnalysisMessage(analysis)
+    : rawHtml
+    ? message || ""
     : escapeHtml(message || "Test Notification from AI Indicator Bot");
 
   try {

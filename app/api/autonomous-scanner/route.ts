@@ -6,7 +6,7 @@ import {
   DEFAULT_PILOT_CONFIG,
   approveOrder,
 } from "@/lib/autonomousEngine";
-import { saveAiSignal } from "@/lib/db";
+import { saveAiSignal, resolveOpenSignals } from "@/lib/db";
 import { sendTelegramMessage } from "@/lib/telegramService";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +62,13 @@ export async function GET(request: NextRequest) {
             }
           })
         ).catch((err) => console.warn("Pre-warning dispatch error:", err));
+      }
+
+      // 3. ตรวจสอบสถานะออเดอร์ที่เปิดค้างไว้ (ACTIVE / HIT_TP1) กับราคาตลาดล่าสุด เพื่อแจ้งเตือนผลลัพธ์ (Order Result: TP1, TP2, SL) ทาง Telegram
+      if (scanResult.summaries && scanResult.summaries.length > 0) {
+        Promise.allSettled(
+          scanResult.summaries.map((s) => resolveOpenSignals(s.symbol, s.price))
+        ).catch((err) => console.warn("Order resolution note:", err));
       }
     }
 

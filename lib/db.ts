@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { AnalysisResult, Candle } from "./types";
+import { sendTelegramMessage } from "./telegramService";
 
 // Safe singleton client for Neon Serverless Postgres
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
@@ -407,7 +408,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
 
   try {
     const activeSignals = await resilientQuery<DbAiSignal[]>(
-      `SELECT * FROM ai_signals WHERE symbol = $1 AND status = 'ACTIVE'`,
+      `SELECT * FROM ai_signals WHERE symbol = $1 AND status IN ('ACTIVE', 'HIT_TP1')`,
       [symbol]
     );
 
@@ -420,56 +421,130 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
       const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some((c) => sym.includes(c));
       const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
 
-      let outcome: "HIT_TP2" | "HIT_TP1" | "HIT_SL" | null = null;
+      let outcome: "HIT_TP2" | "HIT_TP1" | "HIT_SL" | "CLOSED_BE" | null = null;
       let pips = 0;
       let lesson = "";
 
-      // Check Take Profit 2 (Maximum Win)
-      if ((isBuy && currentPrice >= sig.take_profit2) || (!isBuy && currentPrice <= sig.take_profit2)) {
-        outcome = "HIT_TP2";
-        pips = Math.abs(sig.take_profit2 - sig.entry_price) * pipMultiplier;
-        lesson = `🎯 ชนะเป้าสูงสุด TP2 (+${pips.toFixed(1)} pips): สัญญาณ ${sig.action} สอดคล้องกับแนวโน้มหลักอย่างสมบูรณ์ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade})`;
-        updates.push(
-          resilientQuery(
-            `UPDATE ai_signals SET status = 'HIT_TP2', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
-            [Number(pips.toFixed(1)), sig.id]
-          )
-        );
-      }
-      // Check Take Profit 1 (Target 1 Win)
-      else if ((isBuy && currentPrice >= sig.take_profit1) || (!isBuy && currentPrice <= sig.take_profit1)) {
-        outcome = "HIT_TP1";
-        pips = Math.abs(sig.take_profit1 - sig.entry_price) * pipMultiplier;
-        lesson = `✅ ชนะเป้าแรก TP1 (+${pips.toFixed(1)} pips): ราคาไปถึงเป้าหมายแรกได้ตามโครงสร้าง (Confluence ${sig.confluence_score}%) ก่อนเกิดการพักตัว`;
-        updates.push(
-          resilientQuery(
-            `UPDATE ai_signals SET status = 'HIT_TP1', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
-            [Number(pips.toFixed(1)), sig.id]
-          )
-        );
-      }
-      // Check Stop Loss
-      else if ((isBuy && currentPrice <= sig.stop_loss) || (!isBuy && currentPrice >= sig.stop_loss)) {
-        outcome = "HIT_SL";
-        pips = -Math.abs(sig.entry_price - sig.stop_loss) * pipMultiplier;
-        lesson = `⚠️ ชนจุดตัดขาดทุน SL (${pips.toFixed(1)} pips): เกิดการทะลุหลอกหรือมีแรงกระชากขัดแย้งเทรนด์ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade}) ให้ระวังจุดเข้าในลักษณะนี้`;
-        updates.push(
-          resilientQuery(
-            `UPDATE ai_signals SET status = 'HIT_SL', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
-            [Number(pips.toFixed(1)), sig.id]
-          )
-        );
+      // Case A: Signal already hit TP1 previously -> Check if it reaches TP2 (Max Win) or Break-Even
+      if (sig.status === "HIT_TP1") {
+        if ((isBuy && currentPrice >= sig.take_profit2) || (!isBuy && currentPrice <= sig.take_profit2)) {
+          outcome = "HIT_TP2";
+          pips = Math.abs(sig.take_profit2 - sig.entry_price) * pipMultiplier;
+          lesson = `🏆 ชนะเป้าสูงสุด TP2 (+${pips.toFixed(1)} pips): ราคาวิ่งต่อเนื่องถึงเป้าสวิงสูงสุดหลังชน TP1 สำเร็จ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade})`;
+          updates.push(
+            resilientQuery(
+              `UPDATE ai_signals SET status = 'HIT_TP2', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
+              [Number(pips.toFixed(1)), sig.id]
+            )
+          );
+        } else if ((isBuy && currentPrice <= sig.entry_price) || (!isBuy && currentPrice >= sig.entry_price)) {
+          outcome = "CLOSED_BE";
+          pips = 0;
+          lesson = `🛡️ ปิดที่จุดคุ้มทุน Break-Even: ราคาพักตัวกลับมาที่จุดเข้าหลังชน TP1 ออเดอร์ปิดปลอดภัยโดยไม่มีความเสี่ยง`;
+          updates.push(
+            resilientQuery(
+              `UPDATE ai_signals SET status = 'CLOSED_BE', pnl_pips = 0, resolved_at = NOW() WHERE id = $2`,
+              [sig.id]
+            )
+          );
+        }
+      } else {
+        // Case B: Signal is currently ACTIVE
+        // 1. Check Take Profit 2 (Direct Maximum Win)
+        if ((isBuy && currentPrice >= sig.take_profit2) || (!isBuy && currentPrice <= sig.take_profit2)) {
+          outcome = "HIT_TP2";
+          pips = Math.abs(sig.take_profit2 - sig.entry_price) * pipMultiplier;
+          lesson = `🎯 ชนะเป้าสูงสุด TP2 (+${pips.toFixed(1)} pips): สัญญาณ ${sig.action} สอดคล้องกับแนวโน้มหลักอย่างสมบูรณ์ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade})`;
+          updates.push(
+            resilientQuery(
+              `UPDATE ai_signals SET status = 'HIT_TP2', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
+              [Number(pips.toFixed(1)), sig.id]
+            )
+          );
+        }
+        // 2. Check Take Profit 1 (Target 1 Win)
+        else if ((isBuy && currentPrice >= sig.take_profit1) || (!isBuy && currentPrice <= sig.take_profit1)) {
+          outcome = "HIT_TP1";
+          pips = Math.abs(sig.take_profit1 - sig.entry_price) * pipMultiplier;
+          lesson = `✅ ชนะเป้าแรก TP1 (+${pips.toFixed(1)} pips): ราคาไปถึงเป้าหมายแรกได้ตามโครงสร้าง (Confluence ${sig.confluence_score}%) ก่อนเกิดการพักตัว`;
+          updates.push(
+            resilientQuery(
+              `UPDATE ai_signals SET status = 'HIT_TP1', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
+              [Number(pips.toFixed(1)), sig.id]
+            )
+          );
+        }
+        // 3. Check Stop Loss
+        else if ((isBuy && currentPrice <= sig.stop_loss) || (!isBuy && currentPrice >= sig.stop_loss)) {
+          outcome = "HIT_SL";
+          pips = -Math.abs(sig.entry_price - sig.stop_loss) * pipMultiplier;
+          lesson = `⚠️ ชนจุดตัดขาดทุน SL (${pips.toFixed(1)} pips): เกิดการทะลุหลอกหรือมีแรงกระชากขัดแย้งเทรนด์ (Confluence ${sig.confluence_score}%, เกรด ${sig.setup_grade}) ให้ระวังจุดเข้าในลักษณะนี้`;
+          updates.push(
+            resilientQuery(
+              `UPDATE ai_signals SET status = 'HIT_SL', pnl_pips = $1, resolved_at = NOW() WHERE id = $2`,
+              [Number(pips.toFixed(1)), sig.id]
+            )
+          );
+        }
       }
 
-      // Record Attribution Lesson for Closed-Loop Learning
-      if (outcome && lesson) {
-        updates.push(
-          resilientQuery(
-            `INSERT INTO signal_feedback_lessons (signal_id, symbol, timeframe, outcome, pnl_pips, confluence_score, setup_grade, lesson_summary)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [sig.id, sig.symbol, sig.timeframe, outcome, Number(pips.toFixed(1)), sig.confluence_score, sig.setup_grade, lesson]
-          )
-        );
+      // Record Attribution Lesson & Dispatch Order Result to Telegram
+      if (outcome) {
+        if (lesson) {
+          updates.push(
+            resilientQuery(
+              `INSERT INTO signal_feedback_lessons (signal_id, symbol, timeframe, outcome, pnl_pips, confluence_score, setup_grade, lesson_summary)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              [sig.id, sig.symbol, sig.timeframe, outcome, Number(pips.toFixed(1)), sig.confluence_score, sig.setup_grade, lesson]
+            )
+          );
+        }
+
+        // Send Telegram Order Result Notification
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        const mainChatId = process.env.TELEGRAM_CHAT_ID;
+        if (botToken) {
+          const resultPayload = {
+            id: sig.id,
+            symbol: sig.symbol,
+            timeframe: sig.timeframe,
+            action: sig.action,
+            orderType: sig.order_type,
+            entryPrice: Number(sig.entry_price),
+            stopLoss: Number(sig.stop_loss),
+            takeProfit1: Number(sig.take_profit1),
+            takeProfit2: Number(sig.take_profit2),
+            outcome,
+            pnlPips: Number(pips.toFixed(1)),
+            setupGrade: sig.setup_grade,
+            confluenceScore: sig.confluence_score,
+          };
+
+          if (mainChatId) {
+            sendTelegramMessage({
+              botToken,
+              chatId: mainChatId,
+              orderResult: resultPayload,
+            }).catch((err) => console.warn("[Telegram Result] Primary dispatch note:", err));
+          }
+
+          // Broadcast to active database subscribers
+          resilientQuery<{ chat_id: string }[]>(
+            `SELECT chat_id FROM telegram_subscribers WHERE is_active = TRUE`
+          ).then((subs) => {
+            if (subs && subs.length > 0) {
+              for (const s of subs) {
+                if (s.chat_id !== mainChatId) {
+                  sendTelegramMessage({
+                    botToken,
+                    chatId: s.chat_id,
+                    orderResult: resultPayload,
+                  }).catch(() => {});
+                }
+              }
+            }
+          }).catch(() => {});
+        }
       }
     }
 
