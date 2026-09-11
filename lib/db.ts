@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { AnalysisResult, Candle } from "./types";
-import { sendTelegramMessage } from "./telegramService";
+import { sendTelegramMessage, isSymbolAllowedForAlert } from "./telegramService";
 
 // Safe singleton client for Neon Serverless Postgres
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
@@ -520,7 +520,8 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
             confluenceScore: sig.confluence_score,
           };
 
-          if (mainChatId) {
+          const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+          if (mainChatId && isSymbolAllowedForAlert(sig.symbol, primaryFilter)) {
             sendTelegramMessage({
               botToken,
               chatId: mainChatId,
@@ -528,13 +529,13 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
             }).catch((err) => console.warn("[Telegram Result] Primary dispatch note:", err));
           }
 
-          // Broadcast to active database subscribers
-          resilientQuery<{ chat_id: string }[]>(
-            `SELECT chat_id FROM telegram_subscribers WHERE is_active = TRUE`
+          // Broadcast to active database subscribers respecting each subscriber's filter preference
+          resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+            `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
           ).then((subs) => {
             if (subs && subs.length > 0) {
               for (const s of subs) {
-                if (s.chat_id !== mainChatId) {
+                if (s.chat_id !== mainChatId && isSymbolAllowedForAlert(sig.symbol, s.alert_symbol)) {
                   sendTelegramMessage({
                     botToken,
                     chatId: s.chat_id,

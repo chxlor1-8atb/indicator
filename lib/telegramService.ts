@@ -256,3 +256,40 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
     return { success: false, error: errMsg };
   }
 }
+
+/**
+ * Evaluates whether an asset symbol matches a user's Telegram alert preference filter.
+ * Supports:
+ * - "ALL" or "*" or empty -> allows all assets
+ * - "GOLD" -> XAUUSD, GOLD
+ * - "CRYPTO" -> BTCUSDT, ETHUSDT, SOLUSDT, BNB, XRP, etc.
+ * - "FOREX" -> EURUSD, GBPUSD, USDJPY, USDCAD, USDCHF, AUDUSD, NZDUSD, EURJPY, GBPJPY
+ * - Comma-separated list e.g. "XAUUSD,BTCUSDT,EURUSD"
+ */
+export function isSymbolAllowedForAlert(symbol: string, filterPreference?: string): boolean {
+  if (!filterPreference || filterPreference.trim() === "" || filterPreference === "ALL" || filterPreference === "*") {
+    return true;
+  }
+  const sym = symbol.toUpperCase().trim();
+  const pref = filterPreference.toUpperCase().trim();
+
+  if (pref === "GOLD") {
+    return sym.includes("XAU") || sym === "GOLD";
+  }
+  if (pref === "CRYPTO") {
+    return ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI"].some((c) => sym.includes(c));
+  }
+  if (pref === "FOREX") {
+    return (
+      ["EUR", "GBP", "USD", "JPY", "CAD", "CHF", "AUD", "NZD"].some(
+        (c) => sym.startsWith(c) || sym.endsWith(c)
+      ) &&
+      !sym.includes("XAU") &&
+      !sym.includes("XAG")
+    );
+  }
+
+  const allowedList = pref.split(",").map((s) => s.trim());
+  return allowedList.includes("ALL") || allowedList.includes(sym);
+}
+

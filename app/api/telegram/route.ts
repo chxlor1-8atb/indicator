@@ -9,12 +9,21 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const botToken = body.botToken || process.env.TELEGRAM_BOT_TOKEN;
     const chatId = body.chatId || process.env.TELEGRAM_CHAT_ID;
+    const alertSymbol = body.alertSymbol || "ALL";
+    const minGrade = body.minGrade || "B";
     const analysis = body.analysis;
     const message = body.message;
 
-    // Asynchronously save subscriber to Neon
+    // Asynchronously save or update subscriber in Neon with symbol filter preferences
     if (chatId) {
-      saveTelegramSubscriber(chatId).catch(console.error);
+      saveTelegramSubscriber(chatId, body.username || "trader", alertSymbol, minGrade).catch(console.error);
+    }
+
+    if (body.action === "update-filter") {
+      return NextResponse.json({
+        success: true,
+        message: `Telegram alert preference updated for ${alertSymbol}`,
+      });
     }
 
     if (!botToken || !chatId) {

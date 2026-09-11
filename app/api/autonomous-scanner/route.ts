@@ -6,8 +6,8 @@ import {
   DEFAULT_PILOT_CONFIG,
   approveOrder,
 } from "@/lib/autonomousEngine";
-import { saveAiSignal, resolveOpenSignals } from "@/lib/db";
-import { sendTelegramMessage } from "@/lib/telegramService";
+import { saveAiSignal, resolveOpenSignals, resilientQuery } from "@/lib/db";
+import { sendTelegramMessage, isSymbolAllowedForAlert } from "@/lib/telegramService";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +25,9 @@ export async function GET(request: NextRequest) {
 
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       const chatId = process.env.TELEGRAM_CHAT_ID;
+      const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
 
-      // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram พร้อมกันแบบ Non-blocking (ลด latency ได้ 2-4 วินาที)
+      // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram พร้อมกันแบบ Non-blocking (กรองเฉพาะคู่เงินที่เลือก)
       if (scanResult.actionableAnalyses && scanResult.actionableAnalyses.length > 0) {
         Promise.allSettled(
           scanResult.actionableAnalyses.map(async (analysis) => {
@@ -35,7 +36,24 @@ export async function GET(request: NextRequest) {
 
               // ส่งแจ้งเตือนไปยัง Telegram ทันทีเมื่อมีสัญญาณ AI Signal Trade คมๆ
               if (botToken && chatId && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
-                await sendTelegramMessage({ botToken, chatId, analysis });
+                if (isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
+                  await sendTelegramMessage({ botToken, chatId, analysis });
+                }
+              }
+
+              // Broadcast ไปยัง subscribers ในฐานข้อมูลตาม filter ของแต่ละคน
+              if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
+                resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+                  `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+                ).then((subs) => {
+                  if (subs && subs.length > 0) {
+                    for (const s of subs) {
+                      if (s.chat_id !== chatId && isSymbolAllowedForAlert(analysis.symbol, s.alert_symbol)) {
+                        sendTelegramMessage({ botToken, chatId: s.chat_id, analysis }).catch(() => {});
+                      }
+                    }
+                  }
+                }).catch(() => {});
               }
             } catch (e) {
               console.warn("Could not save signal or dispatch telegram:", e);
@@ -44,7 +62,7 @@ export async function GET(request: NextRequest) {
         ).catch((err) => console.warn("Autonomous dispatch error:", err));
       }
 
-      // 2. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) เพื่อให้ผู้ใช้มีเวลาเปิด MT5 ตั้ง Limit Order ได้ทัน
+      // 2. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) (กรองเฉพาะคู่เงินที่เลือก)
       if (scanResult.preWarningAnalyses && scanResult.preWarningAnalyses.length > 0) {
         Promise.allSettled(
           scanResult.preWarningAnalyses.map(async (analysis) => {
@@ -54,7 +72,24 @@ export async function GET(request: NextRequest) {
               if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {
                 preWarningAlertThrottle.set(analysis.symbol, now);
                 if (botToken && chatId && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
-                  await sendTelegramMessage({ botToken, chatId, analysis, isPreWarning: true });
+                  if (isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
+                    await sendTelegramMessage({ botToken, chatId, analysis, isPreWarning: true });
+                  }
+                }
+
+                // Broadcast pre-warning ไปยัง subscribers ในฐานข้อมูลตาม filter
+                if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
+                  resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+                    `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+                  ).then((subs) => {
+                    if (subs && subs.length > 0) {
+                      for (const s of subs) {
+                        if (s.chat_id !== chatId && isSymbolAllowedForAlert(analysis.symbol, s.alert_symbol)) {
+                          sendTelegramMessage({ botToken, chatId: s.chat_id, analysis, isPreWarning: true }).catch(() => {});
+                        }
+                      }
+                    }
+                  }).catch(() => {});
                 }
               }
             } catch (e) {
