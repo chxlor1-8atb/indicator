@@ -348,9 +348,6 @@ export default function DashboardPage() {
     let inFlight = false;
     const runAutonomousSync = async () => {
       if (!isMounted || inFlight) return;
-      // Skip autonomous scan when user is not viewing the tab
-      if (typeof document !== "undefined" && document.hidden) return;
-
       inFlight = true;
       try {
         const res = await fetch(`/api/autonomous-scanner?scan=true&_t=${Date.now()}`);
