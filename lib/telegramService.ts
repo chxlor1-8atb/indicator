@@ -24,6 +24,17 @@ function formatPrice(num: number, symbol: string): string {
   return num.toLocaleString(undefined, { minimumFractionDigits: precision, maximumFractionDigits: precision });
 }
 
+export function getAssetPipMultiplier(symbol: string): number {
+  const sym = (symbol || "").toUpperCase();
+  if (sym.includes("XAU") || sym.includes("GOLD")) return 10;
+  if (sym.includes("XAG") || sym.includes("SILVER")) return 100;
+  if (sym.includes("OIL") || sym.includes("WTI") || sym.includes("BRENT")) return 100;
+  if (sym.includes("JPY")) return 100;
+  if (["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some((c) => sym.includes(c)) || sym.endsWith("USDT")) return 1;
+  if (["US30", "NAS", "SPX", "GER", "DAX", "DJI", "NDX"].some((idx) => sym.includes(idx))) return 1;
+  return 10000;
+}
+
 export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string {
   const signalBadge = {
     STRONG_BUY: "🟢🟢 <b>STRONG BUY</b>",
@@ -34,10 +45,7 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
   }[analysis.signal] || "⚪ <b>NEUTRAL</b>";
 
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
-  const isGold = sym.includes("XAU") || sym.includes("GOLD");
-  const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI"].some((c) => sym.includes(c)) || sym.endsWith("USDT");
-  const isJpy = sym.includes("JPY");
-  const pipMultiplier = isGold ? 10 : isCrypto ? 1 : isJpy ? 100 : 10000;
+  const pipMultiplier = getAssetPipMultiplier(sym);
   const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
   const currentP = analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);
@@ -99,10 +107,7 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
 
 export function formatTelegramPreWarningMessage(analysis: AnalysisResult): string {
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
-  const isGold = sym.includes("XAU") || sym.includes("GOLD");
-  const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI"].some((c) => sym.includes(c)) || sym.endsWith("USDT");
-  const isJpy = sym.includes("JPY");
-  const pipMultiplier = isGold ? 10 : isCrypto ? 1 : isJpy ? 100 : 10000;
+  const pipMultiplier = getAssetPipMultiplier(sym);
   const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
   const currentP = analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);

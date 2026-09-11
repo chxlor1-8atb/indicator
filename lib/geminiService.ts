@@ -209,6 +209,7 @@ import { classifyMarketRegime } from "./regimeClassifier";
 import { getMarketSessionStatus } from "./sessionEngine";
 import { getNewsSafetyShieldStatus } from "./calendarEngine";
 import { getRecentLessons, getAdaptiveWeights, AdaptiveWeightsConfig, getCachedCandles } from "./db";
+import { getAssetPipMultiplier } from "./telegramService";
 
 export function generateRuleBasedAnalysis(
   symbol: string,
@@ -1158,10 +1159,7 @@ export function generateRuleBasedAnalysis(
     symbol
   );
 
-  const isGold = sym.includes("XAU") || sym.includes("GOLD");
-  const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI"].some((c) => sym.includes(c)) || sym.endsWith("USDT");
-  const isJpy = sym.includes("JPY");
-  const pipMultiplier = isGold ? 10 : isCrypto ? 1 : isJpy ? 100 : 10000;
+  const pipMultiplier = getAssetPipMultiplier(sym);
   const slPips = Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier);
   const tp1Pips = Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
   const tp2Pips = Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);

@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { AnalysisResult, Candle } from "./types";
-import { sendTelegramMessage, isSymbolAllowedForAlert } from "./telegramService";
+import { sendTelegramMessage, isSymbolAllowedForAlert, getAssetPipMultiplier } from "./telegramService";
 
 // Safe singleton client for Neon Serverless Postgres
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
@@ -416,10 +416,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
 
     for (const sig of activeSignals) {
       const isBuy = sig.action.includes("BUY");
-      const sym = symbol.toUpperCase();
-      const isGold = sym.includes("XAU") || sym === "GOLD";
-      const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI", "AVAX", "LINK", "DOT"].some((c) => sym.includes(c));
-      const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
+      const pipMultiplier = getAssetPipMultiplier(symbol);
 
       let outcome: "HIT_TP2" | "HIT_TP1" | "HIT_SL" | "CLOSED_BE" | null = null;
       let pips = 0;

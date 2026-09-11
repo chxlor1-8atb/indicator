@@ -3,7 +3,8 @@ import { getMarketCandles, simulateInstitutionalBacktest } from "@/lib/marketSer
 import { calculateAllIndicators } from "@/lib/indicators";
 import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
-import { saveAiSignal, resolveOpenSignals, saveMarketSnapshot, saveBacktestResults } from "@/lib/db";
+import { saveAiSignal, resolveOpenSignals, saveMarketSnapshot, saveBacktestResults, resilientQuery } from "@/lib/db";
+import { sendTelegramMessage, isSymbolAllowedForAlert } from "@/lib/telegramService";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,6 +43,30 @@ export async function POST(request: NextRequest) {
     }
     if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
       saveAiSignal(analysis).catch(console.error);
+
+      // Dispatch Telegram Alert to primary chat & active subscribers (Non-blocking)
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const envChatId = process.env.TELEGRAM_CHAT_ID;
+      const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+
+      if (botToken) {
+        if (envChatId && isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
+          sendTelegramMessage({ botToken, chatId: envChatId, analysis }).catch((e) =>
+            console.warn("[Analyze Dispatch] Primary Telegram error:", e)
+          );
+        }
+        resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+          `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+        ).then((subs) => {
+          if (subs && subs.length > 0) {
+            for (const sub of subs) {
+              if (sub.chat_id !== envChatId && isSymbolAllowedForAlert(analysis.symbol, sub.alert_symbol)) {
+                sendTelegramMessage({ botToken, chatId: sub.chat_id, analysis }).catch(() => {});
+              }
+            }
+          }
+        }).catch(() => {});
+      }
     }
 
     // 5. Continuous Real-time Win Rate & Backtest Sync into Neon DB (Non-blocking)
