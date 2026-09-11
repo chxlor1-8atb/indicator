@@ -155,33 +155,98 @@ export function evaluateMasterConfluence(
   const isVeryLowVolume = avgVol > 0 && lastCandle.volume < avgVol * 0.65;
   const hasAnomalySpike = (indicators.volumeAnomalies?.length ?? 0) > 0 && (indicators.volumeAnomalies?.slice(-1)[0]?.index ?? -1) >= candles.length - 3;
 
-  if (bias === "BULLISH" && obvTrend === "UP") p4Score += 6;
-  if (bias === "BEARISH" && obvTrend === "DOWN") p4Score += 6;
-  if (hasVolumeSpike) p4Score += 5;
-  if (hasAnomalySpike) p4Score += 4; // [แผน 4] Institutional Volume Spike > 2.5x
-  if (isVeryLowVolume) p4Score = Math.max(2, p4Score - 5); // Penalty for low liquidity deadzone
-  if (p4Score === 0) p4Score = 5;
+  const cvd = indicators.cvd;
+  const volDelta = indicators.volumeDelta;
+  const cmf = indicators.chaikinMoneyFlow;
 
-  const p4Status = hasAnomalySpike
-    ? `🚨 ตรวจพบ Institutional Volume Anomaly (${indicators.volumeAnomalies?.slice(-1)[0]?.ratio}x) สถาบันเข้าสะสม`
-    : hasVolumeSpike
-    ? `มี Volume Spike วอลุ่มกระชาก (+${Math.round((lastCandle.volume / avgVol) * 100 - 100)}%) ยืนยันแรงสถาบัน`
-    : isVeryLowVolume
-    ? "⚠️ ปริมาณการซื้อขายต่ำกว่าค่าเฉลี่ยมาก (Deadzone) เสี่ยงต่อสัญญาณหลอก"
-    : `OBV ทิศทาง ${obvTrend} วอลุ่มสะสมสม่ำเสมอ`;
+  if (bias === "BULLISH") {
+    if (obvTrend === "UP") p4Score += 3;
+    if (cvd && (cvd.cvdTrend === "RISING" || cvd.divergence === "BULLISH_CVD_DIVERGENCE")) p4Score += 4;
+    if (volDelta && volDelta.buyerVolumePct >= 52) p4Score += 3;
+    if (cmf && cmf.cmf > 0.02) p4Score += 3;
+    if (hasAnomalySpike) p4Score += 3;
+    else if (hasVolumeSpike) p4Score += 2;
+    // Contradiction penalty: buying into heavy selling volume
+    if (volDelta && volDelta.sellerVolumePct >= 65 && cvd && cvd.cvdTrend === "FALLING") p4Score -= 4;
+  } else if (bias === "BEARISH") {
+    if (obvTrend === "DOWN") p4Score += 3;
+    if (cvd && (cvd.cvdTrend === "FALLING" || cvd.divergence === "BEARISH_CVD_DIVERGENCE")) p4Score += 4;
+    if (volDelta && volDelta.sellerVolumePct >= 52) p4Score += 3;
+    if (cmf && cmf.cmf < -0.02) p4Score += 3;
+    if (hasAnomalySpike) p4Score += 3;
+    else if (hasVolumeSpike) p4Score += 2;
+    // Contradiction penalty: selling into heavy buying volume
+    if (volDelta && volDelta.buyerVolumePct >= 65 && cvd && cvd.cvdTrend === "RISING") p4Score -= 4;
+  } else {
+    p4Score += 6;
+  }
+  if (isVeryLowVolume) p4Score = Math.max(2, p4Score - 3);
+  p4Score = Math.max(2, Math.min(15, p4Score));
 
-  // ─── PILLAR 5: SMART MONEY & STRUCTURE (Max 20) ───
+  const cvdText = cvd ? `CVD: ${cvd.cvdTrend === "RISING" ? "📈 Rising" : cvd.cvdTrend === "FALLING" ? "📉 Falling" : "Flat"}` : "";
+  const deltaText = volDelta ? `Delta: ${volDelta.buyerVolumePct}%B/${volDelta.sellerVolumePct}%S` : "";
+  const p4Status = [
+    hasAnomalySpike ? `🚨 Volume Anomaly (${indicators.volumeAnomalies?.slice(-1)[0]?.ratio}x)` : hasVolumeSpike ? `Volume Spike (+${Math.round((lastCandle.volume / avgVol) * 100 - 100)}%)` : isVeryLowVolume ? `⚠️ Low Volume Deadzone` : `OBV ${obvTrend}`,
+    cvdText,
+    deltaText,
+  ].filter(Boolean).join(" | ");
+
+  // ─── PILLAR 5: SMART MONEY & STRUCTURE / DEMAND-SUPPLY (Max 20) ───
   let p5Score = 0;
   const fvgs = indicators.fvgs ?? [];
   const relevantFVGs = fvgs.filter((f) => (bias === "BULLISH" ? f.type === "BULLISH" : f.type === "BEARISH"));
+  const orderBlocks = indicators.orderBlocks;
+  const premDisc = indicators.premiumDiscount;
+  const mss = indicators.marketStructureShift;
 
-  if (relevantFVGs.length > 0) p5Score += 10;
-  if (indicators.supportLevels.length > 0 && indicators.resistanceLevels.length > 0) p5Score += 10;
-  if (p5Score === 0) p5Score = 10;
+  if (bias === "BULLISH") {
+    // 1. Demand Zone / Bullish Order Block validation
+    const hasBullishOB = orderBlocks?.activeBlocks?.some((b) => b.type === "BULLISH_OB" && !b.isMitigated) ?? false;
+    const isAtDemandZone = orderBlocks?.activeBlocks?.some((b) => b.type === "BULLISH_OB" && currentPrice >= b.priceMin && currentPrice <= b.priceMax * 1.002) ?? false;
+    if (isAtDemandZone) p5Score += 6;
+    else if (hasBullishOB) p5Score += 4;
 
-  const p5Status = relevantFVGs.length > 0
-    ? `พบ ${relevantFVGs.length} โซน Fair Value Gap (FVG) สภาพคล่องพร้อมหนุนราคา`
-    : "โครงสร้างแนวรับ-แนวต้านคมชัด ไม่มี Liquidity Trap";
+    // 2. Premium / Discount Zone Matrix (Wholesale discount)
+    if (premDisc) {
+      if (premDisc.zone === "DEEP_DISCOUNT" || premDisc.zone === "DISCOUNT") p5Score += 5;
+      else if (premDisc.zone === "EQUILIBRIUM") p5Score += 2;
+      else if (premDisc.zone === "EXTREME_PREMIUM") p5Score -= 5; // Penalty for buying top
+    }
+
+    // 3. Market Structure Shift (BOS / ChoCH displacement)
+    if (mss && mss.detected && mss.type === "BULLISH_MSS") p5Score += 5;
+
+    // 4. Fair Value Gap (Bullish Imbalance magnet)
+    if (relevantFVGs.length > 0) p5Score += 4;
+  } else if (bias === "BEARISH") {
+    // 1. Supply Zone / Bearish Order Block validation
+    const hasBearishOB = orderBlocks?.activeBlocks?.some((b) => b.type === "BEARISH_OB" && !b.isMitigated) ?? false;
+    const isAtSupplyZone = orderBlocks?.activeBlocks?.some((b) => b.type === "BEARISH_OB" && currentPrice <= b.priceMax && currentPrice >= b.priceMin * 0.998) ?? false;
+    if (isAtSupplyZone) p5Score += 6;
+    else if (hasBearishOB) p5Score += 4;
+
+    // 2. Premium / Discount Zone Matrix (Premium markup)
+    if (premDisc) {
+      if (premDisc.zone === "EXTREME_PREMIUM" || premDisc.zone === "PREMIUM") p5Score += 5;
+      else if (premDisc.zone === "EQUILIBRIUM") p5Score += 2;
+      else if (premDisc.zone === "DEEP_DISCOUNT") p5Score -= 5; // Penalty for shorting bottom
+    }
+
+    // 3. Market Structure Shift (BOS / ChoCH displacement)
+    if (mss && mss.detected && mss.type === "BEARISH_MSS") p5Score += 5;
+
+    // 4. Fair Value Gap (Bearish Imbalance magnet)
+    if (relevantFVGs.length > 0) p5Score += 4;
+  } else {
+    p5Score += 8;
+  }
+  if (indicators.supportLevels.length > 0 && indicators.resistanceLevels.length > 0) p5Score += 2;
+  p5Score = Math.max(3, Math.min(20, p5Score));
+
+  const zoneDesc = premDisc ? `Zone: ${premDisc.zone} (${premDisc.percentile}%)` : "";
+  const obDesc = orderBlocks?.nearestBlock ? `OB: ${orderBlocks.nearestBlock.type}` : "SMC: Structure Normal";
+  const mssDesc = mss?.detected ? `MSS: ${mss.type}` : "";
+  const p5Status = [obDesc, zoneDesc, mssDesc, relevantFVGs.length > 0 ? `${relevantFVGs.length} FVG` : ""].filter(Boolean).join(" | ");
 
   const p1Scaled = Math.min(wTrend, Math.round((p1Score / 25) * wTrend));
   const p2Scaled = Math.min(wMom, Math.round((p2Score / 20) * wMom));

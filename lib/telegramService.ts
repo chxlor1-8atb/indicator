@@ -87,6 +87,8 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
     `• <b>R:R:</b> <b>${analysis.tradeSetup.riskRewardRatio}</b> | เกรด: <b>${grade}</b> (${conf}%)`,
     ``,
     `💡 <b>เทคนิค:</b> ${escapeHtml(analysis.technicalAnalysis.trend)} (${escapeHtml(analysis.technicalAnalysis.rsiStatus)})`,
+    analysis.masterConfluence?.pillars?.volumeFlow?.status ? `📊 <b>Volume:</b> ${escapeHtml(analysis.masterConfluence.pillars.volumeFlow.status)}` : "",
+    analysis.masterConfluence?.pillars?.smartMoneyStructure?.status ? `🏦 <b>Demand/Supply:</b> ${escapeHtml(analysis.masterConfluence.pillars.smartMoneyStructure.status)}` : "",
     `📰 <b>ข่าว:</b> ${newsSentiment} | Shield: <code>${cal}</code>`,
     `━━━━━━━━━━━━━━━━━━━━`,
     `🕒 <code>${new Date(analysis.timestamp).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,

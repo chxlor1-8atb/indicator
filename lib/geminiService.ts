@@ -890,6 +890,8 @@ export function generateRuleBasedAnalysis(
   let takeProfit1 = Number((currentPrice + currentATR * 1.0).toFixed(precision));
   let takeProfit2 = Number((currentPrice + currentATR * effectiveTPMultiplier).toFixed(precision));
   let riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
+  let isInsideDemandZone = false;
+  let isInsideSupplyZone = false;
 
   if (signal === "STRONG_BUY" || signal === "BUY") {
     tradeAction = "BUY";
@@ -898,15 +900,42 @@ export function generateRuleBasedAnalysis(
     const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
     stopLoss = Number((structuralSL.stopLoss - slBufferExtra).toFixed(precision));
 
-    // [Sniper Entry Engine] OTE Zone Entry & Sweet Spot 70.5% (ย่อซื้อที่แนวรับ/โซน OTE ห้ามตั้งซื้อไล่ราคาตลาด)
+    // [Sniper Entry Engine: Demand Zone & Volume Trend Integration]
+    // 1. Demand Zone Identification (Bullish Order Block & Breakers)
+    const activeBullishOB = orderBlocks.activeBlocks.find(b => b.type === "BULLISH_OB" && !b.isMitigated && b.priceMax <= currentPrice);
+    isInsideDemandZone = orderBlocks.activeBlocks.some(b => b.type === "BULLISH_OB" && currentPrice >= b.priceMin && currentPrice <= b.priceMax * 1.002);
+    
+    // 2. Volume Profile POC (Point of Control) Demand Shelf
+    const isPocDemandNearby = volumeProfile.poc > 0 && volumeProfile.poc < currentPrice && (currentPrice - volumeProfile.poc) <= currentATR * 1.5;
+    
+    // 3. Discount Zone Validation
+    const isDiscount = premiumDiscount.zone === "DISCOUNT" || premiumDiscount.zone === "DEEP_DISCOUNT";
+    const isExtremePremium = premiumDiscount.zone === "EXTREME_PREMIUM";
+    
     const sniperBuyDiscount = Number(Math.min(currentPrice - currentATR * 0.25, lastEMA20).toFixed(precision));
-    const nearestBullishOB = orderBlocks.activeBlocks.find(b => b.type === "BULLISH_OB" && b.priceMax < currentPrice);
-    const obPrice = nearestBullishOB?.priceMax;
-    pendingPrice = (oteZone.sweetSpot && oteZone.sweetSpot < currentPrice)
-      ? oteZone.sweetSpot
-      : (obPrice && obPrice < currentPrice)
-      ? obPrice
-      : sniperBuyDiscount;
+    
+    // Prioritize Entry:
+    // If inside Demand Zone right now & Discount -> High conviction market / boundary entry
+    // Else if unmitigated Bullish OB below -> Target top of Demand Zone
+    // Else if POC support nearby -> Target POC Demand shelf
+    // Else OTE Sweet Spot / EMA Discount
+    if (isInsideDemandZone && isDiscount) {
+      pendingPrice = currentPrice;
+    } else if (activeBullishOB && activeBullishOB.priceMax < currentPrice) {
+      pendingPrice = activeBullishOB.priceMax;
+    } else if (isPocDemandNearby) {
+      pendingPrice = volumeProfile.poc;
+    } else if (oteZone.sweetSpot && oteZone.sweetSpot < currentPrice) {
+      pendingPrice = oteZone.sweetSpot;
+    } else {
+      pendingPrice = sniperBuyDiscount;
+    }
+
+    // If in Extreme Premium, force pendingPrice down at least to Equilibrium or Discount
+    if (isExtremePremium && premiumDiscount.equilibrium && premiumDiscount.equilibrium < currentPrice) {
+      pendingPrice = Math.min(pendingPrice, premiumDiscount.equilibrium);
+    }
+
     entryZone = {
       min: oteZone.oteMin ? Math.min(oteZone.oteMin, pendingPrice) : Number((pendingPrice - currentATR * 0.2).toFixed(precision)),
       max: oteZone.oteMax ? Math.max(oteZone.oteMax, pendingPrice) : Number((pendingPrice + currentATR * 0.2).toFixed(precision))
@@ -922,9 +951,21 @@ export function generateRuleBasedAnalysis(
       pendingPrice = Number((liquidityInducement.idmLevel - currentATR * 0.35).toFixed(precision));
     }
 
+    // Volume Confirmation & Flow Filter
+    if ((volumeDelta.buyerVolumePct >= 55) || (cvd && cvd.cvdTrend === "RISING") || (chaikinMoneyFlow && chaikinMoneyFlow.cmf > 0.03)) {
+      confidence = Math.min(98, confidence + 4);
+    } else if (volumeDelta.sellerVolumePct >= 65 && cvd && cvd.cvdTrend === "FALLING") {
+      confidence = Math.max(45, confidence - 6);
+    }
+
     // Institutional Liquidity Sweep (Turtle Soup) Precision Confirmation Boost
     if (sessionSweep.sweepType === "BULLISH_SWEEP" || (candleMicrostructure.rejectionStrength === "STRONG_BUY_REJECTION" && candleMicrostructure.wickRatio >= 30)) {
       confidence = Math.min(95, confidence + 4);
+    }
+
+    // Demand Zone Structural SL Protection: ensure SL sits safely below the active Demand Zone
+    if (activeBullishOB && activeBullishOB.priceMin < pendingPrice) {
+      stopLoss = Number(Math.min(stopLoss, activeBullishOB.priceMin - currentATR * 0.2).toFixed(precision));
     }
 
     // [แผน 14] Dynamic Multi-Stage Take Profit
@@ -980,15 +1021,42 @@ export function generateRuleBasedAnalysis(
     const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
     stopLoss = Number((structuralSL.stopLoss + slBufferExtra).toFixed(precision));
 
-    // [Sniper Entry Engine] OTE Zone Entry & Sweet Spot 70.5% (เด้งขายที่แนวต้าน/โซน OTE ห้ามตั้งขายไล่ราคาตลาด)
+    // [Sniper Entry Engine: Supply Zone & Volume Trend Integration]
+    // 1. Supply Zone Identification (Bearish Order Block & Breakers)
+    const activeBearishOB = orderBlocks.activeBlocks.find(b => b.type === "BEARISH_OB" && !b.isMitigated && b.priceMin >= currentPrice);
+    isInsideSupplyZone = orderBlocks.activeBlocks.some(b => b.type === "BEARISH_OB" && currentPrice <= b.priceMax && currentPrice >= b.priceMin * 0.998);
+    
+    // 2. Volume Profile POC (Point of Control) Supply Shelf
+    const isPocSupplyNearby = volumeProfile.poc > 0 && volumeProfile.poc > currentPrice && (volumeProfile.poc - currentPrice) <= currentATR * 1.5;
+    
+    // 3. Premium Zone Validation
+    const isPremium = premiumDiscount.zone === "PREMIUM" || premiumDiscount.zone === "EXTREME_PREMIUM";
+    const isDeepDiscount = premiumDiscount.zone === "DEEP_DISCOUNT";
+    
     const sniperSellPremium = Number(Math.max(currentPrice + currentATR * 0.25, lastEMA20).toFixed(precision));
-    const nearestBearishOB = orderBlocks.activeBlocks.find(b => b.type === "BEARISH_OB" && b.priceMin > currentPrice);
-    const obPrice = nearestBearishOB?.priceMin;
-    pendingPrice = (oteZone.sweetSpot && oteZone.sweetSpot > currentPrice)
-      ? oteZone.sweetSpot
-      : (obPrice && obPrice > currentPrice)
-      ? obPrice
-      : sniperSellPremium;
+    
+    // Prioritize Entry:
+    // If inside Supply Zone right now & Premium -> High conviction market / boundary entry
+    // Else if unmitigated Bearish OB above -> Target bottom of Supply Zone
+    // Else if POC resistance nearby -> Target POC Supply shelf
+    // Else OTE Sweet Spot / EMA Premium
+    if (isInsideSupplyZone && isPremium) {
+      pendingPrice = currentPrice;
+    } else if (activeBearishOB && activeBearishOB.priceMin > currentPrice) {
+      pendingPrice = activeBearishOB.priceMin;
+    } else if (isPocSupplyNearby) {
+      pendingPrice = volumeProfile.poc;
+    } else if (oteZone.sweetSpot && oteZone.sweetSpot > currentPrice) {
+      pendingPrice = oteZone.sweetSpot;
+    } else {
+      pendingPrice = sniperSellPremium;
+    }
+
+    // If in Deep Discount, force pendingPrice up at least to Equilibrium or Premium
+    if (isDeepDiscount && premiumDiscount.equilibrium && premiumDiscount.equilibrium > currentPrice) {
+      pendingPrice = Math.max(pendingPrice, premiumDiscount.equilibrium);
+    }
+
     entryZone = {
       min: oteZone.oteMin ? Math.min(oteZone.oteMin, pendingPrice) : Number((pendingPrice - currentATR * 0.2).toFixed(precision)),
       max: oteZone.oteMax ? Math.max(oteZone.oteMax, pendingPrice) : Number((pendingPrice + currentATR * 0.2).toFixed(precision))
@@ -1004,9 +1072,21 @@ export function generateRuleBasedAnalysis(
       pendingPrice = Number((liquidityInducement.idmLevel + currentATR * 0.35).toFixed(precision));
     }
 
+    // Volume Confirmation & Flow Filter
+    if ((volumeDelta.sellerVolumePct >= 55) || (cvd && cvd.cvdTrend === "FALLING") || (chaikinMoneyFlow && chaikinMoneyFlow.cmf < -0.03)) {
+      confidence = Math.min(98, confidence + 4);
+    } else if (volumeDelta.buyerVolumePct >= 65 && cvd && cvd.cvdTrend === "RISING") {
+      confidence = Math.max(45, confidence - 6);
+    }
+
     // Institutional Liquidity Sweep (Turtle Soup) Precision Confirmation Boost
     if (sessionSweep.sweepType === "BEARISH_SWEEP" || (candleMicrostructure.rejectionStrength === "STRONG_SELL_REJECTION" && candleMicrostructure.wickRatio >= 30)) {
       confidence = Math.min(95, confidence + 4);
+    }
+
+    // Supply Zone Structural SL Protection: ensure SL sits safely above the active Supply Zone
+    if (activeBearishOB && activeBearishOB.priceMax > pendingPrice) {
+      stopLoss = Number(Math.max(stopLoss, activeBearishOB.priceMax + currentATR * 0.2).toFixed(precision));
     }
 
     // [แผน 14] Dynamic Multi-Stage Take Profit
@@ -1323,17 +1403,22 @@ export function generateRuleBasedAnalysis(
     mtOrderAdvice = "ยังไม่มีจังหวะได้เปรียบทางสถิติ นั่งทับมือรอการยืนยันโครงสร้าง";
   } else if (tradeAction === "BUY") {
     const isBreakout = donchian.breakoutState === "BULLISH_BREAKOUT_20" || regimeInfo.title.includes("BREAKOUT");
-    const isNearMarket = Math.abs(currentPrice - pendingPrice) < currentATR * 0.18;
+    const isChasingPremium = premiumDiscount.zone === "EXTREME_PREMIUM" || (premiumDiscount.zone === "PREMIUM" && !isInsideDemandZone);
+    const isNearMarket = Math.abs(currentPrice - pendingPrice) < currentATR * 0.18 && !isChasingPremium;
 
     if (isNearMarket) {
       calculatedOrderType = "MARKET_EXECUTION";
       mtOrderLabel = "Market Execution";
-      mtOrderAdvice = "ราคาอยู่ตรงโซนเข้าได้เปรียบพอดี แนะนำกด BUY ทันทีที่ราคาตลาด";
+      mtOrderAdvice = isInsideDemandZone
+        ? "ราคาอยู่ใน Demand Zone พร้อมวอลุ่มหนุน แนะนำกด BUY ทันทีที่ราคาตลาด"
+        : "ราคาอยู่ตรงโซนเข้าได้เปรียบพอดี แนะนำกด BUY ทันทีที่ราคาตลาด";
       pendingPrice = currentPrice;
     } else if (pendingPrice < currentPrice) {
       calculatedOrderType = "BUY_LIMIT";
       mtOrderLabel = "Buy Limit";
-      mtOrderAdvice = "ราคากำลังพักตัว แนะนำตั้ง Buy Limit ดักซื้อของถูกที่แนวรับ OTE / FVG ด้านล่าง (ไม่ต้องเฝ้าจอ)";
+      mtOrderAdvice = isChasingPremium
+        ? "ราคาอยู่ในโซนแพง (Premium) แนะนำตั้ง Buy Limit ดักซื้อของถูกที่ Demand Zone ด้านล่าง ห้ามไล่ราคา"
+        : "ราคากำลังพักตัว แนะนำตั้ง Buy Limit ดักซื้อของถูกที่ Demand Zone / OTE ด้านล่าง (ไม่ต้องเฝ้าจอ)";
     } else if (isBreakout && pendingPrice > currentPrice) {
       if (currentATR > 0 && Math.abs(pendingPrice - currentPrice) > currentATR * 0.5) {
         calculatedOrderType = "BUY_STOP_LIMIT";
@@ -1348,7 +1433,7 @@ export function generateRuleBasedAnalysis(
     } else {
       calculatedOrderType = "BUY_LIMIT";
       mtOrderLabel = "Buy Limit";
-      mtOrderAdvice = "แนะนำตั้ง Buy Limit รอราคาย่อตัวลงมาเกี่ยวที่โซนแนวรับ OTE";
+      mtOrderAdvice = "แนะนำตั้ง Buy Limit รอราคาย่อตัวลงมาเกี่ยวที่ Demand Zone / OTE";
       if (pendingPrice >= currentPrice) {
         pendingPrice = Number((currentPrice - Math.max(currentATR * 0.25, currentPrice * 0.001)).toFixed(precision));
       }
@@ -1369,17 +1454,22 @@ export function generateRuleBasedAnalysis(
     riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, finalRisk)).toFixed(1)}`;
   } else if (tradeAction === "SELL") {
     const isBreakdown = donchian.breakoutState === "BEARISH_BREAKOUT_20" || regimeInfo.title.includes("BREAKDOWN");
-    const isNearMarket = Math.abs(currentPrice - pendingPrice) < currentATR * 0.18;
+    const isChasingDiscount = premiumDiscount.zone === "DEEP_DISCOUNT" || (premiumDiscount.zone === "DISCOUNT" && !isInsideSupplyZone);
+    const isNearMarket = Math.abs(currentPrice - pendingPrice) < currentATR * 0.18 && !isChasingDiscount;
 
     if (isNearMarket) {
       calculatedOrderType = "MARKET_EXECUTION";
       mtOrderLabel = "Market Execution";
-      mtOrderAdvice = "ราคาอยู่ตรงโซนเข้าได้เปรียบพอดี แนะนำกด SELL ทันทีที่ราคาตลาด";
+      mtOrderAdvice = isInsideSupplyZone
+        ? "ราคาอยู่ใน Supply Zone พร้อมวอลุ่มกดดัน แนะนำกด SELL ทันทีที่ราคาตลาด"
+        : "ราคาอยู่ตรงโซนเข้าได้เปรียบพอดี แนะนำกด SELL ทันทีที่ราคาตลาด";
       pendingPrice = currentPrice;
     } else if (pendingPrice > currentPrice) {
       calculatedOrderType = "SELL_LIMIT";
       mtOrderLabel = "Sell Limit";
-      mtOrderAdvice = "ราคากำลังเด้งขึ้น แนะนำตั้ง Sell Limit ดักขายของแพงที่แนวต้าน OTE / FVG ด้านบน (ไม่ต้องเฝ้าจอ)";
+      mtOrderAdvice = isChasingDiscount
+        ? "ราคาอยู่ในโซนต่ำ (Discount) แนะนำตั้ง Sell Limit ดักขายของแพงที่ Supply Zone ด้านบน ห้ามไล่ราคา"
+        : "ราคากำลังเด้งขึ้น แนะนำตั้ง Sell Limit ดักขายของแพงที่ Supply Zone / OTE ด้านบน (ไม่ต้องเฝ้าจอ)";
     } else if (isBreakdown && pendingPrice < currentPrice) {
       if (currentATR > 0 && Math.abs(currentPrice - pendingPrice) > currentATR * 0.5) {
         calculatedOrderType = "SELL_STOP_LIMIT";
@@ -1394,7 +1484,7 @@ export function generateRuleBasedAnalysis(
     } else {
       calculatedOrderType = "SELL_LIMIT";
       mtOrderLabel = "Sell Limit";
-      mtOrderAdvice = "แนะนำตั้ง Sell Limit รอราคาเด้งขึ้นไปเกี่ยวที่โซนแนวต้าน OTE";
+      mtOrderAdvice = "แนะนำตั้ง Sell Limit รอราคาเด้งขึ้นไปเกี่ยวที่ Supply Zone / OTE";
       if (pendingPrice <= currentPrice) {
         pendingPrice = Number((currentPrice + Math.max(currentATR * 0.25, currentPrice * 0.001)).toFixed(precision));
       }
