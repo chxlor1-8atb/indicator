@@ -35,7 +35,9 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
 
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const isGold = sym.includes("XAU") || sym.includes("GOLD");
-  const pipMultiplier = isGold ? 10 : sym.includes("JPY") ? 100 : 10000;
+  const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI"].some((c) => sym.includes(c)) || sym.endsWith("USDT");
+  const isJpy = sym.includes("JPY");
+  const pipMultiplier = isGold ? 10 : isCrypto ? 1 : isJpy ? 100 : 10000;
   const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
   const currentP = analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);
@@ -96,7 +98,9 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
 export function formatTelegramPreWarningMessage(analysis: AnalysisResult): string {
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const isGold = sym.includes("XAU") || sym.includes("GOLD");
-  const pipMultiplier = isGold ? 10 : sym.includes("JPY") ? 100 : 10000;
+  const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI"].some((c) => sym.includes(c)) || sym.endsWith("USDT");
+  const isJpy = sym.includes("JPY");
+  const pipMultiplier = isGold ? 10 : isCrypto ? 1 : isJpy ? 100 : 10000;
   const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
   const currentP = analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);

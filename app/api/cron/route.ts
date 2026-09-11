@@ -3,9 +3,9 @@ import { getMarketCandles, simulateInstitutionalBacktest } from "@/lib/marketSer
 import { calculateAllIndicators, calculateEMA, calculateRSI } from "@/lib/indicators";
 import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
-import { sendTelegramMessage } from "@/lib/telegramService";
+import { sendTelegramMessage, isSymbolAllowedForAlert } from "@/lib/telegramService";
 
-import { resolveOpenSignals, saveAiSignal, saveBacktestResults, BacktestTrade } from "@/lib/db";
+import { resolveOpenSignals, saveAiSignal, saveBacktestResults, BacktestTrade, resilientQuery } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -54,33 +54,60 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. Scan core assets for AI Signals & Telegram notifications
-    const alertAssets = ["XAUUSD", "BTCUSDT", "EURUSD"];
+    // 3. Scan core assets for AI Signals & Telegram notifications across all subscribers
+    const subscribersMap = new Map<string, string>();
+    if (chatId) {
+      subscribersMap.set(chatId, process.env.TELEGRAM_ALERT_SYMBOLS || "ALL");
+    }
+    try {
+      const dbSubs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+        `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+      );
+      if (dbSubs && dbSubs.length > 0) {
+        for (const sub of dbSubs) {
+          subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
+        }
+      }
+    } catch (dbErr) {
+      console.warn("Cron: could not query telegram_subscribers from DB:", dbErr);
+    }
+
+    const alertAssets = ["XAUUSD", "BTCUSDT", "EURUSD", "GBPUSD", "USDJPY", "ETHUSDT", "SOLUSDT", "USOIL"];
     for (const symbol of alertAssets) {
-      const candles = await getMarketCandles(symbol, "1h");
-      const indicators = calculateAllIndicators(candles);
-      const analysis = await analyzeWithGemini(symbol, "1h", candles, indicators, news);
+      try {
+        const candles = await getMarketCandles(symbol, "1h");
+        if (!candles || candles.length < 20) continue;
+        const indicators = calculateAllIndicators(candles, symbol);
+        const analysis = await analyzeWithGemini(symbol, "1h", candles, indicators, news);
 
-      // Record actionable trades with state-transition deduplication
-      if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
-        await saveAiSignal(analysis).catch(console.error);
+        // Record actionable trades with state-transition deduplication
+        const isActionable = analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER";
+        if (isActionable) {
+          saveAiSignal(analysis).catch(console.error);
+        }
+
+        // Broadcast alert if confluence score is actionable (Grade A/A+ or score >= 60)
+        const isConfluenceEligible =
+          analysis.setupGrade === "A+" ||
+          analysis.setupGrade === "A" ||
+          (analysis.masterConfluence?.totalScore ?? 0) >= 60;
+
+        if (botToken && isActionable && isConfluenceEligible && subscribersMap.size > 0) {
+          subscribersMap.forEach((filter, targetChatId) => {
+            if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
+              sendTelegramMessage({ botToken, chatId: targetChatId, analysis }).catch(() => {});
+            }
+          });
+        }
+
+        results.push({
+          symbol,
+          signal: analysis.signal,
+          confidence: analysis.confidence,
+        });
+      } catch (assetErr) {
+        console.warn(`Cron analysis failed for ${symbol}:`, assetErr);
       }
-
-      // If high confidence signal (Strong Buy/Sell or >= 80% confidence and Grade A/A+), send alert
-      if (
-        botToken &&
-        chatId &&
-        (analysis.masterConfluence?.totalScore ?? 0) >= 75 &&
-        (analysis.signal === "STRONG_BUY" || analysis.signal === "STRONG_SELL" || analysis.confidence >= 80)
-      ) {
-        await sendTelegramMessage({ botToken, chatId, analysis });
-      }
-
-      results.push({
-        symbol,
-        signal: analysis.signal,
-        confidence: analysis.confidence,
-      });
     }
 
     // ─── 4. Historical Backtest Auto-Seeding (500 Candles) ───

@@ -197,7 +197,7 @@ export async function evaluateAssetAutonomous(
   const isSignalActionable =
     (signal === "BUY" || signal === "STRONG_BUY" || signal === "SELL" || signal === "STRONG_SELL") &&
     tradeSetup.action !== "NO_TRADE" &&
-    (orderType === "BUY_LIMIT" || orderType === "SELL_LIMIT" || orderType === "MARKET_EXECUTION");
+    orderType !== "WAIT_NO_ORDER";
 
   const fivePillars = analysis.fiveCorePillars;
   const isPillarsReady = fivePillars ? fivePillars.passedPillarsCount >= 2 : true;

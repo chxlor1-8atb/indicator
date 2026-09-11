@@ -13,50 +13,66 @@ export const dynamic = "force-dynamic";
 
 const preWarningAlertThrottle = new Map<string, number>();
 const PRE_WARNING_COOLDOWN_MS = 25 * 60 * 1000; // 25 minutes cooldown per asset
+const actionableAlertThrottle = new Map<string, number>();
+const ACTIONABLE_COOLDOWN_MS = 20 * 60 * 1000; // 20 minutes cooldown per asset setup
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const triggerScan = searchParams.get("scan") === "true";
+    const hasScanParam = searchParams.get("scan") === "true" || searchParams.get("scan") === "1";
+    const isCronHeader = Boolean(request.headers.get("x-cron") || request.headers.get("x-vercel-cron"));
+    const triggerScan = hasScanParam || isCronHeader;
 
     let scanResult = null;
     if (triggerScan) {
       scanResult = await scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG);
 
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      const chatId = process.env.TELEGRAM_CHAT_ID;
+      const envChatId = process.env.TELEGRAM_CHAT_ID;
       const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+
+      // รวบรวมรายชื่อผู้รับการแจ้งเตือนทั้งหมด ทั้งจาก Environment Variables และ Neon DB subscribers
+      const subscribersMap = new Map<string, string>();
+      if (envChatId) {
+        subscribersMap.set(envChatId, primaryFilter);
+      }
+      try {
+        const dbSubs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+          `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+        );
+        if (dbSubs && dbSubs.length > 0) {
+          for (const sub of dbSubs) {
+            subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
+          }
+        }
+      } catch (dbErr) {
+        console.warn("Could not query telegram_subscribers from DB:", dbErr);
+      }
 
       // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram พร้อมกันแบบ Non-blocking (กรองเฉพาะคู่เงินที่เลือก)
       if (scanResult.actionableAnalyses && scanResult.actionableAnalyses.length > 0) {
         Promise.allSettled(
           scanResult.actionableAnalyses.map(async (analysis) => {
-            try {
-              await saveAiSignal(analysis);
+            // บันทึกลงฐานข้อมูลแบบแยก isolate (หาก DB มีปัญหา จะไม่ทำให้การส่ง Telegram ล้มเหลว)
+            saveAiSignal(analysis).catch((err) => console.warn("Could not save signal to DB:", err));
 
-              // ส่งแจ้งเตือนไปยัง Telegram ทันทีเมื่อมีสัญญาณ AI Signal Trade คมๆ
-              if (botToken && chatId && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
-                if (isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
-                  await sendTelegramMessage({ botToken, chatId, analysis });
-                }
-              }
+            // ตรวจสอบ Throttle เพื่อป้องกันการส่งซ้ำทุก 25 วินาทีขณะเปิดหน้าจอค้างไว้
+            const throttleKey = `${analysis.symbol}_${analysis.signal}_${analysis.tradeSetup?.orderType}`;
+            const now = Date.now();
+            const lastSent = actionableAlertThrottle.get(throttleKey) || 0;
+            if (now - lastSent >= ACTIONABLE_COOLDOWN_MS) {
+              actionableAlertThrottle.set(throttleKey, now);
 
-              // Broadcast ไปยัง subscribers ในฐานข้อมูลตาม filter ของแต่ละคน
-              if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
-                resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
-                  `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
-                ).then((subs) => {
-                  if (subs && subs.length > 0) {
-                    for (const s of subs) {
-                      if (s.chat_id !== chatId && isSymbolAllowedForAlert(analysis.symbol, s.alert_symbol)) {
-                        sendTelegramMessage({ botToken, chatId: s.chat_id, analysis }).catch(() => {});
-                      }
-                    }
+              // Broadcast ไปยัง subscribers ทุกคนที่เลือกรับสัญญาณคู่นี้
+              if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
+                subscribersMap.forEach((filter, targetChatId) => {
+                  if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
+                    sendTelegramMessage({ botToken, chatId: targetChatId, analysis }).catch((e) => {
+                      console.warn(`Failed to dispatch alert to ${targetChatId}:`, e);
+                    });
                   }
-                }).catch(() => {});
+                });
               }
-            } catch (e) {
-              console.warn("Could not save signal or dispatch telegram:", e);
             }
           })
         ).catch((err) => console.warn("Autonomous dispatch error:", err));
@@ -66,34 +82,20 @@ export async function GET(request: NextRequest) {
       if (scanResult.preWarningAnalyses && scanResult.preWarningAnalyses.length > 0) {
         Promise.allSettled(
           scanResult.preWarningAnalyses.map(async (analysis) => {
-            try {
-              const now = Date.now();
-              const lastAlert = preWarningAlertThrottle.get(analysis.symbol) || 0;
-              if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {
-                preWarningAlertThrottle.set(analysis.symbol, now);
-                if (botToken && chatId && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
-                  if (isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
-                    await sendTelegramMessage({ botToken, chatId, analysis, isPreWarning: true });
-                  }
-                }
+            const now = Date.now();
+            const lastAlert = preWarningAlertThrottle.get(analysis.symbol) || 0;
+            if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {
+              preWarningAlertThrottle.set(analysis.symbol, now);
 
-                // Broadcast pre-warning ไปยัง subscribers ในฐานข้อมูลตาม filter
-                if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram) {
-                  resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
-                    `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
-                  ).then((subs) => {
-                    if (subs && subs.length > 0) {
-                      for (const s of subs) {
-                        if (s.chat_id !== chatId && isSymbolAllowedForAlert(analysis.symbol, s.alert_symbol)) {
-                          sendTelegramMessage({ botToken, chatId: s.chat_id, analysis, isPreWarning: true }).catch(() => {});
-                        }
-                      }
-                    }
-                  }).catch(() => {});
-                }
+              if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
+                subscribersMap.forEach((filter, targetChatId) => {
+                  if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
+                    sendTelegramMessage({ botToken, chatId: targetChatId, analysis, isPreWarning: true }).catch((e) => {
+                      console.warn(`Failed to dispatch pre-warning to ${targetChatId}:`, e);
+                    });
+                  }
+                });
               }
-            } catch (e) {
-              console.warn("Could not dispatch pre-warning telegram:", e);
             }
           })
         ).catch((err) => console.warn("Pre-warning dispatch error:", err));

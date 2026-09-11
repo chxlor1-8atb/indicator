@@ -960,11 +960,19 @@ export function generateRuleBasedAnalysis(
       takeProfit1 = harmonics.bestPattern.targetTP1;
       takeProfit2 = harmonics.bestPattern.targetTP2;
     }
-    // Invariant Guarantee: For BUY, Stop Loss must strictly be below pendingPrice
+    // ─── HARD INVARIANT GUARANTEE FOR BUY: stopLoss < pendingPrice < takeProfit1 < takeProfit2 ───
+    const minRisk = Math.max(currentATR * 0.8, pendingPrice * 0.003);
     if (stopLoss >= pendingPrice) {
-      stopLoss = Number((pendingPrice - Math.max(currentATR * 1.2, pendingPrice * 0.005)).toFixed(precision));
+      stopLoss = Number((pendingPrice - minRisk).toFixed(precision));
     }
-    riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, pendingPrice - stopLoss)).toFixed(1)}`;
+    const actualRisk = pendingPrice - stopLoss;
+    if (takeProfit1 <= pendingPrice) {
+      takeProfit1 = Number((pendingPrice + Math.max(actualRisk * 1.0, currentATR * 0.8)).toFixed(precision));
+    }
+    if (takeProfit2 <= takeProfit1) {
+      takeProfit2 = Number((takeProfit1 + Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision));
+    }
+    riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, actualRisk)).toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
     // [แผน 12 & แผน 28] Liquidity Hunt Protection Stop Loss + Realized Volatility Buffer
@@ -1034,11 +1042,19 @@ export function generateRuleBasedAnalysis(
       takeProfit1 = harmonics.bestPattern.targetTP1;
       takeProfit2 = harmonics.bestPattern.targetTP2;
     }
-    // Invariant Guarantee: For SELL, Stop Loss must strictly be above pendingPrice
+    // ─── HARD INVARIANT GUARANTEE FOR SELL: stopLoss > pendingPrice > takeProfit1 > takeProfit2 ───
+    const minRisk = Math.max(currentATR * 0.8, pendingPrice * 0.003);
     if (stopLoss <= pendingPrice) {
-      stopLoss = Number((pendingPrice + Math.max(currentATR * 1.2, pendingPrice * 0.005)).toFixed(precision));
+      stopLoss = Number((pendingPrice + minRisk).toFixed(precision));
     }
-    riskRewardRatio = `1:${((pendingPrice - takeProfit2) / Math.max(0.0001, stopLoss - pendingPrice)).toFixed(1)}`;
+    const actualRisk = stopLoss - pendingPrice;
+    if (takeProfit1 >= pendingPrice) {
+      takeProfit1 = Number((pendingPrice - Math.max(actualRisk * 1.0, currentATR * 0.8)).toFixed(precision));
+    }
+    if (takeProfit2 >= takeProfit1) {
+      takeProfit2 = Number((takeProfit1 - Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision));
+    }
+    riskRewardRatio = `1:${((pendingPrice - takeProfit2) / Math.max(0.0001, actualRisk)).toFixed(1)}`;
   }
 
   // [แผน 14] Automated Risk-Free Breakeven Shield
@@ -1062,7 +1078,10 @@ export function generateRuleBasedAnalysis(
     symbol
   );
 
-  const pipMultiplier = symbol.includes("JPY") ? 100 : symbol.includes("XAU") ? 10 : 10000;
+  const isGold = sym.includes("XAU") || sym.includes("GOLD");
+  const isCrypto = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "SUI"].some((c) => sym.includes(c)) || sym.endsWith("USDT");
+  const isJpy = sym.includes("JPY");
+  const pipMultiplier = isGold ? 10 : isCrypto ? 1 : isJpy ? 100 : 10000;
   const slPips = Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier);
   const tp1Pips = Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
   const tp2Pips = Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);
@@ -1310,6 +1329,7 @@ export function generateRuleBasedAnalysis(
       calculatedOrderType = "MARKET_EXECUTION";
       mtOrderLabel = "Market Execution";
       mtOrderAdvice = "ราคาอยู่ตรงโซนเข้าได้เปรียบพอดี แนะนำกด BUY ทันทีที่ราคาตลาด";
+      pendingPrice = currentPrice;
     } else if (pendingPrice < currentPrice) {
       calculatedOrderType = "BUY_LIMIT";
       mtOrderLabel = "Buy Limit";
@@ -1329,7 +1349,24 @@ export function generateRuleBasedAnalysis(
       calculatedOrderType = "BUY_LIMIT";
       mtOrderLabel = "Buy Limit";
       mtOrderAdvice = "แนะนำตั้ง Buy Limit รอราคาย่อตัวลงมาเกี่ยวที่โซนแนวรับ OTE";
+      if (pendingPrice >= currentPrice) {
+        pendingPrice = Number((currentPrice - Math.max(currentATR * 0.25, currentPrice * 0.001)).toFixed(precision));
+      }
     }
+
+    // Post-OrderType Final Invariant Calibration for BUY: stopLoss < pendingPrice < takeProfit1 < takeProfit2
+    const minRisk = Math.max(currentATR * 0.8, pendingPrice * 0.003);
+    if (stopLoss >= pendingPrice) {
+      stopLoss = Number((pendingPrice - minRisk).toFixed(precision));
+    }
+    const finalRisk = pendingPrice - stopLoss;
+    if (takeProfit1 <= pendingPrice) {
+      takeProfit1 = Number((pendingPrice + Math.max(finalRisk * 1.0, currentATR * 0.8)).toFixed(precision));
+    }
+    if (takeProfit2 <= takeProfit1) {
+      takeProfit2 = Number((takeProfit1 + Math.max(finalRisk * 1.2, currentATR * 1.0)).toFixed(precision));
+    }
+    riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, finalRisk)).toFixed(1)}`;
   } else if (tradeAction === "SELL") {
     const isBreakdown = donchian.breakoutState === "BEARISH_BREAKOUT_20" || regimeInfo.title.includes("BREAKDOWN");
     const isNearMarket = Math.abs(currentPrice - pendingPrice) < currentATR * 0.18;
@@ -1338,6 +1375,7 @@ export function generateRuleBasedAnalysis(
       calculatedOrderType = "MARKET_EXECUTION";
       mtOrderLabel = "Market Execution";
       mtOrderAdvice = "ราคาอยู่ตรงโซนเข้าได้เปรียบพอดี แนะนำกด SELL ทันทีที่ราคาตลาด";
+      pendingPrice = currentPrice;
     } else if (pendingPrice > currentPrice) {
       calculatedOrderType = "SELL_LIMIT";
       mtOrderLabel = "Sell Limit";
@@ -1357,8 +1395,30 @@ export function generateRuleBasedAnalysis(
       calculatedOrderType = "SELL_LIMIT";
       mtOrderLabel = "Sell Limit";
       mtOrderAdvice = "แนะนำตั้ง Sell Limit รอราคาเด้งขึ้นไปเกี่ยวที่โซนแนวต้าน OTE";
+      if (pendingPrice <= currentPrice) {
+        pendingPrice = Number((currentPrice + Math.max(currentATR * 0.25, currentPrice * 0.001)).toFixed(precision));
+      }
     }
+
+    // Post-OrderType Final Invariant Calibration for SELL: stopLoss > pendingPrice > takeProfit1 > takeProfit2
+    const minRisk = Math.max(currentATR * 0.8, pendingPrice * 0.003);
+    if (stopLoss <= pendingPrice) {
+      stopLoss = Number((pendingPrice + minRisk).toFixed(precision));
+    }
+    const finalRisk = stopLoss - pendingPrice;
+    if (takeProfit1 >= pendingPrice) {
+      takeProfit1 = Number((pendingPrice - Math.max(finalRisk * 1.0, currentATR * 0.8)).toFixed(precision));
+    }
+    if (takeProfit2 >= takeProfit1) {
+      takeProfit2 = Number((takeProfit1 - Math.max(finalRisk * 1.2, currentATR * 1.0)).toFixed(precision));
+    }
+    riskRewardRatio = `1:${((pendingPrice - takeProfit2) / Math.max(0.0001, finalRisk)).toFixed(1)}`;
   }
+
+  // Recalculate pips with final invariant levels and asset precision
+  const finalSlPips = Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier);
+  const finalTp1Pips = Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
+  const finalTp2Pips = Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);
 
   return {
     symbol,
@@ -1599,9 +1659,9 @@ export function generateRuleBasedAnalysis(
       stopLoss,
       takeProfit1,
       takeProfit2,
-      slPips,
-      tp1Pips,
-      tp2Pips,
+      slPips: finalSlPips,
+      tp1Pips: finalTp1Pips,
+      tp2Pips: finalTp2Pips,
       riskRewardRatio,
       oteZone,
       structuralSL,

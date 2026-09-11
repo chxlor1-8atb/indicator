@@ -443,7 +443,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
           lesson = `🛡️ ปิดที่จุดคุ้มทุน Break-Even: ราคาพักตัวกลับมาที่จุดเข้าหลังชน TP1 ออเดอร์ปิดปลอดภัยโดยไม่มีความเสี่ยง`;
           updates.push(
             resilientQuery(
-              `UPDATE ai_signals SET status = 'CLOSED_BE', pnl_pips = 0, resolved_at = NOW() WHERE id = $2`,
+              `UPDATE ai_signals SET status = 'CLOSED_BE', pnl_pips = 0, resolved_at = NOW() WHERE id = $1`,
               [sig.id]
             )
           );
