@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   sendTelegramMessage,
+  deleteTelegramMessage,
   DEFAULT_TELEGRAM_BOT_TOKEN,
   DEFAULT_TELEGRAM_CHAT_ID,
 } from "@/lib/telegramService";
@@ -27,6 +28,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: `Telegram alert preference updated for ${alertSymbol}`,
+      });
+    }
+
+    if (body.action === "clear" || body.action === "clean") {
+      const ping = await sendTelegramMessage({
+        botToken,
+        chatId,
+        message: "🧹 กำลังล้างข้อความเก่า...",
+      });
+      const maxId = ping.messageId || 60;
+      let deleted = 0;
+      const deletePromises: Promise<unknown>[] = [];
+      for (let id = Math.max(1, maxId - 150); id <= maxId; id++) {
+        deletePromises.push(
+          deleteTelegramMessage({ botToken, chatId, messageId: id }).then((r) => {
+            if (r.success) deleted++;
+          }).catch(() => {})
+        );
+      }
+      await Promise.allSettled(deletePromises);
+      return NextResponse.json({
+        success: true,
+        message: `ลบข้อความเก่าสำเร็จ ${deleted} ข้อความ`,
+        deletedCount: deleted,
       });
     }
 
