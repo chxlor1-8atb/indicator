@@ -342,15 +342,18 @@ export default function DashboardPage() {
     };
   }, [selectedAsset, selectedTimeframe, loadMarketData, loadNews]);
 
-  // Continuous Real-Time Autonomous Scanner Loop (adaptive 25s cadence to prevent rate limits & serverless load)
+  // Continuous Real-Time Autonomous Scanner Loop (reads cached status every 30s; zero CPU burn)
   useEffect(() => {
     let isMounted = true;
     let inFlight = false;
-    const runAutonomousSync = async () => {
+    const runAutonomousSync = async (forceScan = false) => {
       if (!isMounted || inFlight) return;
       inFlight = true;
       try {
-        const res = await fetch(`/api/autonomous-scanner?scan=true&_t=${Date.now()}`);
+        const endpoint = forceScan
+          ? `/api/autonomous-scanner?scan=true&_t=${Date.now()}`
+          : `/api/autonomous-scanner?_t=${Date.now()}`;
+        const res = await fetch(endpoint);
         if (res.ok && isMounted) {
           const data = await res.json();
           if (data.success) {
@@ -373,8 +376,8 @@ export default function DashboardPage() {
       }
     };
 
-    const initialTimer = setTimeout(runAutonomousSync, 1000);
-    const syncInterval = setInterval(runAutonomousSync, 25000);
+    const initialTimer = setTimeout(() => runAutonomousSync(true), 1000);
+    const syncInterval = setInterval(() => runAutonomousSync(false), 30000);
 
     return () => {
       isMounted = false;

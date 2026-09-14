@@ -15,23 +15,17 @@ const activeOrdersStore = new Map<string, MtBridgeOrder>();
 const telemetryLogsStore: TelemetryLog[] = [];
 const MAX_LOGS = 60;
 
-// Watchlist of high-conviction institutional assets (Gold, Oil, Silver, Crypto, Forex Majors & Crosses)
+// Watchlist of top high-conviction institutional assets (Gold, Oil, Silver, Crypto, Forex Majors)
+// Optimized to 8 core assets to stay well within Vercel Serverless CPU limits
 export const AUTONOMOUS_WATCHLIST = [
   "XAUUSD",
   "BTCUSDT",
+  "ETHUSDT",
+  "USOIL",
   "EURUSD",
   "GBPUSD",
   "USDJPY",
-  "ETHUSDT",
-  "SOLUSDT",
-  "USOIL",
   "XAGUSD",
-  "GBPJPY",
-  "EURJPY",
-  "AUDUSD",
-  "USDCAD",
-  "USDCHF",
-  "NZDUSD",
 ];
 
 export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
@@ -324,18 +318,39 @@ export async function evaluateAssetAutonomous(
   return { scannerSummary, newOrder, analysis, decisionTriggered, isPreWarning };
 }
 
+// ─── IN-MEMORY SCAN CACHE (Prevents serverless CPU burn) ───
+let cachedScanResult: {
+  summaries: AssetScannerSummary[];
+  newOrders: MtBridgeOrder[];
+  actionableAnalyses: AnalysisResult[];
+  preWarningAnalyses: AnalysisResult[];
+  timestamp: number;
+} | null = null;
+let lastScanTime = 0;
+const SCAN_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes cache guard
+
 /**
  * Scans the institutional watchlist in parallel and returns real-time market radar summaries
  */
 export async function scanWatchlistAutonomous(
-  config: AutonomousPilotConfig = DEFAULT_PILOT_CONFIG
+  config: AutonomousPilotConfig = DEFAULT_PILOT_CONFIG,
+  force = false
 ): Promise<{
   summaries: AssetScannerSummary[];
   newOrders: MtBridgeOrder[];
   actionableAnalyses: AnalysisResult[];
   preWarningAnalyses: AnalysisResult[];
   timestamp: number;
+  cached?: boolean;
 }> {
+  const now = Date.now();
+  if (!force && cachedScanResult && now - lastScanTime < SCAN_CACHE_TTL_MS) {
+    return {
+      ...cachedScanResult,
+      cached: true,
+    };
+  }
+
   pruneExpiredOrders();
 
   const summaries: AssetScannerSummary[] = [];
@@ -380,13 +395,26 @@ export async function scanWatchlistAutonomous(
   // Sort summaries: Grade A+ first, then by confluence score descending
   summaries.sort((a, b) => b.confluenceScore - a.confluenceScore);
 
-  return {
+  lastScanTime = Date.now();
+  cachedScanResult = {
     summaries,
     newOrders,
     actionableAnalyses,
     preWarningAnalyses,
-    timestamp: Date.now(),
+    timestamp: lastScanTime,
   };
+
+  return {
+    ...cachedScanResult,
+    cached: false,
+  };
+}
+
+/**
+ * Returns the in-memory cached scanner results if available
+ */
+export function getScannerCache() {
+  return cachedScanResult;
 }
 
 /**

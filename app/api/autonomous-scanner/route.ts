@@ -5,6 +5,7 @@ import {
   getTelemetryLogs,
   DEFAULT_PILOT_CONFIG,
   approveOrder,
+  getScannerCache,
 } from "@/lib/autonomousEngine";
 import { saveAiSignal, resolveOpenSignals, resilientQuery } from "@/lib/db";
 import { sendTelegramMessage, isSymbolAllowedForAlert } from "@/lib/telegramService";
@@ -21,91 +22,116 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const hasScanParam = searchParams.get("scan") === "true" || searchParams.get("scan") === "1";
     const isCronHeader = Boolean(request.headers.get("x-cron") || request.headers.get("x-vercel-cron"));
+    const isForce = searchParams.get("force") === "true";
     const triggerScan = hasScanParam || isCronHeader;
 
     let scanResult = null;
     if (triggerScan) {
-      scanResult = await scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG);
+      scanResult = await scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG, isForce);
 
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      const envChatId = process.env.TELEGRAM_CHAT_ID;
-      const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+      // Only dispatch alerts and update DB on fresh scans (not cached within 3-min TTL)
+      if (!scanResult.cached) {
+        const botToken = process.env.TELEGRAM_BOT_TOKEN;
+        const envChatId = process.env.TELEGRAM_CHAT_ID;
+        const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
 
-      // รวบรวมรายชื่อผู้รับการแจ้งเตือนทั้งหมด ทั้งจาก Environment Variables และ Neon DB subscribers
-      const subscribersMap = new Map<string, string>();
-      if (envChatId) {
-        subscribersMap.set(envChatId, primaryFilter);
-      }
-      try {
-        const dbSubs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
-          `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
-        );
-        if (dbSubs && dbSubs.length > 0) {
-          for (const sub of dbSubs) {
-            subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
-          }
+        // รวบรวมรายชื่อผู้รับการแจ้งเตือนทั้งหมด ทั้งจาก Environment Variables และ Neon DB subscribers
+        const subscribersMap = new Map<string, string>();
+        if (envChatId) {
+          subscribersMap.set(envChatId, primaryFilter);
         }
-      } catch (dbErr) {
-        console.warn("Could not query telegram_subscribers from DB:", dbErr);
-      }
-
-      // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram พร้อมกันแบบ Non-blocking (กรองเฉพาะคู่เงินที่เลือก)
-      if (scanResult.actionableAnalyses && scanResult.actionableAnalyses.length > 0) {
-        Promise.allSettled(
-          scanResult.actionableAnalyses.map(async (analysis) => {
-            // บันทึกลงฐานข้อมูลแบบแยก isolate (หาก DB มีปัญหา จะไม่ทำให้การส่ง Telegram ล้มเหลว)
-            saveAiSignal(analysis).catch((err) => console.warn("Could not save signal to DB:", err));
-
-            // ตรวจสอบ Throttle เพื่อป้องกันการส่งซ้ำทุก 25 วินาทีขณะเปิดหน้าจอค้างไว้
-            const throttleKey = `${analysis.symbol}_${analysis.signal}_${analysis.tradeSetup?.orderType}`;
-            const now = Date.now();
-            const lastSent = actionableAlertThrottle.get(throttleKey) || 0;
-            if (now - lastSent >= ACTIONABLE_COOLDOWN_MS) {
-              actionableAlertThrottle.set(throttleKey, now);
-
-              // Broadcast ไปยัง subscribers ทุกคนที่เลือกรับสัญญาณคู่นี้
-              if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
-                subscribersMap.forEach((filter, targetChatId) => {
-                  if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
-                    sendTelegramMessage({ botToken, chatId: targetChatId, analysis }).catch((e) => {
-                      console.warn(`Failed to dispatch alert to ${targetChatId}:`, e);
-                    });
-                  }
-                });
-              }
+        try {
+          const dbSubs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+            `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+          );
+          if (dbSubs && dbSubs.length > 0) {
+            for (const sub of dbSubs) {
+              subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
             }
-          })
-        ).catch((err) => console.warn("Autonomous dispatch error:", err));
-      }
+          }
+        } catch (dbErr) {
+          console.warn("Could not query telegram_subscribers from DB:", dbErr);
+        }
 
-      // 2. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) (กรองเฉพาะคู่เงินที่เลือก)
-      if (scanResult.preWarningAnalyses && scanResult.preWarningAnalyses.length > 0) {
-        Promise.allSettled(
-          scanResult.preWarningAnalyses.map(async (analysis) => {
-            const now = Date.now();
-            const lastAlert = preWarningAlertThrottle.get(analysis.symbol) || 0;
-            if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {
-              preWarningAlertThrottle.set(analysis.symbol, now);
+        // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram (AWAITED ป้องกัน Serverless kill)
+        if (scanResult.actionableAnalyses && scanResult.actionableAnalyses.length > 0) {
+          await Promise.allSettled(
+            scanResult.actionableAnalyses.map(async (analysis) => {
+              // ตรวจสอบ Throttle เพื่อป้องกันการส่งซ้ำ
+              const throttleKey = `${analysis.symbol}_${analysis.signal}_${analysis.tradeSetup?.orderType}`;
+              const now = Date.now();
+              const lastSent = actionableAlertThrottle.get(throttleKey) || 0;
 
-              if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
-                subscribersMap.forEach((filter, targetChatId) => {
-                  if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
-                    sendTelegramMessage({ botToken, chatId: targetChatId, analysis, isPreWarning: true }).catch((e) => {
-                      console.warn(`Failed to dispatch pre-warning to ${targetChatId}:`, e);
-                    });
-                  }
-                });
+              // บันทึกลงฐานข้อมูลแบบ Smart Deduplication
+              const saveRes = await saveAiSignal(analysis).catch((err) => {
+                console.warn("Could not save signal to DB:", err);
+                return { saved: false };
+              });
+
+              // ส่ง Telegram ถ้าเป็นสัญญาณใหม่ หรือผ่าน Cooldown มาแล้ว
+              if ((saveRes.saved || now - lastSent >= ACTIONABLE_COOLDOWN_MS) && now - lastSent >= ACTIONABLE_COOLDOWN_MS) {
+                actionableAlertThrottle.set(throttleKey, now);
+
+                if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
+                  const sendPromises: Promise<unknown>[] = [];
+                  subscribersMap.forEach((filter, targetChatId) => {
+                    if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
+                      sendPromises.push(
+                        sendTelegramMessage({ botToken, chatId: targetChatId, analysis }).catch((e) => {
+                          console.warn(`Failed to dispatch alert to ${targetChatId}:`, e);
+                        })
+                      );
+                    }
+                  });
+                  await Promise.allSettled(sendPromises);
+                }
               }
-            }
-          })
-        ).catch((err) => console.warn("Pre-warning dispatch error:", err));
-      }
+            })
+          );
+        }
 
-      // 3. ตรวจสอบสถานะออเดอร์ที่เปิดค้างไว้ (ACTIVE / HIT_TP1) กับราคาตลาดล่าสุด เพื่อแจ้งเตือนผลลัพธ์ (Order Result: TP1, TP2, SL) ทาง Telegram
-      if (scanResult.summaries && scanResult.summaries.length > 0) {
-        Promise.allSettled(
-          scanResult.summaries.map((s) => resolveOpenSignals(s.symbol, s.price))
-        ).catch((err) => console.warn("Order resolution note:", err));
+        // 2. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) (AWAITED ป้องกัน Serverless kill)
+        if (scanResult.preWarningAnalyses && scanResult.preWarningAnalyses.length > 0) {
+          await Promise.allSettled(
+            scanResult.preWarningAnalyses.map(async (analysis) => {
+              const now = Date.now();
+              const lastAlert = preWarningAlertThrottle.get(analysis.symbol) || 0;
+              if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {
+                preWarningAlertThrottle.set(analysis.symbol, now);
+
+                if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
+                  const sendPromises: Promise<unknown>[] = [];
+                  subscribersMap.forEach((filter, targetChatId) => {
+                    if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
+                      sendPromises.push(
+                        sendTelegramMessage({ botToken, chatId: targetChatId, analysis, isPreWarning: true }).catch((e) => {
+                          console.warn(`Failed to dispatch pre-warning to ${targetChatId}:`, e);
+                        })
+                      );
+                    }
+                  });
+                  await Promise.allSettled(sendPromises);
+                }
+              }
+            })
+          );
+        }
+
+        // 3. ตรวจสอบสถานะออเดอร์ที่เปิดค้างไว้ (ACTIVE / HIT_TP1) กับราคาตลาดล่าสุด (AWAITED เพื่อส่ง Order Result แน่นอน)
+        if (scanResult.summaries && scanResult.summaries.length > 0) {
+          await Promise.allSettled(
+            scanResult.summaries.map((s) => resolveOpenSignals(s.symbol, s.price))
+          );
+        }
+      }
+    } else {
+      // Read-only request: ส่งข้อมูลจาก In-Memory Cache เพื่อประหยัด CPU 100%
+      const cached = getScannerCache();
+      if (cached) {
+        scanResult = { ...cached, cached: true };
+      } else {
+        // หาก Cache ยังว่างเปล่า (เช่น เพิ่ง Cold Start) ทำการ scan ครั้งแรก 1 ครั้ง
+        scanResult = await scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG, false);
       }
     }
 
@@ -120,6 +146,7 @@ export async function GET(request: NextRequest) {
         telemetryLogs,
         scannerSummaries: scanResult?.summaries || [],
         newOrders: scanResult?.newOrders || [],
+        cached: Boolean(scanResult?.cached),
         timestamp: Date.now(),
       },
       {
