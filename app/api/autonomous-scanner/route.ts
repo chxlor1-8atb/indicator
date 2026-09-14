@@ -8,7 +8,12 @@ import {
   getScannerCache,
 } from "@/lib/autonomousEngine";
 import { saveAiSignal, resolveOpenSignals, resilientQuery } from "@/lib/db";
-import { sendTelegramMessage, isSymbolAllowedForAlert } from "@/lib/telegramService";
+import {
+  sendTelegramMessage,
+  isSymbolAllowedForAlert,
+  DEFAULT_TELEGRAM_BOT_TOKEN,
+  DEFAULT_TELEGRAM_CHAT_ID,
+} from "@/lib/telegramService";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +36,8 @@ export async function GET(request: NextRequest) {
 
       // Only dispatch alerts and update DB on fresh scans (not cached within 3-min TTL)
       if (!scanResult.cached) {
-        const botToken = process.env.TELEGRAM_BOT_TOKEN;
-        const envChatId = process.env.TELEGRAM_CHAT_ID;
+        const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+        const envChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
         const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
 
         // รวบรวมรายชื่อผู้รับการแจ้งเตือนทั้งหมด ทั้งจาก Environment Variables และ Neon DB subscribers

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendTelegramMessage } from "@/lib/telegramService";
+import {
+  sendTelegramMessage,
+  DEFAULT_TELEGRAM_BOT_TOKEN,
+  DEFAULT_TELEGRAM_CHAT_ID,
+} from "@/lib/telegramService";
 import { saveTelegramSubscriber } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -7,8 +11,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const botToken = body.botToken || process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = body.chatId || process.env.TELEGRAM_CHAT_ID;
+    const botToken = body.botToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+    const chatId = body.chatId || process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
     const alertSymbol = body.alertSymbol || "ALL";
     const minGrade = body.minGrade || "B";
     const analysis = body.analysis;

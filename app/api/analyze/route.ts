@@ -4,7 +4,12 @@ import { calculateAllIndicators } from "@/lib/indicators";
 import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
 import { saveAiSignal, resolveOpenSignals, saveMarketSnapshot, saveBacktestResults, resilientQuery } from "@/lib/db";
-import { sendTelegramMessage, isSymbolAllowedForAlert } from "@/lib/telegramService";
+import {
+  sendTelegramMessage,
+  isSymbolAllowedForAlert,
+  DEFAULT_TELEGRAM_BOT_TOKEN,
+  DEFAULT_TELEGRAM_CHAT_ID,
+} from "@/lib/telegramService";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -45,8 +50,8 @@ export async function POST(request: NextRequest) {
       saveAiSignal(analysis).catch(console.error);
 
       // Dispatch Telegram Alert to primary chat & active subscribers (Non-blocking)
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      const envChatId = process.env.TELEGRAM_CHAT_ID;
+      const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+      const envChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
       const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
 
       if (botToken) {

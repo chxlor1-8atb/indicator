@@ -3,7 +3,12 @@ import { getMarketCandles, simulateInstitutionalBacktest } from "@/lib/marketSer
 import { calculateAllIndicators, calculateEMA, calculateRSI } from "@/lib/indicators";
 import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
-import { sendTelegramMessage, isSymbolAllowedForAlert } from "@/lib/telegramService";
+import {
+  sendTelegramMessage,
+  isSymbolAllowedForAlert,
+  DEFAULT_TELEGRAM_BOT_TOKEN,
+  DEFAULT_TELEGRAM_CHAT_ID,
+} from "@/lib/telegramService";
 
 import { resolveOpenSignals, saveAiSignal, saveBacktestResults, BacktestTrade, resilientQuery } from "@/lib/db";
 
@@ -27,8 +32,8 @@ export async function GET(request: NextRequest) {
     const results = [];
     const news = await fetchLiveNews();
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
 
     // 1. Warm Neon PostgreSQL Rolling Buffer across all 4 timeframes concurrently
     await Promise.allSettled(

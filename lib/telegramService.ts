@@ -217,9 +217,12 @@ export function formatTelegramOrderResultMessage(data: OrderResultData): string 
   return lines.join("\n");
 }
 
+export const DEFAULT_TELEGRAM_BOT_TOKEN = "8784760707:AAFuvsJ7_zALe8gV4rXJe5tcTiCdlMugrQA";
+export const DEFAULT_TELEGRAM_CHAT_ID = "2101575299";
+
 export interface SendTelegramOptions {
-  botToken: string;
-  chatId: string;
+  botToken?: string;
+  chatId?: string;
   message?: string;
   analysis?: AnalysisResult;
   isPreWarning?: boolean;
@@ -228,7 +231,9 @@ export interface SendTelegramOptions {
 }
 
 export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; error?: string }> {
-  const { botToken, chatId, message, analysis, isPreWarning, orderResult, rawHtml } = options;
+  const botToken = options.botToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+  const chatId = options.chatId || process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
+  const { message, analysis, isPreWarning, orderResult, rawHtml } = options;
 
   if (!botToken || !chatId) {
     return { success: false, error: "Telegram Bot Token and Chat ID are required." };

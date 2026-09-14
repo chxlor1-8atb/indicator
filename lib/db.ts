@@ -1,6 +1,12 @@
 import { neon } from "@neondatabase/serverless";
 import { AnalysisResult, Candle } from "./types";
-import { sendTelegramMessage, isSymbolAllowedForAlert, getAssetPipMultiplier } from "./telegramService";
+import {
+  sendTelegramMessage,
+  isSymbolAllowedForAlert,
+  getAssetPipMultiplier,
+  DEFAULT_TELEGRAM_BOT_TOKEN,
+  DEFAULT_TELEGRAM_CHAT_ID,
+} from "./telegramService";
 
 // Safe singleton client for Neon Serverless Postgres
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
@@ -498,8 +504,8 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
         }
 
         // Send Telegram Order Result Notification
-        const botToken = process.env.TELEGRAM_BOT_TOKEN;
-        const mainChatId = process.env.TELEGRAM_CHAT_ID;
+        const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+        const mainChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
         if (botToken) {
           const resultPayload = {
             id: sig.id,
