@@ -7,9 +7,16 @@ import {
   approveOrder,
   getScannerCache,
 } from "@/lib/autonomousEngine";
-import { saveAiSignal, resolveOpenSignals, resilientQuery } from "@/lib/db";
+import {
+  saveAiSignal,
+  resolveOpenSignals,
+  resilientQuery,
+  updateSignalTelegramMessages,
+  SaveAiSignalResult,
+} from "@/lib/db";
 import {
   sendTelegramMessage,
+  deleteTelegramMessage,
   isSymbolAllowedForAlert,
   DEFAULT_TELEGRAM_BOT_TOKEN,
   DEFAULT_TELEGRAM_CHAT_ID,
@@ -21,6 +28,7 @@ const preWarningAlertThrottle = new Map<string, number>();
 const PRE_WARNING_COOLDOWN_MS = 25 * 60 * 1000; // 25 minutes cooldown per asset
 const actionableAlertThrottle = new Map<string, number>();
 const ACTIONABLE_COOLDOWN_MS = 20 * 60 * 1000; // 20 minutes cooldown per asset setup
+const preWarningMessagesMap = new Map<string, Array<{ chatId: string; messageId: number }>>();
 
 export async function GET(request: NextRequest) {
   try {
@@ -68,7 +76,7 @@ export async function GET(request: NextRequest) {
               const lastSent = actionableAlertThrottle.get(throttleKey) || 0;
 
               // บันทึกลงฐานข้อมูลแบบ Smart Deduplication
-              const saveRes = await saveAiSignal(analysis).catch((err) => {
+              const saveRes: SaveAiSignalResult = await saveAiSignal(analysis).catch((err) => {
                 console.warn("Could not save signal to DB:", err);
                 return { saved: false };
               });
@@ -77,18 +85,50 @@ export async function GET(request: NextRequest) {
               if ((saveRes.saved || now - lastSent >= ACTIONABLE_COOLDOWN_MS) && now - lastSent >= ACTIONABLE_COOLDOWN_MS) {
                 actionableAlertThrottle.set(throttleKey, now);
 
+                // ── Auto-delete: ลบข้อความสัญญาณเก่าของคู่นี้ทิ้งเมื่อมีสัญญาณใหม่เข้ามาแทน ──
+                if (saveRes.saved && saveRes.previousMessages && Array.isArray(saveRes.previousMessages)) {
+                  for (const prev of saveRes.previousMessages) {
+                    if (prev.chatId && prev.messageId) {
+                      deleteTelegramMessage({ botToken, chatId: prev.chatId, messageId: prev.messageId }).catch(() => {});
+                    }
+                  }
+                }
+
+                // ── Auto-delete: ลบข้อความเรดาร์ล่วงหน้า (Pre-Warning) เดิมของคู่นี้ทิ้ง เพราะมีจุดเข้าจริงแล้ว ──
+                const prevPreWarning = preWarningMessagesMap.get(analysis.symbol);
+                if (prevPreWarning) {
+                  for (const prev of prevPreWarning) {
+                    deleteTelegramMessage({ botToken, chatId: prev.chatId, messageId: prev.messageId }).catch(() => {});
+                  }
+                  preWarningMessagesMap.delete(analysis.symbol);
+                }
+
                 if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
+                  const sentMessages: Array<{ chatId: string; messageId: number }> = [];
                   const sendPromises: Promise<unknown>[] = [];
+
                   subscribersMap.forEach((filter, targetChatId) => {
                     if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
                       sendPromises.push(
-                        sendTelegramMessage({ botToken, chatId: targetChatId, analysis }).catch((e) => {
-                          console.warn(`Failed to dispatch alert to ${targetChatId}:`, e);
-                        })
+                        sendTelegramMessage({ botToken, chatId: targetChatId, analysis })
+                          .then((res) => {
+                            if (res.success && res.messageId) {
+                              sentMessages.push({ chatId: targetChatId, messageId: res.messageId });
+                            }
+                          })
+                          .catch((e) => {
+                            console.warn(`Failed to dispatch alert to ${targetChatId}:`, e);
+                          })
                       );
                     }
                   });
+
                   await Promise.allSettled(sendPromises);
+
+                  // บันทึก Message ID ลงใน DB เพื่อให้ลบทิ้งอัตโนมัติได้เมื่อออเดอร์ชน TP/SL
+                  if (saveRes.signalId && sentMessages.length > 0) {
+                    await updateSignalTelegramMessages(saveRes.signalId, sentMessages);
+                  }
                 }
               }
             })
@@ -104,25 +144,46 @@ export async function GET(request: NextRequest) {
               if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {
                 preWarningAlertThrottle.set(analysis.symbol, now);
 
+                // ── Auto-delete: ลบข้อความเรดาร์ล่วงหน้าอันเก่าของคู่นี้ทิ้ง ก่อนส่งอันใหม่ ──
+                const prevPreWarning = preWarningMessagesMap.get(analysis.symbol);
+                if (prevPreWarning) {
+                  for (const prev of prevPreWarning) {
+                    deleteTelegramMessage({ botToken, chatId: prev.chatId, messageId: prev.messageId }).catch(() => {});
+                  }
+                }
+
                 if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
+                  const sentPreWarnings: Array<{ chatId: string; messageId: number }> = [];
                   const sendPromises: Promise<unknown>[] = [];
+
                   subscribersMap.forEach((filter, targetChatId) => {
                     if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
                       sendPromises.push(
-                        sendTelegramMessage({ botToken, chatId: targetChatId, analysis, isPreWarning: true }).catch((e) => {
-                          console.warn(`Failed to dispatch pre-warning to ${targetChatId}:`, e);
-                        })
+                        sendTelegramMessage({ botToken, chatId: targetChatId, analysis, isPreWarning: true })
+                          .then((res) => {
+                            if (res.success && res.messageId) {
+                              sentPreWarnings.push({ chatId: targetChatId, messageId: res.messageId });
+                            }
+                          })
+                          .catch((e) => {
+                            console.warn(`Failed to dispatch pre-warning to ${targetChatId}:`, e);
+                          })
                       );
                     }
                   });
+
                   await Promise.allSettled(sendPromises);
+
+                  if (sentPreWarnings.length > 0) {
+                    preWarningMessagesMap.set(analysis.symbol, sentPreWarnings);
+                  }
                 }
               }
             })
           );
         }
 
-        // 3. ตรวจสอบสถานะออเดอร์ที่เปิดค้างไว้ (ACTIVE / HIT_TP1) กับราคาตลาดล่าสุด (AWAITED เพื่อส่ง Order Result แน่นอน)
+        // 3. ตรวจสอบสถานะออเดอร์ที่เปิดค้างไว้ (ACTIVE / HIT_TP1) กับราคาตลาดล่าสุด (AWAITED เพื่อส่ง Order Result และลบ Alert เก่า)
         if (scanResult.summaries && scanResult.summaries.length > 0) {
           await Promise.allSettled(
             scanResult.summaries.map((s) => resolveOpenSignals(s.symbol, s.price))

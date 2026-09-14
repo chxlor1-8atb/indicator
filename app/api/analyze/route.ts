@@ -3,9 +3,18 @@ import { getMarketCandles, simulateInstitutionalBacktest } from "@/lib/marketSer
 import { calculateAllIndicators } from "@/lib/indicators";
 import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
-import { saveAiSignal, resolveOpenSignals, saveMarketSnapshot, saveBacktestResults, resilientQuery } from "@/lib/db";
+import {
+  saveAiSignal,
+  resolveOpenSignals,
+  saveMarketSnapshot,
+  saveBacktestResults,
+  resilientQuery,
+  updateSignalTelegramMessages,
+  SaveAiSignalResult,
+} from "@/lib/db";
 import {
   sendTelegramMessage,
+  deleteTelegramMessage,
   isSymbolAllowedForAlert,
   DEFAULT_TELEGRAM_BOT_TOKEN,
   DEFAULT_TELEGRAM_CHAT_ID,
@@ -47,30 +56,59 @@ export async function POST(request: NextRequest) {
       saveMarketSnapshot(symbol, timeframe, indicators.currentPrice, lastRSI, lastST, analysis.regimeInfo?.title).catch(console.error);
     }
     if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
-      saveAiSignal(analysis).catch(console.error);
+      const saveRes: SaveAiSignalResult = await saveAiSignal(analysis).catch((err) => {
+        console.error("Save AI signal error:", err);
+        return { saved: false };
+      });
 
-      // Dispatch Telegram Alert to primary chat & active subscribers (Non-blocking)
+      // Dispatch Telegram Alert to primary chat & active subscribers
       const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
       const envChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
       const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
 
       if (botToken) {
-        if (envChatId && isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
-          sendTelegramMessage({ botToken, chatId: envChatId, analysis }).catch((e) =>
-            console.warn("[Analyze Dispatch] Primary Telegram error:", e)
-          );
+        // Auto-delete: ลบข้อความสัญญาณเก่าของคู่นี้ทิ้งเมื่อมีสัญญาณใหม่เข้ามาแทน
+        if (saveRes && saveRes.saved && saveRes.previousMessages && Array.isArray(saveRes.previousMessages)) {
+          for (const prev of saveRes.previousMessages) {
+            if (prev.chatId && prev.messageId) {
+              deleteTelegramMessage({ botToken, chatId: prev.chatId, messageId: prev.messageId }).catch(() => {});
+            }
+          }
         }
-        resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
-          `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
-        ).then((subs) => {
+
+        const sentMessages: Array<{ chatId: string; messageId: number }> = [];
+
+        if (envChatId && isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
+          const res = await sendTelegramMessage({ botToken, chatId: envChatId, analysis }).catch((e) => {
+            console.warn("[Analyze Dispatch] Primary Telegram error:", e);
+            return null;
+          });
+          if (res?.success && res.messageId) {
+            sentMessages.push({ chatId: envChatId, messageId: res.messageId });
+          }
+        }
+
+        try {
+          const subs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+            `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+          );
           if (subs && subs.length > 0) {
             for (const sub of subs) {
               if (sub.chat_id !== envChatId && isSymbolAllowedForAlert(analysis.symbol, sub.alert_symbol)) {
-                sendTelegramMessage({ botToken, chatId: sub.chat_id, analysis }).catch(() => {});
+                const res = await sendTelegramMessage({ botToken, chatId: sub.chat_id, analysis }).catch(() => null);
+                if (res?.success && res.messageId) {
+                  sentMessages.push({ chatId: sub.chat_id, messageId: res.messageId });
+                }
               }
             }
           }
-        }).catch(() => {});
+        } catch (subErr) {
+          console.warn("Subscribers query note:", subErr);
+        }
+
+        if (saveRes && saveRes.signalId && sentMessages.length > 0) {
+          await updateSignalTelegramMessages(saveRes.signalId, sentMessages);
+        }
       }
     }
 

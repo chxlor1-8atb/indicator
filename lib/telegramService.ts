@@ -230,7 +230,7 @@ export interface SendTelegramOptions {
   rawHtml?: boolean;
 }
 
-export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; error?: string }> {
+export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; messageId?: number; error?: string }> {
   const botToken = options.botToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
   const chatId = options.chatId || process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
   const { message, analysis, isPreWarning, orderResult, rawHtml } = options;
@@ -264,6 +264,44 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
     const data = await res.json();
     if (!res.ok || !data.ok) {
       return { success: false, error: data.description || "Failed to send message to Telegram" };
+    }
+
+    return { success: true, messageId: data.result?.message_id };
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: errMsg };
+  }
+}
+
+/**
+ * Deletes a previously sent message from Telegram to keep chat clean and up to date
+ */
+export async function deleteTelegramMessage(options: {
+  botToken?: string;
+  chatId?: string;
+  messageId: number | string;
+}): Promise<{ success: boolean; error?: string }> {
+  const botToken = options.botToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+  const chatId = options.chatId || process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
+
+  if (!botToken || !chatId || !options.messageId) {
+    return { success: false, error: "botToken, chatId, and messageId are required" };
+  }
+
+  try {
+    const url = `https://api.telegram.org/bot${botToken}/deleteMessage`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: Number(options.messageId),
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return { success: false, error: data.description || "Failed to delete message" };
     }
 
     return { success: true };

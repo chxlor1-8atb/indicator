@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import { AnalysisResult, Candle } from "./types";
 import {
   sendTelegramMessage,
+  deleteTelegramMessage,
   isSymbolAllowedForAlert,
   getAssetPipMultiplier,
   DEFAULT_TELEGRAM_BOT_TOKEN,
@@ -49,6 +50,7 @@ export interface DbAiSignal {
   status: "ACTIVE" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCELLED";
   pnl_pips: number;
   notes: string | null;
+  telegram_messages?: Array<{ chatId: string; messageId: number }>;
   created_at: string;
   resolved_at: string | null;
 }
@@ -235,11 +237,18 @@ export async function initBacktestTable(): Promise<void> {
   }
 }
 
+export interface SaveAiSignalResult {
+  saved: boolean;
+  reason?: string;
+  signalId?: number;
+  previousMessages?: Array<{ chatId: string; messageId: number }>;
+}
+
 /**
  * Saves a new AI Signal with deduplication.
  * Prevents writing duplicate signals within 2 hours to save bandwidth and DB writes.
  */
-export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: boolean; reason?: string }> {
+export async function saveAiSignal(analysis: AnalysisResult): Promise<SaveAiSignalResult> {
   if (!sql) return { saved: false, reason: "No database connection" };
   const { symbol, timeframe, signal, tradeSetup, masterConfluence, setupGrade } = analysis;
 
@@ -263,9 +272,10 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
       entry_price: number | string;
       status: string;
       created_at: string;
+      telegram_messages?: Array<{ chatId: string; messageId: number }>;
     }>>(
       `
-      SELECT id, action, entry_price, status, created_at
+      SELECT id, action, entry_price, status, created_at, telegram_messages
       FROM ai_signals 
       WHERE symbol = $1 AND timeframe = $2
       ORDER BY created_at DESC
@@ -274,8 +284,11 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
       [symbol, timeframe]
     );
 
+    let previousMessages: Array<{ chatId: string; messageId: number }> | undefined;
+
     if (latestRows && latestRows.length > 0) {
       const latest = latestRows[0];
+      previousMessages = latest.telegram_messages;
       const prevPrice = Number(latest.entry_price);
       const isSameDirection = latest.action === signal;
       const isStillActive = latest.status === "ACTIVE";
@@ -290,13 +303,14 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
       }
     }
 
-    await resilientQuery(
+    const insertResult = await resilientQuery<Array<{ id: number }>>(
       `
       INSERT INTO ai_signals (
         symbol, timeframe, action, order_type, entry_price, 
         stop_loss, take_profit1, take_profit2, confluence_score, 
         setup_grade, notes, status
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ACTIVE')
+      RETURNING id;
       `,
       [
         String(symbol || "").substring(0, 20),
@@ -313,10 +327,30 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<{ saved: b
       ]
     );
 
-    return { saved: true };
+    const signalId = insertResult && insertResult.length > 0 ? insertResult[0].id : undefined;
+
+    return { saved: true, signalId, previousMessages };
   } catch (err) {
     console.error("Error saving AI signal to Neon:", err);
     return { saved: false, reason: String(err) };
+  }
+}
+
+/**
+ * Updates the telegram_messages list on an ai_signals record for auto-deletion tracking
+ */
+export async function updateSignalTelegramMessages(
+  signalId: number,
+  messages: Array<{ chatId: string; messageId: number }>
+) {
+  if (!sql || !signalId || !messages || messages.length === 0) return;
+  try {
+    await resilientQuery(
+      `UPDATE ai_signals SET telegram_messages = $1::jsonb WHERE id = $2`,
+      [JSON.stringify(messages), signalId]
+    );
+  } catch (err) {
+    console.warn("Could not update telegram_messages in DB:", err);
   }
 }
 
@@ -493,6 +527,22 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
 
       // Record Attribution Lesson & Dispatch Order Result to Telegram
       if (outcome) {
+        const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
+        const mainChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
+
+        // ลบข้อความ Alert จุดเข้าเดิมของสัญญาณนี้ออกจาก Telegram เมื่อออเดอร์ชนเป้าหรือ SL เพื่อไม่ให้แชทรก
+        if (sig.telegram_messages && Array.isArray(sig.telegram_messages)) {
+          for (const msg of sig.telegram_messages) {
+            if (msg && msg.chatId && msg.messageId) {
+              deleteTelegramMessage({
+                botToken,
+                chatId: msg.chatId,
+                messageId: msg.messageId,
+              }).catch(() => {});
+            }
+          }
+        }
+
         if (lesson) {
           updates.push(
             resilientQuery(
@@ -504,8 +554,6 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
         }
 
         // Send Telegram Order Result Notification
-        const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
-        const mainChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
         if (botToken) {
           const resultPayload = {
             id: sig.id,
