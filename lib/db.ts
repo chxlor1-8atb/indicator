@@ -571,7 +571,20 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
             confluenceScore: sig.confluence_score,
           };
 
-          const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+          // ดึงค่า filter จาก database subscriber หรือใช้ environment variable เป็นค่า fallback
+          let primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+          try {
+            const subscriber = await resilientQuery<{ alert_symbol: string }[]>(
+              `SELECT alert_symbol FROM telegram_subscribers WHERE chat_id = $1 AND is_active = TRUE LIMIT 1`,
+              [mainChatId]
+            );
+            if (subscriber && subscriber.length > 0 && subscriber[0].alert_symbol) {
+              primaryFilter = subscriber[0].alert_symbol;
+            }
+          } catch (err) {
+            console.warn("Failed to fetch subscriber filter, using env variable:", err);
+          }
+          
           if (mainChatId && isSymbolAllowedForAlert(sig.symbol, primaryFilter)) {
             sendTelegramMessage({
               botToken,

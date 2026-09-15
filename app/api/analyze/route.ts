@@ -55,6 +55,14 @@ export async function POST(request: NextRequest) {
       const lastST = indicators.superTrend?.[indicators.superTrend.length - 1]?.direction || "UP";
       saveMarketSnapshot(symbol, timeframe, indicators.currentPrice, lastRSI, lastST, analysis.regimeInfo?.title).catch(console.error);
     }
+    
+    // อัปเดตราคาล่าสุดก่อนส่ง Telegram เพื่อให้ตรงกับราคาจริง
+    const latestCandle = candles[candles.length - 1];
+    if (latestCandle) {
+      analysis.currentPrice = latestCandle.close;
+      analysis.indicators = { ...analysis.indicators, currentPrice: latestCandle.close };
+    }
+    
     if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
       const saveRes: SaveAiSignalResult = await saveAiSignal(analysis).catch((err) => {
         console.error("Save AI signal error:", err);
@@ -64,7 +72,20 @@ export async function POST(request: NextRequest) {
       // Dispatch Telegram Alert to primary chat & active subscribers
       const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
       const envChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
-      const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+      
+      // ดึงค่า filter จาก database subscriber หรือใช้ environment variable เป็นค่า fallback
+      let primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+      try {
+        const subscriber = await resilientQuery<{ alert_symbol: string }[]>(
+          `SELECT alert_symbol FROM telegram_subscribers WHERE chat_id = $1 AND is_active = TRUE LIMIT 1`,
+          [envChatId]
+        );
+        if (subscriber && subscriber.length > 0 && subscriber[0].alert_symbol) {
+          primaryFilter = subscriber[0].alert_symbol;
+        }
+      } catch (err) {
+        console.warn("Failed to fetch subscriber filter, using env variable:", err);
+      }
 
       if (botToken) {
         // Auto-delete: ลบข้อความสัญญาณเก่าของคู่นี้ทิ้งเมื่อมีสัญญาณใหม่เข้ามาแทน

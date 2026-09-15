@@ -62,7 +62,20 @@ export async function GET(request: NextRequest) {
     // 3. Scan core assets for AI Signals & Telegram notifications across all subscribers
     const subscribersMap = new Map<string, string>();
     if (chatId) {
-      subscribersMap.set(chatId, process.env.TELEGRAM_ALERT_SYMBOLS || "ALL");
+      // ดึงค่า filter จาก database subscriber สำหรับ chatId หลัก
+      let primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+      try {
+        const subscriber = await resilientQuery<{ alert_symbol: string }[]>(
+          `SELECT alert_symbol FROM telegram_subscribers WHERE chat_id = $1 AND is_active = TRUE LIMIT 1`,
+          [chatId]
+        );
+        if (subscriber && subscriber.length > 0 && subscriber[0].alert_symbol) {
+          primaryFilter = subscriber[0].alert_symbol;
+        }
+      } catch (err) {
+        console.warn("Failed to fetch subscriber filter, using env variable:", err);
+      }
+      subscribersMap.set(chatId, primaryFilter);
     }
     try {
       const dbSubs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(

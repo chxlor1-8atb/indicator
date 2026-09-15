@@ -47,7 +47,7 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const pipMultiplier = getAssetPipMultiplier(sym);
   const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
-  const currentP = analysis.currentPrice || entryPrice;
+  const currentP = analysis.indicators?.currentPrice || analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);
   const distanceText = entryPrice === currentP || Number(distancePips) <= 2
     ? "ราคาตลาด"
@@ -109,7 +109,7 @@ export function formatTelegramPreWarningMessage(analysis: AnalysisResult): strin
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const pipMultiplier = getAssetPipMultiplier(sym);
   const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
-  const currentP = analysis.currentPrice || entryPrice;
+  const currentP = analysis.indicators?.currentPrice || analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);
 
   const mtOrderType = analysis.tradeSetup.mtOrderLabel || (
