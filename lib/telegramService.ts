@@ -35,7 +35,7 @@ export function getAssetPipMultiplier(symbol: string): number {
   return 10000;
 }
 
-export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string {
+export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentPrice?: number): string {
   const signalBadge = {
     STRONG_BUY: "🟢🟢 <b>STRONG BUY</b>",
     BUY: "🟢 <b>BUY</b>",
@@ -47,7 +47,7 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const pipMultiplier = getAssetPipMultiplier(sym);
   const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
-  const currentP = analysis.indicators?.currentPrice || analysis.currentPrice || entryPrice;
+  const currentP = currentPrice || analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);
   const distanceText = entryPrice === currentP || Number(distancePips) <= 2
     ? "ราคาตลาด"
@@ -105,11 +105,11 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult): string 
   return lines.join("\n");
 }
 
-export function formatTelegramPreWarningMessage(analysis: AnalysisResult): string {
+export function formatTelegramPreWarningMessage(analysis: AnalysisResult, currentPrice?: number): string {
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const pipMultiplier = getAssetPipMultiplier(sym);
   const entryPrice = analysis.tradeSetup.pendingPrice || analysis.currentPrice;
-  const currentP = analysis.indicators?.currentPrice || analysis.currentPrice || entryPrice;
+  const currentP = currentPrice || analysis.currentPrice || entryPrice;
   const distancePips = Math.abs(Number((entryPrice - currentP) * pipMultiplier)).toFixed(1);
 
   const mtOrderType = analysis.tradeSetup.mtOrderLabel || (
@@ -228,12 +228,13 @@ export interface SendTelegramOptions {
   isPreWarning?: boolean;
   orderResult?: OrderResultData;
   rawHtml?: boolean;
+  currentPrice?: number;
 }
 
 export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; messageId?: number; error?: string }> {
   const botToken = options.botToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
   const chatId = options.chatId || process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
-  const { message, analysis, isPreWarning, orderResult, rawHtml } = options;
+  const { message, analysis, isPreWarning, orderResult, rawHtml, currentPrice } = options;
 
   if (!botToken || !chatId) {
     return { success: false, error: "Telegram Bot Token and Chat ID are required." };
@@ -243,8 +244,8 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
     ? formatTelegramOrderResultMessage(orderResult)
     : analysis
     ? isPreWarning
-      ? formatTelegramPreWarningMessage(analysis)
-      : formatTelegramAnalysisMessage(analysis)
+      ? formatTelegramPreWarningMessage(analysis, currentPrice)
+      : formatTelegramAnalysisMessage(analysis, currentPrice)
     : rawHtml
     ? message || ""
     : escapeHtml(message || "Test Notification from AI Indicator Bot");

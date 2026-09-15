@@ -60,7 +60,6 @@ export async function POST(request: NextRequest) {
     const latestCandle = candles[candles.length - 1];
     if (latestCandle) {
       analysis.currentPrice = latestCandle.close;
-      analysis.indicators = { ...analysis.indicators, currentPrice: latestCandle.close };
     }
     
     if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
@@ -100,7 +99,7 @@ export async function POST(request: NextRequest) {
         const sentMessages: Array<{ chatId: string; messageId: number }> = [];
 
         if (envChatId && isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
-          const res = await sendTelegramMessage({ botToken, chatId: envChatId, analysis }).catch((e) => {
+          const res = await sendTelegramMessage({ botToken, chatId: envChatId, analysis, currentPrice: analysis.currentPrice }).catch((e) => {
             console.warn("[Analyze Dispatch] Primary Telegram error:", e);
             return null;
           });
@@ -116,7 +115,7 @@ export async function POST(request: NextRequest) {
           if (subs && subs.length > 0) {
             for (const sub of subs) {
               if (sub.chat_id !== envChatId && isSymbolAllowedForAlert(analysis.symbol, sub.alert_symbol)) {
-                const res = await sendTelegramMessage({ botToken, chatId: sub.chat_id, analysis }).catch(() => null);
+                const res = await sendTelegramMessage({ botToken, chatId: sub.chat_id, analysis, currentPrice: analysis.currentPrice }).catch(() => null);
                 if (res?.success && res.messageId) {
                   sentMessages.push({ chatId: sub.chat_id, messageId: res.messageId });
                 }
