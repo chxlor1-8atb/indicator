@@ -911,7 +911,7 @@ export function generateRuleBasedAnalysis(
   let dynamicRiskReward: ReturnType<typeof calculateDynamicRiskReward>;
 
   // Initialize S/R-based calculation for NO_TRADE case
-  const pivotPointsFallback = indicators.pivotPoints || calculateStandardPivotPoints(candles);
+  const pivotPointsFallback = indicators.pivotPoints || calculateStandardPivotPoints(candles, precision, symbol);
   srBasedCalc = calculateSRBasedTPSL(
     currentPrice,
     "BUY", // default direction for initialization
@@ -930,7 +930,7 @@ export function generateRuleBasedAnalysis(
     tradeAction = "BUY";
     
     // [แผน 46] S/R-Based TP/SL Calculation
-    const pivotPoints = indicators.pivotPoints || calculateStandardPivotPoints(candles);
+    const pivotPoints = indicators.pivotPoints || calculateStandardPivotPoints(candles, precision, symbol);
     srBasedCalc = calculateSRBasedTPSL(
       currentPrice,
       "BUY",
@@ -1077,7 +1077,7 @@ export function generateRuleBasedAnalysis(
     tradeAction = "SELL";
     
     // [แผน 46] S/R-Based TP/SL Calculation
-    const pivotPoints = indicators.pivotPoints || calculateStandardPivotPoints(candles);
+    const pivotPoints = indicators.pivotPoints || calculateStandardPivotPoints(candles, precision, symbol);
     srBasedCalc = calculateSRBasedTPSL(
       currentPrice,
       "SELL",
@@ -1589,7 +1589,7 @@ export function generateRuleBasedAnalysis(
   }
 
   // [แผน 47] Multi-Scenario Trade Planning
-  const pivotPointsForScenarios = indicators.pivotPoints || calculateStandardPivotPoints(candles);
+  const pivotPointsForScenarios = indicators.pivotPoints || calculateStandardPivotPoints(candles, precision, symbol);
   multiScenarioPlanning = calculateMultiScenarioTradePlanning(
     currentPrice,
     indicators.supportLevels,
@@ -1617,7 +1617,7 @@ export function generateRuleBasedAnalysis(
   mtfValidation = validateBreakoutWithMTF(
     mtfMatrix,
     currentPrice,
-    tradeAction
+    tradeAction === "SELL" ? "SELL" : "BUY"
   );
   
   // [แผน 51] Dynamic Risk/Reward

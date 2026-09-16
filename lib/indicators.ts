@@ -119,6 +119,10 @@ import {
   MultiScenarioPlanningInfo,
   BreakoutConfirmationInfo,
   EnhancedTPSLInfo,
+  AdvancedVolumeProfileInfo,
+  VolumeProfileLevel,
+  FootprintAnalysisInfo,
+  FootprintData,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -9651,6 +9655,7 @@ export function calculateAdvancedVolumeProfile(
     cumulativeTPV += tpv;
     cumulativeVolume += candle.volume;
     return {
+      open: candle.open,
       high: candle.high,
       low: candle.low,
       close: candle.close,
@@ -10021,4 +10026,3 @@ export function calculateFootprintAnalysis(
     description
   };
 }
-
