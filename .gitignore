@@ -36,3 +36,6 @@ next-env.d.ts
 # indicator modules draft
 lib/indicatorModules/
 
+# Local nested clone of this repository
+/indicator/
+
