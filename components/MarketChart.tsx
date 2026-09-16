@@ -12,6 +12,7 @@ interface MarketChartProps {
   isLiveUpdating?: boolean;
   optimizedConfig?: OptimizedConfig;
   lastTickTime?: number | null;
+  priceFeedLabel?: string;
 }
 
 export default function MarketChart({
@@ -21,6 +22,7 @@ export default function MarketChart({
   timeframe,
   optimizedConfig,
   lastTickTime,
+  priceFeedLabel = "LIVE TICK",
 }: MarketChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -770,7 +772,7 @@ export default function MarketChart({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-bold text-emerald-400">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-              <span className="font-sans">LIVE TICK</span>
+              <span className="font-sans">{priceFeedLabel}</span>
             </div>
             <div
               className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-surface-50 border border-slate-800 text-[10.5px] text-slate-300 font-mono"

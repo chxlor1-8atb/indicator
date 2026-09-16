@@ -604,33 +604,14 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
   const asset = AVAILABLE_ASSETS.find((a) => a.symbol === symbol);
 
-  // 1. If Gold (XAUUSD), use live Spot Gold feed calibrated to TradingView (OANDA:XAUUSD)
-  // This matches TradingView (OANDA/Capital.com) 1:1, completely removing crypto token spreads or contango
+  // 1. Gold reference candles come from Binance PAXG/USDT. The browser uses the
+  // same public Binance trade stream for the live candle, avoiding a second
+  // paid/proxied price source and keeping Vercel out of the tick path.
   if (symbol.toUpperCase() === "XAUUSD" || symbol.toUpperCase() === "GOLD") {
     try {
-      const [rawCandles, tvQuote] = await Promise.all([
-        fetchCryptoCandles("PAXGUSDT", interval, 500).catch(() => []),
-        fetchTradingViewSpotQuote("XAUUSD").catch(() => null)
-      ]);
-
-      if (rawCandles.length >= 20) {
-        let finalCandles = rawCandles;
-        if (tvQuote && tvQuote.price > 0) {
-          const lastRaw = rawCandles[rawCandles.length - 1];
-          const offset = tvQuote.price - lastRaw.close;
-          // Calibrate all candles so prices match TradingView OANDA/Capital.com down to the cent
-          finalCandles = rawCandles.map((c, idx) => {
-            const isLast = idx === rawCandles.length - 1;
-            return {
-              ...c,
-              open: Number((c.open + offset).toFixed(2)),
-              high: Number((Math.max(c.high + offset, isLast ? tvQuote.price : c.high + offset)).toFixed(2)),
-              low: Number((Math.min(c.low + offset, isLast ? tvQuote.price : c.low + offset)).toFixed(2)),
-              close: isLast ? tvQuote.price : Number((c.close + offset).toFixed(2)),
-            };
-          });
-        }
-        return cacheAndPersist(symbol, interval, finalCandles);
+      const candles = await fetchCryptoCandles("PAXGUSDT", interval, 500);
+      if (candles.length >= 20) {
+        return cacheAndPersist(symbol, interval, candles);
       }
     } catch (err) {
       console.warn("Gold fetch with TV calibration failed, falling back...", err);

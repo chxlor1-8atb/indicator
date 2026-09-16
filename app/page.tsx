@@ -85,9 +85,9 @@ export default function DashboardPage() {
     marketDataInFlightRef.current = true;
     if (!isSilent) setIsLoadingMarket(true);
     try {
-      const res = await fetch(`/api/market-data?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(tf)}&_t=${Date.now()}`, {
-        cache: "no-store",
-      });
+      // Keep a stable URL so Vercel's shared cache can serve historical candles.
+      // Live price updates arrive independently over a browser WebSocket below.
+      const res = await fetch(`/api/market-data?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(tf)}`);
       const data = await res.json();
       if (data.success && data.candles && data.candles.length > 0) {
         setCandles(data.candles);
@@ -214,7 +214,11 @@ export default function DashboardPage() {
       selectedAsset === "UKOIL" ||
       (selectedAsset.length === 6 && !selectedAsset.includes("USDT"));
 
-    if (isInstitutionalAsset) {
+    // Gold uses Binance's public PAXG/USDT trade stream directly in the browser.
+    // This is a free live reference price and does not invoke a Vercel Function.
+    const isGoldReferenceStream = selectedAsset === "XAUUSD" || selectedAsset === "GOLD";
+
+    if (isInstitutionalAsset && !isGoldReferenceStream) {
       // Direct TradingView Institutional OANDA/Interbank Feed Polling (adaptive 2.5s active / 12s inactive)
       const pollLiveTicker = async () => {
         if (!isMounted) return;
@@ -251,13 +255,17 @@ export default function DashboardPage() {
         }
       };
 
-      // Poll immediately and then every 2500ms
+      // This is a fallback for assets without a free browser-side stream.
+      // Keep it deliberately low-frequency to protect Vercel usage.
       pollLiveTicker();
-      tickerInterval = setInterval(pollLiveTicker, 2500);
+      tickerInterval = setInterval(pollLiveTicker, 15000);
     } else {
-      // Map symbol to Binance Live Trade WebSocket for Cryptocurrencies
+      // Map crypto assets, plus XAUUSD's PAXG gold reference, to Binance's
+      // public live-trade WebSocket. This connection is browser -> Binance.
       let wsSymbol: string | null = null;
-      if (selectedAsset.endsWith("USDT")) {
+      if (isGoldReferenceStream) {
+        wsSymbol = "paxgusdt";
+      } else if (selectedAsset.endsWith("USDT")) {
         wsSymbol = selectedAsset.toLowerCase();
       } else if (["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE"].some((c) => selectedAsset.startsWith(c))) {
         wsSymbol = `${selectedAsset.toLowerCase()}usdt`;
@@ -325,10 +333,11 @@ export default function DashboardPage() {
       }
     }
 
-    // Stable background sync (every 10 seconds)
+    // Historical candles and indicators are reconciled periodically; the open
+    // candle itself is updated by the direct stream above.
     const pollInterval = setInterval(() => {
       loadMarketData(selectedAsset, selectedTimeframe, true);
-    }, 10000);
+    }, 60000);
 
     return () => {
       isMounted = false;
@@ -611,6 +620,7 @@ export default function DashboardPage() {
                   isLiveUpdating={true}
                   optimizedConfig={analysis?.optimizedConfig}
                   lastTickTime={liveTickLastUpdated || marketLastUpdated}
+                  priceFeedLabel={selectedAsset === "XAUUSD" || selectedAsset === "GOLD" ? "PAXG LIVE" : "LIVE TICK"}
                 />
 
                 <AnalysisCard
@@ -679,6 +689,7 @@ export default function DashboardPage() {
                   isLiveUpdating={true}
                   optimizedConfig={analysis?.optimizedConfig}
                   lastTickTime={liveTickLastUpdated || marketLastUpdated}
+                  priceFeedLabel={selectedAsset === "XAUUSD" || selectedAsset === "GOLD" ? "PAXG LIVE" : "LIVE TICK"}
                 />
               </div>
             )}
