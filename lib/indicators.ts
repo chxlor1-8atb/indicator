@@ -123,6 +123,8 @@ import {
   VolumeProfileLevel,
   FootprintAnalysisInfo,
   FootprintData,
+  TimeframeIndicators,
+  MTFConfluenceInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -9732,10 +9734,10 @@ export function calculateAdvancedVolumeProfile(
   let totalBuyVolume = 0;
   let totalSellVolume = 0;
   
-  for (const data of volumeByPrice.values()) {
+  volumeByPrice.forEach((data) => {
     totalBuyVolume += data.buyVolume;
     totalSellVolume += data.sellVolume;
-  }
+  });
   
   const delta = totalBuyVolume - totalSellVolume;
   const totalVS = totalBuyVolume + totalSellVolume;
@@ -10096,14 +10098,14 @@ export function calculateMTFConfluence(
     alignmentStatus = "MODERATE_BEARISH_CONFLUENCE";
   }
   
-  const trendAlignment = {
+  const trendAlignment: MTFConfluenceInfo["trendAlignment"] = {
     bullishCount,
     bearishCount,
     neutralCount,
-    dominantTrend: bullishCount > bearishCount ? "BULLISH" : bearishCount > bullishCount ? "BEARISH" : "NEUTRAL"
+    dominantTrend: (bullishCount > bearishCount ? "BULLISH" : bearishCount > bullishCount ? "BEARISH" : "NEUTRAL") as "BULLISH" | "BEARISH" | "NEUTRAL"
   };
   
-  const riskAssessment = {
+  const riskAssessment: MTFConfluenceInfo["riskAssessment"] = {
     overallRisk: "MEDIUM",
     volatilityRisk: "MEDIUM",
     trendRisk: "MEDIUM"

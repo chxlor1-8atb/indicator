@@ -2,6 +2,9 @@ import { AssetInfo, Candle } from "./types";
 import { saveCandlesRollingBuffer, getCachedCandles, BacktestTrade } from "./db";
 import { calculateEMA, calculateRSI, calculateADX, calculateATR } from "./indicators";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
+import { LRUCache } from "./cache";
+import { CircuitBreaker, fetchWithRetry } from "./resilience";
+import { logger } from "./logger";
 
 export const AVAILABLE_ASSETS: AssetInfo[] = [
   // ─── Commodities & Metals ───
@@ -96,7 +99,13 @@ interface SpotQuoteCache {
   timestamp: number;
 }
 const spotQuoteCache = new Map<string, SpotQuoteCache>();
-const SPOT_QUOTE_TTL_MS = 2500; // 2.5s cache to eliminate redundant TradingView rate-limits
+const SPOT_QUOTE_TTL_MS = 5000; // 5s cache to eliminate redundant TradingView rate-limits
+
+// Dedicated Circuit Breakers for external APIs
+const tradingViewBreaker = new CircuitBreaker({ name: "TradingView", failureThreshold: 3, resetTimeoutMs: 45000 });
+const binanceBreaker = new CircuitBreaker({ name: "Binance", failureThreshold: 3, resetTimeoutMs: 45000 });
+const bybitBreaker = new CircuitBreaker({ name: "Bybit", failureThreshold: 3, resetTimeoutMs: 45000 });
+const yahooBreaker = new CircuitBreaker({ name: "YahooFinance", failureThreshold: 3, resetTimeoutMs: 45000 });
 
 export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
   price: number;
@@ -142,18 +151,30 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
   }
 
   try {
-    const res = await fetch(`https://scanner.tradingview.com/${scannerEndpoint}/scan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbols: { tickers },
-        columns: ["close", "open", "high", "low", "change", "volume"]
-      }),
-      signal: AbortSignal.timeout(3500),
-      cache: "no-store"
-    });
+    return await tradingViewBreaker.execute(async () => {
+      const res = await fetch(`https://scanner.tradingview.com/${scannerEndpoint}/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbols: { tickers },
+          columns: ["close", "open", "high", "low", "change", "volume"]
+        }),
+        signal: AbortSignal.timeout(5000), // Increased timeout for better reliability
+        cache: "no-store"
+      });
 
-    if (res.ok) {
+      if (!res.ok) {
+        const errorDetails = {
+          symbol: sym,
+          status: res.status,
+          statusText: res.statusText,
+          endpoint: scannerEndpoint,
+          timestamp: new Date().toISOString()
+        };
+        console.error('[TradingView API Error]', errorDetails);
+        throw new Error(`TradingView API error: ${res.status} ${res.statusText}`);
+      }
+
       const json = await res.json();
       if (json.data && Array.isArray(json.data) && json.data.length > 0) {
         for (const item of json.data) {
@@ -167,11 +188,24 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
           }
         }
       }
-    }
+      
+      throw new Error(`No valid data received from TradingView for ${sym}`);
+    });
   } catch (err: unknown) {
     const isTimeout = (err instanceof Error && err.name === "TimeoutError") || String(err).includes("timeout");
-    if (!isTimeout) {
-      console.warn(`[TradingView] Scanner quote fetch note for ${sym}:`, (err as Error)?.message || err);
+    const isCircuitOpen = String(err).includes("Circuit breaker");
+    
+    if (!isTimeout && !isCircuitOpen) {
+      const errorDetails = {
+        symbol: sym,
+        error: err instanceof Error ? err.message : String(err),
+        endpoint: scannerEndpoint,
+        tickers,
+        timestamp: new Date().toISOString()
+      };
+      console.error('[TradingView Quote Fetch Error]', errorDetails);
+    } else if (isCircuitOpen) {
+      console.warn('[TradingView] Circuit breaker open for', sym);
     }
   }
   return cached ? cached.data : null;
@@ -621,7 +655,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
   // 2. If Crypto, use Binance API (Real-time & Fast 500 candles)
   if (asset?.category === "crypto" || symbol.endsWith("USDT")) {
     try {
-      const candles = await fetchCryptoCandles(symbol, interval, 500);
+      const candles = await bybitBreaker.execute(() => fetchCryptoCandles(symbol, interval, 500));
       if (candles.length >= 20) {
         return cacheAndPersist(symbol, interval, candles);
       }
@@ -641,7 +675,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
   // 4. Try Yahoo Finance for Commodities, Forex, Stocks, Indices
   try {
-    let candles = await fetchYahooCandles(symbol, interval);
+    let candles = await tradingViewBreaker.execute(() => fetchYahooCandles(symbol, interval));
     if (candles.length >= 20) {
       // Dynamic calibration against TradingView institutional quote for Forex & Commodities
       const isInstitutional = asset?.category === "forex" || asset?.category === "commodities" || (symbol.length === 6 && !symbol.includes("USDT"));
@@ -671,8 +705,11 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     }
   } catch (err: unknown) {
     const isTimeout = (err instanceof Error && err.name === "TimeoutError") || String(err).includes("timeout");
-    if (!isTimeout) {
+    const isCircuitOpen = String(err).includes("Circuit breaker");
+    if (!isTimeout && !isCircuitOpen) {
       console.warn(`[Market Feed] Yahoo fetch note for ${symbol}:`, (err as Error)?.message || err);
+    } else if (isCircuitOpen) {
+      console.warn(`[Market Feed] Circuit breaker open for Yahoo fetch on ${symbol}`);
     }
   }
 
