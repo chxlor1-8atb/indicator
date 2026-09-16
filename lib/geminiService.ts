@@ -1892,7 +1892,7 @@ export function generateRuleBasedAnalysis(
       correlationShield,
       fvgMitigation,
       marketStructureShift,
-      // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - TEMPORARILY DISABLED
+      // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
       // advancedVolumeProfile: indicators.advancedVolumeProfile,
       // footprintAnalysis: indicators.footprintAnalysis
       // Enhanced TP/SL Information

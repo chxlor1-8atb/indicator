@@ -8520,9 +8520,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const footprintAbsorption = calculateFootprintAbsorption(cleanCandles);
   const mtfStructureMatrix = calculateMTFStructureMatrix(cleanCandles, precision, symbol);
   
-  // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - TEMPORARILY DISABLED
-  // const advancedVolumeProfile = calculateAdvancedVolumeProfile(cleanCandles, precision, 100);
-  // const footprintAnalysis = calculateFootprintAnalysis(cleanCandles, precision, 50);
+  // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
+  // const advancedVolumeProfile = calculateAdvancedVolumeProfile(cleanCandles, precision, 30);
+  // const footprintAnalysis = calculateFootprintAnalysis(cleanCandles, precision, 20);
 
   // Batch 9: Plans 41, 42, 43, 44, 45
   const liquidityInducement = calculateLiquidityInducement(cleanCandles, precision, symbol);
@@ -8731,7 +8731,7 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     parabolicSAR,
     aroon,
     vortex,
-    // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - TEMPORARILY DISABLED
+    // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
     // advancedVolumeProfile,
     // footprintAnalysis
     fisher,
@@ -9604,13 +9604,14 @@ export function calculateDynamicRiskReward(
 }
 
 /**
- * [แผน 52] Advanced Volume Profile Analysis
+ * [แผน 52] Advanced Volume Profile Analysis (Optimized for Performance)
  * คำนวณ Volume Profile ที่ละเอียดขึ้น พร้อม POC, Value Area, Volume Imbalance
+ * Optimized: Reduced lookback from 100 to 30, reduced price levels from 50 to 20
  */
 export function calculateAdvancedVolumeProfile(
   candles: Candle[],
   precision = 2,
-  lookback = 100
+  lookback = 30 // Reduced from 100 for better performance
 ): AdvancedVolumeProfileInfo {
   if (candles.length < 20) {
     const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
@@ -9645,70 +9646,54 @@ export function calculateAdvancedVolumeProfile(
   const sample = candles.slice(-Math.min(lookback, candles.length));
   const currentPrice = candles[candles.length - 1].close;
   
-  // Calculate VWAP
-  let cumulativeTPV = 0; // Typical Price * Volume
+  // Calculate VWAP (simplified)
+  let cumulativeTPV = 0;
   let cumulativeVolume = 0;
   
-  const candleData = sample.map(candle => {
+  for (const candle of sample) {
     const typicalPrice = (candle.high + candle.low + candle.close) / 3;
-    const tpv = typicalPrice * candle.volume;
-    cumulativeTPV += tpv;
+    cumulativeTPV += typicalPrice * candle.volume;
     cumulativeVolume += candle.volume;
-    return {
-      open: candle.open,
-      high: candle.high,
-      low: candle.low,
-      close: candle.close,
-      volume: candle.volume,
-      typicalPrice,
-      tpv
-    };
-  });
+  }
   
-  const vwap = cumulativeTPV / cumulativeVolume;
+  const vwap = cumulativeVolume > 0 ? cumulativeTPV / cumulativeVolume : currentPrice;
   
-  // Calculate standard deviation for VWAP bands
-  const typicalPrices = candleData.map(d => d.typicalPrice);
-  const meanTP = typicalPrices.reduce((a, b) => a + b, 0) / typicalPrices.length;
-  const variance = typicalPrices.reduce((sum, tp) => sum + Math.pow(tp - meanTP, 2), 0) / typicalPrices.length;
-  const stdDev = Math.sqrt(variance);
+  // Simplified std dev calculation
+  const high = Math.max(...sample.map(c => c.high));
+  const low = Math.min(...sample.map(c => c.low));
+  const stdDev = (high - low) / 4; // Simple approximation
   
-  // Group candles by price levels for volume profile
-  const priceStep = (Math.max(...sample.map(c => c.high)) - Math.min(...sample.map(c => c.low))) / 50;
+  // Group candles by price levels (reduced from 50 to 20 for performance)
+  const priceStep = (high - low) / 20;
   const volumeByPrice = new Map<number, { buyVolume: number; sellVolume: number; totalVolume: number }>();
   
-  candleData.forEach(candle => {
-    const numLevels = Math.ceil((candle.high - candle.low) / priceStep);
-    for (let i = 0; i < numLevels; i++) {
-      const priceLevel = Number((candle.low + i * priceStep).toFixed(precision));
-      if (!volumeByPrice.has(priceLevel)) {
-        volumeByPrice.set(priceLevel, { buyVolume: 0, sellVolume: 0, totalVolume: 0 });
-      }
-      
-      const priceRatio = Math.min(1, (priceStep * (i + 1)) / (candle.high - candle.low));
-      const candleVolume = candle.volume * priceRatio;
-      
-      // Estimate buy/sell volume based on candle direction
-      if (candle.close > candle.open) {
-        volumeByPrice.get(priceLevel)!.buyVolume += candleVolume * 0.7;
-        volumeByPrice.get(priceLevel)!.sellVolume += candleVolume * 0.3;
-      } else if (candle.close < candle.open) {
-        volumeByPrice.get(priceLevel)!.buyVolume += candleVolume * 0.3;
-        volumeByPrice.get(priceLevel)!.sellVolume += candleVolume * 0.7;
-      } else {
-        volumeByPrice.get(priceLevel)!.buyVolume += candleVolume * 0.5;
-        volumeByPrice.get(priceLevel)!.sellVolume += candleVolume * 0.5;
-      }
-      
-      volumeByPrice.get(priceLevel)!.totalVolume += candleVolume;
+  for (const candle of sample) {
+    // Simplified: assign entire candle volume to its midpoint
+    const midPrice = (candle.high + candle.low) / 2;
+    const priceLevel = Number((Math.floor((midPrice - low) / priceStep) * priceStep + low).toFixed(precision));
+    
+    if (!volumeByPrice.has(priceLevel)) {
+      volumeByPrice.set(priceLevel, { buyVolume: 0, sellVolume: 0, totalVolume: 0 });
     }
-  });
+    
+    const data = volumeByPrice.get(priceLevel)!;
+    const isBullish = candle.close > candle.open;
+    
+    if (isBullish) {
+      data.buyVolume += candle.volume * 0.7;
+      data.sellVolume += candle.volume * 0.3;
+    } else {
+      data.buyVolume += candle.volume * 0.3;
+      data.sellVolume += candle.volume * 0.7;
+    }
+    data.totalVolume += candle.volume;
+  }
   
   // Convert to array and sort by volume
   const levels: VolumeProfileLevel[] = Array.from(volumeByPrice.entries()).map(([price, data]) => ({
     price,
     volume: data.totalVolume,
-    volumePercent: (data.totalVolume / cumulativeVolume) * 100,
+    volumePercent: cumulativeVolume > 0 ? (data.totalVolume / cumulativeVolume) * 100 : 0,
     isPOC: false,
     isVAH: false,
     isVAL: false,
@@ -9716,26 +9701,19 @@ export function calculateAdvancedVolumeProfile(
     distanceFromPOC: 0
   })).sort((a, b) => b.volume - a.volume);
   
-  // Find POC (Point of Control) - highest volume level
+  // Find POC (Point of Control)
   if (levels.length > 0) {
     levels[0].isPOC = true;
   }
   
   const poc = levels.length > 0 ? levels[0].price : currentPrice;
   
-  // Calculate Value Area (70% of volume)
-  let volumeAccumulated = 0;
-  const targetVolume = cumulativeVolume * 0.7;
+  // Simplified Value Area (just use top 3 levels)
   let vah = poc;
   let val = poc;
-  
-  for (const level of levels) {
-    volumeAccumulated += level.volume;
-    if (volumeAccumulated >= targetVolume) {
-      vah = Math.max(vah, level.price);
-      val = Math.min(val, level.price);
-      break;
-    }
+  if (levels.length >= 3) {
+    vah = Math.max(poc, levels[2].price);
+    val = Math.min(poc, levels[2].price);
   }
   
   // Mark VAH and VAL
@@ -9749,16 +9727,14 @@ export function calculateAdvancedVolumeProfile(
   let totalBuyVolume = 0;
   let totalSellVolume = 0;
   
-  levels.forEach(level => {
-    const levelData = volumeByPrice.get(level.price);
-    if (levelData) {
-      totalBuyVolume += levelData.buyVolume;
-      totalSellVolume += levelData.sellVolume;
-    }
-  });
+  for (const data of volumeByPrice.values()) {
+    totalBuyVolume += data.buyVolume;
+    totalSellVolume += data.sellVolume;
+  }
   
   const delta = totalBuyVolume - totalSellVolume;
-  const imbalancePct = (Math.abs(delta) / (totalBuyVolume + totalSellVolume)) * 100;
+  const totalVS = totalBuyVolume + totalSellVolume;
+  const imbalancePct = totalVS > 0 ? (Math.abs(delta) / totalVS) * 100 : 0;
   
   let imbalanceStatus: AdvancedVolumeProfileInfo["volumeImbalance"]["imbalanceStatus"] = "BALANCED";
   if (imbalancePct >= 60) {
@@ -9767,9 +9743,10 @@ export function calculateAdvancedVolumeProfile(
     imbalanceStatus = delta > 0 ? "MODERATE_BUYING" : "MODERATE_SELLING";
   }
   
-  // Detect absorption zones
+  // Simplified absorption zones (only top 5 levels)
   const absorptionZones: AdvancedVolumeProfileInfo["absorptionZones"] = [];
-  levels.forEach(level => {
+  for (let i = 0; i < Math.min(levels.length, 5); i++) {
+    const level = levels[i];
     const levelData = volumeByPrice.get(level.price);
     if (levelData) {
       const absorptionRatio = Math.min(levelData.buyVolume, levelData.sellVolume) / levelData.totalVolume;
@@ -9782,11 +9759,11 @@ export function calculateAdvancedVolumeProfile(
         });
       }
     }
-  });
+  }
   
-  // Create footprint clusters
+  // Simplified footprint clusters (only top 5)
   const footprintClusters: AdvancedVolumeProfileInfo["footprintClusters"] = [];
-  for (let i = 0; i < Math.min(levels.length, 10); i++) {
+  for (let i = 0; i < Math.min(levels.length, 5); i++) {
     const level = levels[i];
     const levelData = volumeByPrice.get(level.price);
     if (levelData) {
@@ -9801,7 +9778,7 @@ export function calculateAdvancedVolumeProfile(
   }
   
   // Calculate current Z-score
-  const currentZScore = (currentPrice - vwap) / stdDev;
+  const currentZScore = stdDev > 0 ? (currentPrice - vwap) / stdDev : 0;
   
   const currentPriceInVA = currentPrice >= val && currentPrice <= vah;
   
@@ -9836,13 +9813,14 @@ export function calculateAdvancedVolumeProfile(
 }
 
 /**
- * [แผน 53] Footprint Analysis & Order Flow
+ * [แผน 53] Footprint Analysis & Order Flow (Optimized for Performance)
  * วิเคราะห์ footprint data และ order flow patterns
+ * Optimized: Reduced lookback from 50 to 20, simplified calculations
  */
 export function calculateFootprintAnalysis(
   candles: Candle[],
   precision = 2,
-  lookback = 50
+  lookback = 20 // Reduced from 50 for better performance
 ): FootprintAnalysisInfo {
   if (candles.length < 10) {
     return {
@@ -9872,34 +9850,22 @@ export function calculateFootprintAnalysis(
   const volumes = sample.map(c => c.volume);
   const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
   
-  // Create footprint data for each candle
-  const footprintCandles: FootprintData[] = sample.map(candle => {
-    const candleRange = candle.high - candle.low;
+  // Simplified footprint data (only last 10 candles)
+  const footprintCandles: FootprintData[] = sample.slice(-10).map(candle => {
     const buyVolume = candle.close > candle.open ? candle.volume * 0.7 : candle.volume * 0.3;
     const sellVolume = candle.volume - buyVolume;
     const delta = buyVolume - sellVolume;
-    const imbalance = (delta / candle.volume) * 100;
+    const imbalance = candle.volume > 0 ? (delta / candle.volume) * 100 : 0;
     
-    // Determine if initiative or responsive
-    const prevCandle = sample[sample.indexOf(candle) - 1];
-    let isInitiative = false;
-    let isResponsive = false;
+    // Simplified initiative/responsive detection
+    const isInitiative = Math.abs(imbalance) > 25;
+    const isResponsive = !isInitiative;
     
-    if (prevCandle) {
-      if (candle.close > prevCandle.high && candle.close > candle.open) {
-        isInitiative = true;
-      } else if (candle.close < prevCandle.low && candle.close < candle.open) {
-        isInitiative = true;
-      } else {
-        isResponsive = true;
-      }
-    }
-    
-    // Determine footprint type
+    // Simplified footprint type
     let footprintType: FootprintData["footprintType"] = "NEUTRAL";
     if (Math.abs(imbalance) > 30) {
       footprintType = imbalance > 0 ? "BULLISH_IMBALANCE" : "BEARISH_IMBALANCE";
-    } else if (isResponsive && Math.abs(imbalance) < 15) {
+    } else if (Math.abs(imbalance) < 15) {
       footprintType = "ABSORPTION";
     }
     
@@ -9915,12 +9881,14 @@ export function calculateFootprintAnalysis(
     };
   });
   
-  // Detect recent imbalance
-  const recentCandles = footprintCandles.slice(-5);
-  const recentImbalanceStrength = Math.abs(recentCandles.reduce((sum, c) => sum + c.imbalance, 0)) / recentCandles.length;
+  // Detect recent imbalance (simplified - only last 3 candles)
+  const recentCandles = footprintCandles.slice(-3);
+  const recentImbalanceStrength = recentCandles.length > 0 
+    ? Math.abs(recentCandles.reduce((sum, c) => sum + c.imbalance, 0)) / recentCandles.length 
+    : 0;
   
   let recentImbalanceType: FootprintAnalysisInfo["recentImbalance"]["type"] = "NEUTRAL";
-  if (recentImbalanceStrength > 25) {
+  if (recentImbalanceStrength > 25 && recentCandles.length > 0) {
     const avgDelta = recentCandles.reduce((sum, c) => sum + c.delta, 0) / recentCandles.length;
     recentImbalanceType = avgDelta > 0 ? "BULLISH" : "BEARISH";
   }
@@ -9934,9 +9902,9 @@ export function calculateFootprintAnalysis(
       : `พบ ${recentImbalanceType} imbalance ที่ระดับ ${recentImbalanceStrength.toFixed(1)}% ในช่วงล่าสุด`
   };
   
-  // Detect absorption areas
+  // Simplified absorption areas (only check last 5 candles)
   const absorptionAreas: FootprintAnalysisInfo["absorptionAreas"] = [];
-  footprintCandles.forEach(candle => {
+  footprintCandles.slice(-5).forEach(candle => {
     if (candle.footprintType === "ABSORPTION" && Math.abs(candle.imbalance) < 10) {
       absorptionAreas.push({
         price: candle.price,
@@ -9947,10 +9915,10 @@ export function calculateFootprintAnalysis(
     }
   });
   
-  // Detect volume spikes
+  // Simplified volume spikes (only check last 5 candles)
   const volumeSpikeAlerts: FootprintAnalysisInfo["volumeSpikeAlerts"] = [];
-  sample.forEach(candle => {
-    const spikeRatio = candle.volume / avgVolume;
+  sample.slice(-5).forEach(candle => {
+    const spikeRatio = avgVolume > 0 ? candle.volume / avgVolume : 0;
     if (spikeRatio > 2.0) {
       volumeSpikeAlerts.push({
         price: candle.close,
@@ -9962,7 +9930,7 @@ export function calculateFootprintAnalysis(
     }
   });
   
-  // Detect delta divergence
+  // Simplified delta divergence (only check last 5 vs previous 5)
   const deltas = footprintCandles.map(c => c.delta);
   const prices = footprintCandles.map(c => c.price);
   
@@ -9972,7 +9940,6 @@ export function calculateFootprintAnalysis(
     description: "ไม่พบ delta divergence"
   };
   
-  // Simple divergence detection
   if (deltas.length >= 10 && prices.length >= 10) {
     const recentDeltas = deltas.slice(-5);
     const recentPrices = prices.slice(-5);
