@@ -1013,6 +1013,8 @@ export interface IndicatorData {
   // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis
   advancedVolumeProfile?: AdvancedVolumeProfileInfo;
   footprintAnalysis?: FootprintAnalysisInfo;
+  // [แผน 54] Higher Timeframe Confluence Analysis (Simplified)
+  mtfConfluence?: MTFConfluenceInfo;
 }
 
 export interface NewsItem {

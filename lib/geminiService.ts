@@ -209,6 +209,7 @@ import {
   checkBreakoutConfirmation,
   validateBreakoutWithMTF,
   calculateDynamicRiskReward,
+  calculateMTFConfluence,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -1894,7 +1895,9 @@ export function generateRuleBasedAnalysis(
       marketStructureShift,
       // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
       // advancedVolumeProfile: indicators.advancedVolumeProfile,
-      // footprintAnalysis: indicators.footprintAnalysis
+      // footprintAnalysis: indicators.footprintAnalysis,
+      // [แผน 54] Higher Timeframe Confluence Analysis (Simplified) - DISABLED FOR PERFORMANCE
+      // mtfConfluence: indicators.mtfConfluence,
       // Enhanced TP/SL Information
       srBasedTPSL: {
         slSource: srBasedCalc.slSource,

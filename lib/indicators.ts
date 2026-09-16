@@ -8523,6 +8523,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
   // const advancedVolumeProfile = calculateAdvancedVolumeProfile(cleanCandles, precision, 30);
   // const footprintAnalysis = calculateFootprintAnalysis(cleanCandles, precision, 20);
+  
+  // [แผน 54] Higher Timeframe Confluence Analysis (Simplified) - DISABLED FOR PERFORMANCE
+  // const mtfConfluence = calculateMTFConfluence(cleanCandles, precision, symbol);
 
   // Batch 9: Plans 41, 42, 43, 44, 45
   const liquidityInducement = calculateLiquidityInducement(cleanCandles, precision, symbol);
@@ -8733,7 +8736,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     vortex,
     // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
     // advancedVolumeProfile,
-    // footprintAnalysis
+    // footprintAnalysis,
+    // [แผน 54] Higher Timeframe Confluence Analysis (Simplified) - DISABLED FOR PERFORMANCE
+    // mtfConfluence,
     fisher,
     connorsRSI,
     awesomeOsc,
@@ -9990,6 +9995,183 @@ export function calculateFootprintAnalysis(
     volumeSpikeAlerts,
     deltaDivergence,
     orderFlowSentiment,
+    description
+  };
+}
+
+/**
+ * [แผน 54] Higher Timeframe Confluence Analysis (Simplified for Performance)
+ * วิเคราะห์ confluence ระหว่าง multiple timeframes (M15, H1, H4, D1, W1)
+ * Optimized: Simple trend direction analysis only
+ */
+export function calculateMTFConfluence(
+  candles: Candle[],
+  precision = 2,
+  symbol = "XAUUSD"
+): MTFConfluenceInfo {
+  const defaultIndicators: TimeframeIndicators = {
+    timeframe: "M15",
+    trend: "NEUTRAL",
+    strength: 50,
+    emaTrend: "MIXED",
+    atrNormalized: 0.5,
+    volumeTrend: "STABLE",
+    supportLevels: [],
+    resistanceLevels: [],
+    nearestSupport: null,
+    nearestResistance: null,
+    rsi: 50,
+    macd: { value: 0, signal: 0, histogram: 0, trend: "NEUTRAL" },
+    volatility: "MEDIUM",
+    sessionBias: "NEUTRAL"
+  };
+  
+  if (!candles || candles.length < 50) {
+    return {
+      m15: defaultIndicators,
+      h1: { ...defaultIndicators, timeframe: "H1" },
+      h4: { ...defaultIndicators, timeframe: "H4" },
+      d1: { ...defaultIndicators, timeframe: "D1" },
+      w1: { ...defaultIndicators, timeframe: "W1" },
+      alignmentScore: 50,
+      alignmentStatus: "NEUTRAL",
+      trendAlignment: { bullishCount: 0, bearishCount: 0, neutralCount: 5, dominantTrend: "NEUTRAL" },
+      riskAssessment: { overallRisk: "MEDIUM", volatilityRisk: "MEDIUM", trendRisk: "MEDIUM" },
+      recommendations: { primaryAction: "WAIT", confidence: 50, reasoning: "ข้อมูลไม่เพียงพอสำหรับ MTF Analysis", riskLevel: 5 },
+      keyLevels: { h4Support: [], h4Resistance: [], d1Support: [], d1Resistance: [], w1Support: [], w1Resistance: [] },
+      divergenceAlerts: [],
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับ MTF Confluence Analysis"
+    };
+  }
+  
+  const currentPrice = candles[candles.length - 1].close;
+  
+  // Simplified MTF analysis - just check price direction over different periods
+  const getTrendFromPeriod = (period: number): "BULLISH" | "BEARISH" | "NEUTRAL" => {
+    if (candles.length < period) return "NEUTRAL";
+    const startPrice = candles[candles.length - period].close;
+    const endPrice = candles[candles.length - 1].close;
+    const change = ((endPrice - startPrice) / startPrice) * 100;
+    if (change > 0.1) return "BULLISH";
+    if (change < -0.1) return "BEARISH";
+    return "NEUTRAL";
+  };
+  
+  const m15Trend = getTrendFromPeriod(10);
+  const h1Trend = getTrendFromPeriod(40);
+  const h4Trend = getTrendFromPeriod(100);
+  const d1Trend = getTrendFromPeriod(200);
+  const w1Trend = candles.length >= 500 ? getTrendFromPeriod(500) : "NEUTRAL";
+  
+  const m15Indicators: TimeframeIndicators = { ...defaultIndicators, timeframe: "M15", trend: m15Trend, emaTrend: m15Trend === "BULLISH" ? "ABOVE_ALL" : m15Trend === "BEARISH" ? "BELOW_ALL" : "MIXED" };
+  const h1Indicators: TimeframeIndicators = { ...defaultIndicators, timeframe: "H1", trend: h1Trend, emaTrend: h1Trend === "BULLISH" ? "ABOVE_ALL" : h1Trend === "BEARISH" ? "BELOW_ALL" : "MIXED" };
+  const h4Indicators: TimeframeIndicators = { ...defaultIndicators, timeframe: "H4", trend: h4Trend, emaTrend: h4Trend === "BULLISH" ? "ABOVE_ALL" : h4Trend === "BEARISH" ? "BELOW_ALL" : "MIXED" };
+  const d1Indicators: TimeframeIndicators = { ...defaultIndicators, timeframe: "D1", trend: d1Trend, emaTrend: d1Trend === "BULLISH" ? "ABOVE_ALL" : d1Trend === "BEARISH" ? "BELOW_ALL" : "MIXED" };
+  const w1Indicators: TimeframeIndicators = { ...defaultIndicators, timeframe: "W1", trend: w1Trend, emaTrend: w1Trend === "BULLISH" ? "ABOVE_ALL" : w1Trend === "BEARISH" ? "BELOW_ALL" : "MIXED" };
+  
+  const timeframes = [m15Indicators, h1Indicators, h4Indicators, d1Indicators, w1Indicators];
+  const bullishCount = timeframes.filter(tf => tf.trend === "BULLISH").length;
+  const bearishCount = timeframes.filter(tf => tf.trend === "BEARISH").length;
+  const neutralCount = timeframes.filter(tf => tf.trend === "NEUTRAL").length;
+  
+  let alignmentScore = 50;
+  if (bullishCount >= 4) {
+    alignmentScore = 90;
+  } else if (bullishCount >= 3) {
+    alignmentScore = 75;
+  } else if (bearishCount >= 4) {
+    alignmentScore = 10;
+  } else if (bearishCount >= 3) {
+    alignmentScore = 25;
+  }
+  
+  let alignmentStatus: MTFConfluenceInfo["alignmentStatus"] = "NEUTRAL";
+  if (alignmentScore >= 75) {
+    alignmentStatus = "STRONG_BULLISH_CONFLUENCE";
+  } else if (alignmentScore >= 60) {
+    alignmentStatus = "MODERATE_BULLISH_CONFLUENCE";
+  } else if (alignmentScore <= 25) {
+    alignmentStatus = "STRONG_BEARISH_CONFLUENCE";
+  } else if (alignmentScore <= 40) {
+    alignmentStatus = "MODERATE_BEARISH_CONFLUENCE";
+  }
+  
+  const trendAlignment = {
+    bullishCount,
+    bearishCount,
+    neutralCount,
+    dominantTrend: bullishCount > bearishCount ? "BULLISH" : bearishCount > bullishCount ? "BEARISH" : "NEUTRAL"
+  };
+  
+  const riskAssessment = {
+    overallRisk: "MEDIUM",
+    volatilityRisk: "MEDIUM",
+    trendRisk: "MEDIUM"
+  };
+  
+  let primaryAction: MTFConfluenceInfo["recommendations"]["primaryAction"] = "WAIT";
+  let confidence = 50;
+  let reasoning = "";
+  let riskLevel = 5;
+  
+  if (alignmentStatus === "STRONG_BULLISH_CONFLUENCE") {
+    primaryAction = "STRONG_BUY";
+    confidence = 85;
+    reasoning = "Strong bullish confluence across multiple timeframes";
+    riskLevel = 3;
+  } else if (alignmentStatus === "MODERATE_BULLISH_CONFLUENCE") {
+    primaryAction = "BUY";
+    confidence = 70;
+    reasoning = "Moderate bullish confluence across multiple timeframes";
+    riskLevel = 4;
+  } else if (alignmentStatus === "STRONG_BEARISH_CONFLUENCE") {
+    primaryAction = "STRONG_SELL";
+    confidence = 85;
+    reasoning = "Strong bearish confluence across multiple timeframes";
+    riskLevel = 3;
+  } else if (alignmentStatus === "MODERATE_BEARISH_CONFLUENCE") {
+    primaryAction = "SELL";
+    confidence = 70;
+    reasoning = "Moderate bearish confluence across multiple timeframes";
+    riskLevel = 4;
+  } else {
+    primaryAction = "WAIT";
+    confidence = 40;
+    reasoning = "Conflicting signals across timeframes - wait for better confluence";
+    riskLevel = 7;
+  }
+  
+  const recommendations = {
+    primaryAction,
+    confidence,
+    reasoning,
+    riskLevel
+  };
+  
+  const keyLevels = {
+    h4Support: [],
+    h4Resistance: [],
+    d1Support: [],
+    d1Resistance: [],
+    w1Support: [],
+    w1Resistance: []
+  };
+  
+  const description = `MTF Confluence: ${alignmentStatus} (${alignmentScore}%), Dominant Trend: ${trendAlignment.dominantTrend}, Recommendation: ${primaryAction} (${confidence}%)`;
+  
+  return {
+    m15: m15Indicators,
+    h1: h1Indicators,
+    h4: h4Indicators,
+    d1: d1Indicators,
+    w1: w1Indicators,
+    alignmentScore,
+    alignmentStatus,
+    trendAlignment,
+    riskAssessment,
+    recommendations,
+    keyLevels,
+    divergenceAlerts: [],
     description
   };
 }
