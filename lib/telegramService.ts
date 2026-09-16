@@ -80,6 +80,31 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentP
     ? "🔴 ข่าวกดดัน (Bearish)"
     : "⚪ ข่าวเป็นกลาง";
 
+  // Enhanced TP/SL Information with Visual Level Reference
+  const slSource = analysis.tradeSetup.srBasedTPSL?.slSource || "ATR";
+  const tp1Source = analysis.tradeSetup.srBasedTPSL?.tp1Source || "ATR";
+  const tp2Source = analysis.tradeSetup.srBasedTPSL?.tp2Source || "ATR";
+  const slRationale = analysis.tradeSetup.srBasedTPSL?.slRationale || "";
+  const tp1Rationale = analysis.tradeSetup.srBasedTPSL?.tp1Rationale || "";
+  const tp2Rationale = analysis.tradeSetup.srBasedTPSL?.tp2Rationale || "";
+
+  // Multi-Scenario Planning
+  const recommendedScenario = analysis.tradeSetup.multiScenarioPlanning?.recommendedScenario || "";
+  const scenarioAnalysis = analysis.tradeSetup.multiScenarioPlanning?.analysis || "";
+
+  // Breakout Confirmation
+  const breakoutStatus = analysis.tradeSetup.breakoutConfirmation?.isBreakoutConfirmed ? "✅ ยืนยัน" : 
+                         analysis.tradeSetup.breakoutConfirmation?.requiresConfirmation ? "⏳ รอยืนยัน" : "❌ ไม่ยืนยัน";
+  const breakoutRec = analysis.tradeSetup.breakoutConfirmation?.recommendation || "";
+
+  // MTF Validation
+  const mtfStatus = analysis.tradeSetup.mtfValidation?.isValid ? "✅ ผ่าน" : "❌ ไม่ผ่าน";
+  const mtfRec = analysis.tradeSetup.mtfValidation?.recommendation || "";
+
+  // Dynamic Risk/Reward
+  const adjustedRR = analysis.tradeSetup.dynamicRiskReward?.adjustedRR || analysis.tradeSetup.riskRewardRatio;
+  const riskRec = analysis.tradeSetup.dynamicRiskReward?.recommendation || "";
+
   const lines = [
     `⚡ <b>AI SIGNAL: ${analysis.symbol} (${analysis.timeframe})</b>`,
     `━━━━━━━━━━━━━━━━━━━━`,
@@ -89,10 +114,26 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentP
     `📋 <b>ตั๋วเทรด MT5 (แตะตัวเลขเพื่อ Copy):</b>`,
     `• <b>Entry:</b> <code>${analysis.tradeSetup.pendingPrice}</code> <i>(${distanceText})</i>`,
     analysis.tradeSetup.mtStopLimitPrice ? `• <b>Stop Limit:</b> <code>${analysis.tradeSetup.mtStopLimitPrice}</code>` : "",
-    `• <b>Stop Loss:</b> <code>${analysis.tradeSetup.stopLoss}</code> (-${analysis.tradeSetup.slPips || 0} pips)`,
-    `• <b>TP1 (หลัก):</b> <code>${analysis.tradeSetup.takeProfit1}</code> (+${analysis.tradeSetup.tp1Pips || 0} pips)`,
-    analysis.tradeSetup.takeProfit2 ? `• <b>TP2 (สวิง):</b> <code>${analysis.tradeSetup.takeProfit2}</code> (+${analysis.tradeSetup.tp2Pips || 0} pips)` : "",
-    `• <b>R:R:</b> <b>${analysis.tradeSetup.riskRewardRatio}</b> | เกรด: <b>${grade}</b> (${conf}%)`,
+    `• <b>Stop Loss:</b> <code>${analysis.tradeSetup.stopLoss}</code> (-${analysis.tradeSetup.slPips || 0} pips) <i>[${slSource}]</i>`,
+    slRationale ? `  └─ ${slRationale}` : "",
+    `• <b>TP1 (หลัก):</b> <code>${analysis.tradeSetup.takeProfit1}</code> (+${analysis.tradeSetup.tp1Pips || 0} pips) <i>[${tp1Source}]</i>`,
+    tp1Rationale ? `  └─ ${tp1Rationale}` : "",
+    analysis.tradeSetup.takeProfit2 ? `• <b>TP2 (สวิง):</b> <code>${analysis.tradeSetup.takeProfit2}</code> (+${analysis.tradeSetup.tp2Pips || 0} pips) <i>[${tp2Source}]</i>` : "",
+    tp2Rationale ? `  └─ ${tp2Rationale}` : "",
+    `• <b>R:R:</b> <b>${adjustedRR}</b> | เกรด: <b>${grade}</b> (${conf}%)`,
+    riskRec ? `  └─ ${riskRec}` : "",
+    ``,
+    // Multi-Scenario Planning Section
+    recommendedScenario ? `🎯 <b>Scenario แนะนำ:</b> ${recommendedScenario}` : "",
+    scenarioAnalysis ? `   └─ ${scenarioAnalysis}` : "",
+    ``,
+    // Breakout Confirmation Section
+    breakoutRec ? `🚀 <b>Breakout Status:</b> ${breakoutStatus}` : "",
+    breakoutRec ? `   └─ ${breakoutRec}` : "",
+    ``,
+    // MTF Validation Section
+    mtfRec ? `📊 <b>MTF Validation:</b> ${mtfStatus}` : "",
+    mtfRec ? `   └─ ${mtfRec}` : "",
     ``,
     `💡 <b>เทคนิค:</b> ${escapeHtml(analysis.technicalAnalysis.trend)} (${escapeHtml(analysis.technicalAnalysis.rsiStatus)})`,
     analysis.masterConfluence?.pillars?.volumeFlow?.status ? `📊 <b>Volume:</b> ${escapeHtml(analysis.masterConfluence.pillars.volumeFlow.status)}` : "",
@@ -100,7 +141,7 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentP
     `📰 <b>ข่าว:</b> ${newsSentiment} | Shield: <code>${cal}</code>`,
     `━━━━━━━━━━━━━━━━━━━━`,
     `🕒 <code>${new Date(analysis.timestamp).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} (GMT+7)</code>`,
-  ].filter(Boolean);
+  ].filter(line => line !== "" && line !== "``" && line !== "   └─ ");
 
   return lines.join("\n");
 }

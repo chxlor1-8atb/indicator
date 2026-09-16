@@ -147,6 +147,65 @@ export interface StructuralStopLossInfo {
   protectionType: "SWING_LOW_BUFFER" | "SWING_HIGH_BUFFER" | "VOLATILITY_ATR";
 }
 
+export interface SRBasedTPSLInfo {
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  slPips: number;
+  tp1Pips: number;
+  tp2Pips: number;
+  riskRewardRatio: string;
+  slSource: string;
+  tp1Source: string;
+  tp2Source: string;
+  slRationale: string;
+  tp1Rationale: string;
+  tp2Rationale: string;
+}
+
+export interface TradeScenario {
+  name: string;
+  description: string;
+  entryCondition: string;
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  riskRewardRatio: string;
+  confidence: string;
+  suitableFor: string;
+}
+
+export interface MultiScenarioPlanningInfo {
+  scenarios: TradeScenario[];
+  recommendedScenario: string;
+  analysis: string;
+}
+
+export interface BreakoutConfirmationInfo {
+  isBreakoutConfirmed: boolean;
+  breakoutLevel: number;
+  currentPrice: number;
+  candleClose: number;
+  timeUntilNextCandle: number;
+  requiresConfirmation: boolean;
+  confidence: string;
+}
+
+export interface EnhancedTPSLInfo {
+  srBased: SRBasedTPSLInfo;
+  multiScenario: MultiScenarioPlanningInfo;
+  breakoutConfirmation: BreakoutConfirmationInfo;
+  visualLevelReference: {
+    slLevel: string;
+    tp1Level: string;
+    tp2Level: string;
+    distanceToSL: string;
+    distanceToTP1: string;
+    distanceToTP2: string;
+  };
+}
+
 // ─── 5 CORE PILLARS QUANT INTERFACES ───
 export interface PivotPointsInfo {
   pivot: number; // Daily central pivot (P)
@@ -477,6 +536,169 @@ export interface LiquidityVoidInfo {
   description: string;
 }
 
+// [แผน 52] Advanced Volume Profile Analysis
+export interface VolumeProfileLevel {
+  price: number;
+  volume: number;
+  volumePercent: number;
+  isPOC: boolean;
+  isVAH: boolean; // Value Area High
+  isVAL: boolean; // Value Area Low
+  vwap: number;
+  distanceFromPOC: number;
+}
+
+export interface AdvancedVolumeProfileInfo {
+  levels: VolumeProfileLevel[];
+  poc: number; // Point of Control
+  vah: number; // Value Area High
+  val: number; // Value Area Low
+  valueArea: { min: number; max: number };
+  currentPriceInVA: boolean;
+  volumeImbalance: {
+    buyVolume: number;
+    sellVolume: number;
+    delta: number;
+    imbalancePct: number;
+    imbalanceStatus: "STRONG_BUYING" | "MODERATE_BUYING" | "BALANCED" | "MODERATE_SELLING" | "STRONG_SELLING";
+  };
+  absorptionZones: {
+    price: number;
+    volume: number;
+    absorptionStrength: "HIGH" | "MEDIUM" | "LOW";
+    type: "BUY_SIDE_ABSORPTION" | "SELL_SIDE_ABSORPTION";
+  }[];
+  footprintClusters: {
+    price: number;
+    buyVolume: number;
+    sellVolume: number;
+    delta: number;
+    clusterStrength: number;
+  }[];
+  vwapProfile: {
+    vwap: number;
+    stdDev1Upper: number;
+    stdDev1Lower: number;
+    stdDev2Upper: number;
+    stdDev2Lower: number;
+    currentZScore: number;
+  };
+  description: string;
+}
+
+// [แผน 53] Footprint Analysis & Order Flow
+export interface FootprintData {
+  price: number;
+  buyVolume: number;
+  sellVolume: number;
+  delta: number;
+  imbalance: number; // buyVolume - sellVolume percentage
+  isInitiative: boolean;
+  isResponsive: boolean;
+  footprintType: "BULLISH_IMBALANCE" | "BEARISH_IMBALANCE" | "ABSORPTION" | "NEUTRAL";
+}
+
+export interface FootprintAnalysisInfo {
+  candles: FootprintData[];
+  recentImbalance: {
+    type: "BULLISH" | "BEARISH" | "NEUTRAL";
+    strength: number;
+    price: number;
+    description: string;
+  };
+  absorptionAreas: {
+    price: number;
+    type: "BUY_ABSORPTION" | "SELL_ABSORPTION";
+    strength: number;
+    volume: number;
+  }[];
+  volumeSpikeAlerts: {
+    price: number;
+    spikeVolume: number;
+    avgVolume: number;
+    spikeRatio: number;
+    direction: "BUY" | "SELL";
+  }[];
+  deltaDivergence: {
+    detected: boolean;
+    type: "BULLISH_DIVERGENCE" | "BEARISH_DIVERGENCE";
+    description: string;
+  };
+  orderFlowSentiment: "STRONG_BUY" | "MODERATE_BUY" | "NEUTRAL" | "MODERATE_SELL" | "STRONG_SELL";
+  description: string;
+}
+
+// [แผน 54] Higher Timeframe Confluence Analysis
+export interface TimeframeIndicators {
+  timeframe: string;
+  trend: "BULLISH" | "BEARISH" | "NEUTRAL";
+  strength: number; // 0-100
+  emaTrend: "ABOVE_ALL" | "BELOW_ALL" | "MIXED";
+  atrNormalized: number; // ATR as % of price
+  volumeTrend: "INCREASING" | "DECREASING" | "STABLE";
+  supportLevels: number[];
+  resistanceLevels: number[];
+  nearestSupport: number | null;
+  nearestResistance: number | null;
+  rsi: number;
+  macd: {
+    value: number;
+    signal: number;
+    histogram: number;
+    trend: "BULLISH" | "BEARISH" | "NEUTRAL";
+  };
+  volatility: "LOW" | "MEDIUM" | "HIGH";
+  sessionBias: "STRONG_BUY" | "MODERATE_BUY" | "NEUTRAL" | "MODERATE_SELL" | "STRONG_SELL";
+}
+
+export interface MTFConfluenceInfo {
+  m15: TimeframeIndicators;
+  h1: TimeframeIndicators;
+  h4: TimeframeIndicators;
+  d1: TimeframeIndicators;
+  w1: TimeframeIndicators;
+  
+  alignmentScore: number; // 0-100
+  alignmentStatus: "STRONG_BULLISH_CONFLUENCE" | "MODERATE_BULLISH_CONFLUENCE" | "NEUTRAL" | "MODERATE_BEARISH_CONFLUENCE" | "STRONG_BEARISH_CONFLUENCE";
+  
+  trendAlignment: {
+    bullishCount: number;
+    bearishCount: number;
+    neutralCount: number;
+    dominantTrend: "BULLISH" | "BEARISH" | "NEUTRAL";
+  };
+  
+  riskAssessment: {
+    overallRisk: "LOW" | "MEDIUM" | "HIGH";
+    volatilityRisk: "LOW" | "MEDIUM" | "HIGH";
+    trendRisk: "LOW" | "MEDIUM" | "HIGH";
+  };
+  
+  recommendations: {
+    primaryAction: "STRONG_BUY" | "BUY" | "WAIT" | "SELL" | "STRONG_SELL";
+    confidence: number;
+    reasoning: string;
+    riskLevel: number; // 1-10
+  };
+  
+  keyLevels: {
+    h4Support: number[];
+    h4Resistance: number[];
+    d1Support: number[];
+    d1Resistance: number[];
+    w1Support: number[];
+    w1Resistance: number[];
+  };
+  
+  divergenceAlerts: {
+    timeframe: string;
+    type: "BULLISH_DIVERGENCE" | "BEARISH_DIVERGENCE";
+    strength: number;
+  }[];
+  
+  description: string;
+}
+
 // [แผน 38] Multi-Timeframe Fibonacci Extension & Projection Mesh
 export interface FibExtensionLevel {
   ratio: number; // e.g. 1.272, 1.414, 1.618, 2.0
@@ -788,6 +1010,11 @@ export interface IndicatorData {
   sovereignSingularityAlpha?: SovereignSingularityAlphaInfo;
   classicTrio?: ClassicTrioInfo;
   masterSuite?: MasterIndicatorSuite;
+  // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis
+  advancedVolumeProfile?: AdvancedVolumeProfileInfo;
+  footprintAnalysis?: FootprintAnalysisInfo;
+  // [แผน 54] Higher Timeframe Confluence Analysis
+  mtfConfluence?: MTFConfluenceInfo;
 }
 
 export interface NewsItem {
@@ -1049,6 +1276,39 @@ export interface AnalysisResult {
     orderFlowVelocity?: OrderFlowVelocityInfo;
     breakevenLadder?: BreakevenLadderInfo;
     liquidityVoid?: LiquidityVoidInfo;
+    // Enhanced TP/SL Information
+    srBasedTPSL?: {
+      slSource: string;
+      tp1Source: string;
+      tp2Source: string;
+      slRationale: string;
+      tp1Rationale: string;
+      tp2Rationale: string;
+    };
+    multiScenarioPlanning?: {
+      scenarios: TradeScenario[];
+      recommendedScenario: string;
+      analysis: string;
+    };
+    breakoutConfirmation?: {
+      isBreakoutConfirmed: boolean;
+      breakoutLevel: number;
+      requiresConfirmation: boolean;
+      confidence: string;
+      recommendation: string;
+    };
+    mtfValidation?: {
+      isValid: boolean;
+      confidence: string;
+      mtfAlignment: string;
+      recommendation: string;
+      riskAdjustment: number;
+    };
+    dynamicRiskReward?: {
+      adjustedRR: string;
+      positionSizeMultiplier: number;
+      recommendation: string;
+    };
     fibonacciExtension?: FibonacciExtensionInfo;
     footprintAbsorption?: FootprintAbsorptionInfo;
     mtfStructureMatrix?: MTFStructureMatrixInfo;

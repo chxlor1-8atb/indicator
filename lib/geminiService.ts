@@ -203,6 +203,12 @@ import {
   calculateStandardPivotPoints,
   calculateClusteredSupportResistance,
   calculateAutoFibonacciRetracement,
+  calculateSRBasedTPSL,
+  calculateMultiScenarioTradePlanning,
+  createVisualLevelReference,
+  checkBreakoutConfirmation,
+  validateBreakoutWithMTF,
+  calculateDynamicRiskReward,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -878,7 +884,7 @@ export function generateRuleBasedAnalysis(
   // [แผน 15] Psychological Round Number & Key Level Gravity Engine
   const roundLevel = indicators.roundLevel || calculateRoundNumberGravity(currentPrice, symbol, precision);
 
-  // Calculate Trade Setup Levels with Dynamic TP Multiplier, Structural SL & Asset Precision
+  // [แผน 46-51] Enhanced TP/SL Calculation with S/R-Based System
   const effectiveTPMultiplier = regimeInfo.optimalParams.tpMultiplier || optimizedConfig.tpMultiplier;
   const nearestSupport = indicators.supportLevels[0] || Number((currentPrice - currentATR * 1.5).toFixed(precision));
   const nearestResistance = indicators.resistanceLevels[0] || Number((currentPrice + currentATR * 1.5).toFixed(precision));
@@ -891,15 +897,67 @@ export function generateRuleBasedAnalysis(
   let takeProfit1 = Number((currentPrice + currentATR * 1.0).toFixed(precision));
   let takeProfit2 = Number((currentPrice + currentATR * effectiveTPMultiplier).toFixed(precision));
   let riskRewardRatio = `1:${effectiveTPMultiplier.toFixed(1)}`;
+  let slPips = 0;
+  let tp1Pips = 0;
+  let tp2Pips = 0;
   let isInsideDemandZone = false;
   let isInsideSupplyZone = false;
+  
+  // New S/R-Based TP/SL Calculation
+  let srBasedCalc: ReturnType<typeof calculateSRBasedTPSL>;
+  let multiScenarioPlanning: ReturnType<typeof calculateMultiScenarioTradePlanning>;
+  let breakoutConfirmation: ReturnType<typeof checkBreakoutConfirmation>;
+  let mtfValidation: ReturnType<typeof validateBreakoutWithMTF>;
+  let dynamicRiskReward: ReturnType<typeof calculateDynamicRiskReward>;
+
+  // Initialize S/R-based calculation for NO_TRADE case
+  const pivotPointsFallback = indicators.pivotPoints || calculateStandardPivotPoints(candles);
+  srBasedCalc = calculateSRBasedTPSL(
+    currentPrice,
+    "BUY", // default direction for initialization
+    indicators.supportLevels,
+    indicators.resistanceLevels,
+    lastEMA20,
+    lastEMA50,
+    lastEMA200,
+    pivotPointsFallback,
+    currentATR,
+    precision,
+    symbol
+  );
 
   if (signal === "STRONG_BUY" || signal === "BUY") {
     tradeAction = "BUY";
+    
+    // [แผน 46] S/R-Based TP/SL Calculation
+    const pivotPoints = indicators.pivotPoints || calculateStandardPivotPoints(candles);
+    srBasedCalc = calculateSRBasedTPSL(
+      currentPrice,
+      "BUY",
+      indicators.supportLevels,
+      indicators.resistanceLevels,
+      lastEMA20,
+      lastEMA50,
+      lastEMA200,
+      pivotPoints,
+      currentATR,
+      precision,
+      symbol
+    );
+    
     // [แผน 12 & แผน 28] Liquidity Hunt Protection Stop Loss + Realized Volatility Buffer
     structuralSL = calculateStructuralStopLoss(candles, "BUY", currentATR, currentPrice, precision);
     const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
-    stopLoss = Number((structuralSL.stopLoss - slBufferExtra).toFixed(precision));
+    
+    // ใช้ SL ที่เข้มงวดกว่าระหว่าง S/R-based และ structural
+    const structuralSLWithBuffer = Number((structuralSL.stopLoss - slBufferExtra).toFixed(precision));
+    stopLoss = Math.min(srBasedCalc.stopLoss, structuralSLWithBuffer);
+    takeProfit1 = srBasedCalc.takeProfit1;
+    takeProfit2 = srBasedCalc.takeProfit2;
+    slPips = srBasedCalc.slPips;
+    tp1Pips = srBasedCalc.tp1Pips;
+    tp2Pips = srBasedCalc.tp2Pips;
+    riskRewardRatio = srBasedCalc.riskRewardRatio;
 
     // [Sniper Entry Engine: Demand Zone & Volume Trend Integration]
     // 1. Demand Zone Identification (Bullish Order Block & Breakers)
@@ -1017,10 +1075,36 @@ export function generateRuleBasedAnalysis(
     riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, actualRisk)).toFixed(1)}`;
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
+    
+    // [แผน 46] S/R-Based TP/SL Calculation
+    const pivotPoints = indicators.pivotPoints || calculateStandardPivotPoints(candles);
+    srBasedCalc = calculateSRBasedTPSL(
+      currentPrice,
+      "SELL",
+      indicators.supportLevels,
+      indicators.resistanceLevels,
+      lastEMA20,
+      lastEMA50,
+      lastEMA200,
+      pivotPoints,
+      currentATR,
+      precision,
+      symbol
+    );
+    
     // [แผน 12 & แผน 28] Liquidity Hunt Protection Stop Loss + Realized Volatility Buffer
     structuralSL = calculateStructuralStopLoss(candles, "SELL", currentATR, currentPrice, precision);
     const slBufferExtra = realizedVolatility.recommendedBufferMultiplier > 1.0 ? currentATR * (realizedVolatility.recommendedBufferMultiplier - 1.0) * 0.5 : 0;
-    stopLoss = Number((structuralSL.stopLoss + slBufferExtra).toFixed(precision));
+    
+    // ใช้ SL ที่เข้มงวดกว่าระหว่าง S/R-based และ structural
+    const structuralSLWithBuffer = Number((structuralSL.stopLoss + slBufferExtra).toFixed(precision));
+    stopLoss = Math.max(srBasedCalc.stopLoss, structuralSLWithBuffer);
+    takeProfit1 = srBasedCalc.takeProfit1;
+    takeProfit2 = srBasedCalc.takeProfit2;
+    slPips = srBasedCalc.slPips;
+    tp1Pips = srBasedCalc.tp1Pips;
+    tp2Pips = srBasedCalc.tp2Pips;
+    riskRewardRatio = srBasedCalc.riskRewardRatio;
 
     // [Sniper Entry Engine: Supply Zone & Volume Trend Integration]
     // 1. Supply Zone Identification (Bearish Order Block & Breakers)
@@ -1160,9 +1244,10 @@ export function generateRuleBasedAnalysis(
   );
 
   const pipMultiplier = getAssetPipMultiplier(sym);
-  const slPips = Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier);
-  const tp1Pips = Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
-  const tp2Pips = Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);
+  // Recalculate pips with final values (S/R-based should already have them)
+  slPips = slPips > 0 ? slPips : Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier);
+  tp1Pips = tp1Pips > 0 ? tp1Pips : Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
+  tp2Pips = tp2Pips > 0 ? tp2Pips : Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);
 
   // [แผน 18] Dynamic Spread & Slippage Impact Calculator
   const spreadImpact = calculateSpreadImpact(symbol, slPips, tp1Pips, 100, 0.01);
@@ -1503,10 +1588,48 @@ export function generateRuleBasedAnalysis(
     riskRewardRatio = `1:${((pendingPrice - takeProfit2) / Math.max(0.0001, finalRisk)).toFixed(1)}`;
   }
 
-  // Recalculate pips with final invariant levels and asset precision
-  const finalSlPips = Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier);
-  const finalTp1Pips = Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
-  const finalTp2Pips = Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);
+  // [แผน 47] Multi-Scenario Trade Planning
+  const pivotPointsForScenarios = indicators.pivotPoints || calculateStandardPivotPoints(candles);
+  multiScenarioPlanning = calculateMultiScenarioTradePlanning(
+    currentPrice,
+    indicators.supportLevels,
+    indicators.resistanceLevels,
+    lastEMA20,
+    lastEMA50,
+    lastEMA200,
+    lastCandle,
+    pivotPointsForScenarios,
+    currentATR,
+    precision,
+    symbol
+  );
+  
+  // [แผน 49] Breakout Confirmation
+  breakoutConfirmation = checkBreakoutConfirmation(
+    currentPrice,
+    nearestResistance,
+    lastCandle,
+    timeframe,
+    Date.now()
+  );
+  
+  // [แผน 50] MTF Validation
+  mtfValidation = validateBreakoutWithMTF(
+    mtfMatrix,
+    currentPrice,
+    tradeAction
+  );
+  
+  // [แผน 51] Dynamic Risk/Reward
+  const signalStrength = confidence >= 85 ? "STRONG" : confidence >= 70 ? "MODERATE" : "WEAK";
+  const volatility = currentATR > currentPrice * 0.01 ? "HIGH" : currentATR > currentPrice * 0.005 ? "MEDIUM" : "LOW";
+  dynamicRiskReward = calculateDynamicRiskReward(
+    parseFloat(riskRewardRatio.split(":")[1]),
+    masterConfluence.totalScore,
+    signalStrength,
+    mtfValidation,
+    volatility
+  );
 
   return {
     symbol,
@@ -1747,9 +1870,9 @@ export function generateRuleBasedAnalysis(
       stopLoss,
       takeProfit1,
       takeProfit2,
-      slPips: finalSlPips,
-      tp1Pips: finalTp1Pips,
-      tp2Pips: finalTp2Pips,
+      slPips,
+      tp1Pips,
+      tp2Pips,
       riskRewardRatio,
       oteZone,
       structuralSL,
@@ -1769,6 +1892,42 @@ export function generateRuleBasedAnalysis(
       correlationShield,
       fvgMitigation,
       marketStructureShift,
+      // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - TEMPORARILY DISABLED
+      // advancedVolumeProfile: indicators.advancedVolumeProfile,
+      // footprintAnalysis: indicators.footprintAnalysis
+      // Enhanced TP/SL Information
+      srBasedTPSL: {
+        slSource: srBasedCalc.slSource,
+        tp1Source: srBasedCalc.tp1Source,
+        tp2Source: srBasedCalc.tp2Source,
+        slRationale: srBasedCalc.slRationale,
+        tp1Rationale: srBasedCalc.tp1Rationale,
+        tp2Rationale: srBasedCalc.tp2Rationale,
+      },
+      multiScenarioPlanning: {
+        scenarios: multiScenarioPlanning.scenarios,
+        recommendedScenario: multiScenarioPlanning.recommendedScenario,
+        analysis: multiScenarioPlanning.analysis,
+      },
+      breakoutConfirmation: {
+        isBreakoutConfirmed: breakoutConfirmation.isBreakoutConfirmed,
+        breakoutLevel: breakoutConfirmation.breakoutLevel,
+        requiresConfirmation: breakoutConfirmation.requiresConfirmation,
+        confidence: breakoutConfirmation.confidence,
+        recommendation: breakoutConfirmation.recommendation,
+      },
+      mtfValidation: {
+        isValid: mtfValidation.isValid,
+        confidence: mtfValidation.confidence,
+        mtfAlignment: mtfValidation.mtfAlignment,
+        recommendation: mtfValidation.recommendation,
+        riskAdjustment: mtfValidation.riskAdjustment,
+      },
+      dynamicRiskReward: {
+        adjustedRR: dynamicRiskReward.adjustedRR,
+        positionSizeMultiplier: dynamicRiskReward.positionSizeMultiplier,
+        recommendation: dynamicRiskReward.recommendation,
+      },
       premiumDiscount,
       keyLevelTargets,
       orderFlowVelocity,

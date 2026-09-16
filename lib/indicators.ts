@@ -114,6 +114,11 @@ import {
   SREntry,
   AutoFibonacciInfo,
   FiveCorePillarsEvaluation,
+  SRBasedTPSLInfo,
+  TradeScenario,
+  MultiScenarioPlanningInfo,
+  BreakoutConfirmationInfo,
+  EnhancedTPSLInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -8510,6 +8515,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const fibonacciExtension = calculateFibonacciExtension(cleanCandles, defaultDirection, precision);
   const footprintAbsorption = calculateFootprintAbsorption(cleanCandles);
   const mtfStructureMatrix = calculateMTFStructureMatrix(cleanCandles, precision, symbol);
+  
+  // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - TEMPORARILY DISABLED
+  // const advancedVolumeProfile = calculateAdvancedVolumeProfile(cleanCandles, precision, 100);
+  // const footprintAnalysis = calculateFootprintAnalysis(cleanCandles, precision, 50);
 
   // Batch 9: Plans 41, 42, 43, 44, 45
   const liquidityInducement = calculateLiquidityInducement(cleanCandles, precision, symbol);
@@ -8718,6 +8727,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     parabolicSAR,
     aroon,
     vortex,
+    // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - TEMPORARILY DISABLED
+    // advancedVolumeProfile,
+    // footprintAnalysis
     fisher,
     connorsRSI,
     awesomeOsc,
@@ -8764,3 +8776,1249 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     autoFibonacci,
   };
 }
+
+/**
+ * [แผน 46] S/R-Based TP/SL Calculation System
+ * คำนวณ TP/SL โดยใช้แนวต้าน/แนวรับจริงจากกราฟ แทนการใช้ ATR multiplier คงที่
+ * 
+ * @param currentPrice - ราคาปัจจุบัน
+ * @param direction - ทิศทางการเทรด (BUY/SELL)
+ * @param supportLevels - แนวรับที่คำนวณได้จากระบบ
+ * @param resistanceLevels - แนวต้านที่คำนวณได้จากระบบ
+ * @param ema20 - EMA 20 period
+ * @param ema50 - EMA 50 period  
+ * @param ema200 - EMA 200 period
+ * @param pivotPoints - Pivot Points (R1, R2, S1, S2)
+ * @param atrValue - ATR ค่าปัจจุบันสำหรับ fallback
+ * @param precision - จำนวนทศนิยม
+ * @param symbol - สัญลักษณ์สินทรัพย์
+ */
+export function calculateSRBasedTPSL(
+  currentPrice: number,
+  direction: "BUY" | "SELL",
+  supportLevels: number[],
+  resistanceLevels: number[],
+  ema20: number,
+  ema50: number,
+  ema200: number,
+  pivotPoints?: { r1: number; r2: number; s1: number; s2: number },
+  atrValue?: number,
+  precision = 2,
+  symbol = "XAUUSD"
+): {
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  slPips: number;
+  tp1Pips: number;
+  tp2Pips: number;
+  riskRewardRatio: string;
+  slSource: string;
+  tp1Source: string;
+  tp2Source: string;
+  slRationale: string;
+  tp1Rationale: string;
+  tp2Rationale: string;
+} {
+  const sym = symbol.toUpperCase();
+  const isForex = precision >= 4;
+  const isJPY = sym.includes("JPY");
+  const isGold = sym.includes("XAU") || sym === "GOLD";
+  
+  // Pip multiplier สำหรับการคำนวณ pips
+  const pipMultiplier = isForex ? 10000 : (isJPY || isGold ? 100 : 1);
+  
+  // Fallback ATR ถ้าไม่ได้รับค่ามา
+  const safeATR = atrValue || currentPrice * 0.005;
+  
+  let stopLoss = currentPrice;
+  let takeProfit1 = currentPrice;
+  let takeProfit2 = currentPrice;
+  let slSource = "ATR";
+  let tp1Source = "ATR";
+  let tp2Source = "ATR";
+  let slRationale = "";
+  let tp1Rationale = "";
+  let tp2Rationale = "";
+  
+  if (direction === "BUY") {
+    // === BUY Position ===
+    
+    // 1. Stop Loss Calculation - หาแนวรับที่ใกล้ที่สุดด้านล่าง
+    const nearestSupport = supportLevels
+      .filter(s => s < currentPrice)
+      .sort((a, b) => b - a)[0]; // แนวรับที่ใกล้ที่สุดด้านล่าง
+    
+    const emaSupport = Math.min(ema20, ema50);
+    const pivotSupport = pivotPoints?.s1 || (currentPrice - safeATR);
+    
+    // เลือก SL จากแหล่งที่ใกล้ที่สุดแต่ปลอดภัย
+    const slCandidates = [
+      { value: nearestSupport, source: "Support Level", rationale: "แนวรับสำคัญจากราฟ" },
+      { value: emaSupport, source: "EMA Support", rationale: "เส้นค่าเฉลี่ยระยะสั้น" },
+      { value: pivotSupport, source: "Pivot S1", rationale: "Pivot Point Support 1" },
+      { value: currentPrice - safeATR * 1.2, source: "ATR", rationale: "ATR-based SL (1.2x)" }
+    ].filter(c => c.value > 0 && c.value < currentPrice);
+    
+    // เลือก SL ที่ใกล้ที่สุดแต่ไม่ใกล้เกินไป (อย่างน้อย 0.5 ATR)
+    const safeSLCandidates = slCandidates.filter(c => (currentPrice - c.value) >= safeATR * 0.5);
+    const slChoice = safeSLCandidates.length > 0 
+      ? safeSLCandidates.sort((a, b) => (currentPrice - a.value) - (currentPrice - b.value))[0]
+      : slCandidates.sort((a, b) => (currentPrice - a.value) - (currentPrice - b.value))[0];
+    
+    if (slChoice) {
+      stopLoss = Number(slChoice.value.toFixed(precision));
+      slSource = slChoice.source;
+      slRationale = slChoice.rationale;
+    } else {
+      stopLoss = Number((currentPrice - safeATR * 1.2).toFixed(precision));
+      slSource = "ATR";
+      slRationale = "ATR-based SL (1.2x) - fallback";
+    }
+    
+    // 2. Take Profit 1 Calculation - หาแนวต้านที่ใกล้ที่สุดด้านบน
+    const nearestResistance = resistanceLevels
+      .filter(r => r > currentPrice)
+      .sort((a, b) => a - b)[0]; // แนวต้านที่ใกล้ที่สุดด้านบน
+    
+    const emaResistance = ema200 > currentPrice ? ema200 : (currentPrice + safeATR * 1.5);
+    const pivotResistance = pivotPoints?.r1 || (currentPrice + safeATR);
+    
+    // เลือก TP1 จากแหล่งที่ใกล้ที่สุดด้านบน
+    const tp1Candidates = [
+      { value: nearestResistance, source: "Resistance Level", rationale: "แนวต้านสำคัญจากราฟ" },
+      { value: emaResistance, source: "EMA 200", rationale: "เส้นค่าเฉลี่ยระยะยาว" },
+      { value: pivotResistance, source: "Pivot R1", rationale: "Pivot Point Resistance 1" },
+      { value: currentPrice + safeATR * 1.0, source: "ATR", rationale: "ATR-based TP (1.0x)" }
+    ].filter(c => c.value > currentPrice);
+    
+    const tp1Choice = tp1Candidates.length > 0 
+      ? tp1Candidates.sort((a, b) => (a.value - currentPrice) - (b.value - currentPrice))[0]
+      : { value: currentPrice + safeATR * 1.0, source: "ATR", rationale: "ATR-based TP (1.0x)" };
+    
+    if (tp1Choice) {
+      takeProfit1 = Number(tp1Choice.value.toFixed(precision));
+      tp1Source = tp1Choice.source;
+      tp1Rationale = tp1Choice.rationale;
+    }
+    
+    // 3. Take Profit 2 Calculation - แนวต้านถัดไป
+    const nextResistance = resistanceLevels
+      .filter(r => r > currentPrice && r > takeProfit1)
+      .sort((a, b) => a - b)[0];
+    
+    const ema200TP2 = ema200 > takeProfit1 ? ema200 : (currentPrice + safeATR * 2.5);
+    const pivotR2 = pivotPoints?.r2 || (currentPrice + safeATR * 2.0);
+    
+    const tp2Candidates = [
+      { value: nextResistance, source: "Next Resistance", rationale: "แนวต้านถัดไปจากราฟ" },
+      { value: ema200TP2, source: "EMA 200 Extended", rationale: "เส้นค่าเฉลี่ยระยะยาว" },
+      { value: pivotR2, source: "Pivot R2", rationale: "Pivot Point Resistance 2" },
+      { value: currentPrice + safeATR * 2.5, source: "ATR", rationale: "ATR-based TP2 (2.5x)" }
+    ].filter(c => c.value > takeProfit1);
+    
+    const tp2Choice = tp2Candidates.length > 0 
+      ? tp2Candidates.sort((a, b) => (a.value - currentPrice) - (b.value - currentPrice))[0]
+      : { value: currentPrice + safeATR * 2.5, source: "ATR", rationale: "ATR-based TP2 (2.5x)" };
+    
+    if (tp2Choice) {
+      takeProfit2 = Number(tp2Choice.value.toFixed(precision));
+      tp2Source = tp2Choice.source;
+      tp2Rationale = tp2Choice.rationale;
+    }
+    
+  } else {
+    // === SELL Position ===
+    
+    // 1. Stop Loss Calculation - หาแนวต้านที่ใกล้ที่สุดด้านบน
+    const nearestResistance = resistanceLevels
+      .filter(r => r > currentPrice)
+      .sort((a, b) => a - b)[0]; // แนวต้านที่ใกล้ที่สุดด้านบน
+    
+    const emaResistance = Math.max(ema20, ema50);
+    const pivotResistance = pivotPoints?.r1 || (currentPrice + safeATR);
+    
+    const slCandidates = [
+      { value: nearestResistance, source: "Resistance Level", rationale: "แนวต้านสำคัญจากราฟ" },
+      { value: emaResistance, source: "EMA Resistance", rationale: "เส้นค่าเฉลี่ยระยะสั้น" },
+      { value: pivotResistance, source: "Pivot R1", rationale: "Pivot Point Resistance 1" },
+      { value: currentPrice + safeATR * 1.2, source: "ATR", rationale: "ATR-based SL (1.2x)" }
+    ].filter(c => c.value > currentPrice);
+    
+    const safeSLCandidates = slCandidates.filter(c => (c.value - currentPrice) >= safeATR * 0.5);
+    const slChoice = safeSLCandidates.length > 0 
+      ? safeSLCandidates.sort((a, b) => (a.value - currentPrice) - (b.value - currentPrice))[0]
+      : slCandidates.sort((a, b) => (a.value - currentPrice) - (b.value - currentPrice))[0];
+    
+    if (slChoice) {
+      stopLoss = Number(slChoice.value.toFixed(precision));
+      slSource = slChoice.source;
+      slRationale = slChoice.rationale;
+    } else {
+      stopLoss = Number((currentPrice + safeATR * 1.2).toFixed(precision));
+      slSource = "ATR";
+      slRationale = "ATR-based SL (1.2x) - fallback";
+    }
+    
+    // 2. Take Profit 1 Calculation - หาแนวรับที่ใกล้ที่สุดด้านล่าง
+    const nearestSupport = supportLevels
+      .filter(s => s < currentPrice)
+      .sort((a, b) => b - a)[0]; // แนวรับที่ใกล้ที่สุดด้านล่าง
+    
+    const emaSupport = ema200 < currentPrice ? ema200 : (currentPrice - safeATR * 1.5);
+    const pivotSupport = pivotPoints?.s1 || (currentPrice - safeATR);
+    
+    const tp1Candidates = [
+      { value: nearestSupport, source: "Support Level", rationale: "แนวรับสำคัญจากราฟ" },
+      { value: emaSupport, source: "EMA 200", rationale: "เส้นค่าเฉลี่ยระยะยาว" },
+      { value: pivotSupport, source: "Pivot S1", rationale: "Pivot Point Support 1" },
+      { value: currentPrice - safeATR * 1.0, source: "ATR", rationale: "ATR-based TP (1.0x)" }
+    ].filter(c => c.value < currentPrice);
+    
+    const tp1Choice = tp1Candidates.length > 0 
+      ? tp1Candidates.sort((a, b) => (currentPrice - a.value) - (currentPrice - b.value))[0]
+      : { value: currentPrice - safeATR * 1.0, source: "ATR", rationale: "ATR-based TP (1.0x)" };
+    
+    if (tp1Choice) {
+      takeProfit1 = Number(tp1Choice.value.toFixed(precision));
+      tp1Source = tp1Choice.source;
+      tp1Rationale = tp1Choice.rationale;
+    }
+    
+    // 3. Take Profit 2 Calculation - แนวรับถัดไป
+    const nextSupport = supportLevels
+      .filter(s => s < currentPrice && s < takeProfit1)
+      .sort((a, b) => b - a)[0];
+    
+    const ema200TP2 = ema200 < takeProfit1 ? ema200 : (currentPrice - safeATR * 2.5);
+    const pivotS2 = pivotPoints?.s2 || (currentPrice - safeATR * 2.0);
+    
+    const tp2Candidates = [
+      { value: nextSupport, source: "Next Support", rationale: "แนวรับถัดไปจากราฟ" },
+      { value: ema200TP2, source: "EMA 200 Extended", rationale: "เส้นค่าเฉลี่ยระยะยาว" },
+      { value: pivotS2, source: "Pivot S2", rationale: "Pivot Point Support 2" },
+      { value: currentPrice - safeATR * 2.5, source: "ATR", rationale: "ATR-based TP2 (2.5x)" }
+    ].filter(c => c.value < takeProfit1);
+    
+    const tp2Choice = tp2Candidates.length > 0 
+      ? tp2Candidates.sort((a, b) => (currentPrice - a.value) - (currentPrice - b.value))[0]
+      : { value: currentPrice - safeATR * 2.5, source: "ATR", rationale: "ATR-based TP2 (2.5x)" };
+    
+    if (tp2Choice) {
+      takeProfit2 = Number(tp2Choice.value.toFixed(precision));
+      tp2Source = tp2Choice.source;
+      tp2Rationale = tp2Choice.rationale;
+    }
+  }
+  
+  // คำนวณ pips และ risk/reward ratio
+  const risk = Math.abs(currentPrice - stopLoss);
+  const reward1 = Math.abs(takeProfit1 - currentPrice);
+  const reward2 = Math.abs(takeProfit2 - currentPrice);
+  
+  const slPips = Math.max(1, Math.round(risk * pipMultiplier));
+  const tp1Pips = Math.round(reward1 * pipMultiplier);
+  const tp2Pips = Math.round(reward2 * pipMultiplier);
+  
+  const rr1 = reward1 / Math.max(risk, 0.0001);
+  const rr2 = reward2 / Math.max(risk, 0.0001);
+  const riskRewardRatio = `1:${Math.min(rr1, rr2).toFixed(1)}`;
+  
+  return {
+    stopLoss,
+    takeProfit1,
+    takeProfit2,
+    slPips,
+    tp1Pips,
+    tp2Pips,
+    riskRewardRatio,
+    slSource,
+    tp1Source,
+    tp2Source,
+    slRationale,
+    tp1Rationale,
+    tp2Rationale
+  };
+}
+
+/**
+ * [แผน 47] Multi-Scenario Trade Planning System
+ * วิเคราะห์หลายทางเลือกการเทรด (scenarios) เหมือนการวิเคราะห์กราฟของผู้เชี่ยวชาญ
+ * 
+ * @param currentPrice - ราคาปัจจุบัน
+ * @param supportLevels - แนวรับที่คำนวณได้
+ * @param resistanceLevels - แนวต้านที่คำนวณได้
+ * @param ema20 - EMA 20
+ * @param ema50 - EMA 50
+ * @param ema200 - EMA 200
+ * @param lastCandle - แท่งเทียนล่าสุด
+ * @param pivotPoints - Pivot Points
+ * @param atrValue - ATR ค่าปัจจุบัน
+ * @param precision - จำนวนทศนิยม
+ * @param symbol - สัญลักษณ์สินทรัพย์
+ */
+export function calculateMultiScenarioTradePlanning(
+  currentPrice: number,
+  supportLevels: number[],
+  resistanceLevels: number[],
+  ema20: number,
+  ema50: number,
+  ema200: number,
+  lastCandle: { high: number; low: number; close: number; open: number },
+  pivotPoints?: { r1: number; r2: number; s1: number; s2: number },
+  atrValue?: number,
+  precision = 2,
+  symbol = "XAUUSD"
+): {
+  scenarios: Array<{
+    name: string;
+    description: string;
+    entryCondition: string;
+    entryPrice: number;
+    stopLoss: number;
+    takeProfit1: number;
+    takeProfit2: number;
+    riskRewardRatio: string;
+    confidence: string;
+    suitableFor: string;
+  }>;
+  recommendedScenario: string;
+  analysis: string;
+} {
+  const sym = symbol.toUpperCase();
+  const safeATR = atrValue || currentPrice * 0.005;
+  
+  // ตรวจสอบสถานะตลาด
+  const isAboveEMA200 = currentPrice > ema200;
+  const isAboveEMA50 = currentPrice > ema50;
+  const isAboveEMA20 = currentPrice > ema20;
+  const isBullishTrend = isAboveEMA200 && isAboveEMA50 && isAboveEMA20;
+  const isBearishTrend = !isAboveEMA200 && !isAboveEMA50 && !isAboveEMA20;
+  
+  // ตรวจสอบ breakout
+  const nearestResistance = resistanceLevels.filter(r => r > currentPrice).sort((a, b) => a - b)[0];
+  const nearestSupport = supportLevels.filter(s => s < currentPrice).sort((a, b) => b - a)[0];
+  const breakoutLevel = nearestResistance || (currentPrice + safeATR * 1.5);
+  const supportLevel = nearestSupport || (currentPrice - safeATR * 1.5);
+  
+  // ตรวจสอบว่าแท่งล่าสุดปิดเหนือ/ใต้แนวต้าน/แนวรับหรือไม่
+  const isBreakoutConfirmed = lastCandle.close > breakoutLevel && lastCandle.close > lastCandle.open;
+  const isSupportBroken = lastCandle.close < supportLevel && lastCandle.close < lastCandle.open;
+  const isRejectionHigh = lastCandle.high > breakoutLevel && lastCandle.close < breakoutLevel;
+  const isRejectionLow = lastCandle.low < supportLevel && lastCandle.close > supportLevel;
+  
+  const scenarios = [];
+  
+  // Scenario 1: ขาขึ้นแบบยืนยัน (Confirmed Breakout)
+  if (isBullishTrend || isAboveEMA50) {
+    const entryPrice = currentPrice;
+    const stopLoss = supportLevel * 0.998; // SL ใต้แนวรับ
+    const tp1 = breakoutLevel + safeATR * 0.5;
+    const tp2 = ema200 + safeATR * 1.0;
+    
+    const risk = Math.abs(entryPrice - stopLoss);
+    const reward1 = Math.abs(tp1 - entryPrice);
+    const reward2 = Math.abs(tp2 - entryPrice);
+    const rr1 = reward1 / Math.max(risk, 0.0001);
+    const rr2 = reward2 / Math.max(risk, 0.0001);
+    
+    scenarios.push({
+      name: "ขาขึ้นแบบยืนยัน",
+      description: "รอแท่งปิดเหนือ 4,310–4,315 พร้อมแรงซื้อต่อเนื่อง",
+      entryCondition: isBreakoutConfirmed ? "✅ แท่งปิดเหนือแนวต้าน" : "⏳ รอแท่งปิดเหนือแนวต้าน",
+      entryPrice: Number(entryPrice.toFixed(precision)),
+      stopLoss: Number(stopLoss.toFixed(precision)),
+      takeProfit1: Number(tp1.toFixed(precision)),
+      takeProfit2: Number(tp2.toFixed(precision)),
+      riskRewardRatio: `1:${Math.min(rr1, rr2).toFixed(1)}`,
+      confidence: isBreakoutConfirmed ? "สูง" : "ปานกลางต่ำ",
+      suitableFor: "ผู้ที่รอ breakout"
+    });
+  }
+  
+  // Scenario 2: ขาขึ้นแบบย่อ (Pullback Entry)
+  if (isBullishTrend || isAboveEMA200) {
+    const entryPrice = Math.min(ema20, supportLevel);
+    const stopLoss = entryPrice - safeATR * 0.8;
+    const tp1 = breakoutLevel;
+    const tp2 = ema200 + safeATR * 0.5;
+    
+    const risk = Math.abs(entryPrice - stopLoss);
+    const reward1 = Math.abs(tp1 - entryPrice);
+    const reward2 = Math.abs(tp2 - entryPrice);
+    const rr1 = reward1 / Math.max(risk, 0.0001);
+    const rr2 = reward2 / Math.max(risk, 0.0001);
+    
+    scenarios.push({
+      name: "ขาขึ้นแบบย่อ",
+      description: "ยืน 4,303–4,300 แล้วเกิดแท่งกลับตัว",
+      entryCondition: currentPrice <= supportLevel * 1.002 ? "✅ ราคาอยู่ในโซนดี" : "⏳ รอราคาย่อตัว",
+      entryPrice: Number(entryPrice.toFixed(precision)),
+      stopLoss: Number(stopLoss.toFixed(precision)),
+      takeProfit1: Number(tp1.toFixed(precision)),
+      takeProfit2: Number(tp2.toFixed(precision)),
+      riskRewardRatio: `1:${Math.min(rr1, rr2).toFixed(1)}`,
+      confidence: "ปานกลาง",
+      suitableFor: "ผู้ที่รอ pullback"
+    });
+  }
+  
+  // Scenario 3: ขาลงจากการถูกปฏิเสธ (Rejection Entry)
+  if (isRejectionHigh || (currentPrice > breakoutLevel && lastCandle.close < lastCandle.open)) {
+    const entryPrice = currentPrice;
+    const stopLoss = breakoutLevel + safeATR * 0.3;
+    const tp1 = supportLevel;
+    const tp2 = supportLevel - safeATR * 1.0;
+    
+    const risk = Math.abs(stopLoss - entryPrice);
+    const reward1 = Math.abs(entryPrice - tp1);
+    const reward2 = Math.abs(entryPrice - tp2);
+    const rr1 = reward1 / Math.max(risk, 0.0001);
+    const rr2 = reward2 / Math.max(risk, 0.0001);
+    
+    scenarios.push({
+      name: "ขาลงจากการถูกปฏิเสธ",
+      description: "เกิด rejection แถว 4,310–4,325",
+      entryCondition: isRejectionHigh ? "✅ เกิด rejection ชัดเจน" : "⏳ รอสัญญาณ rejection",
+      entryPrice: Number(entryPrice.toFixed(precision)),
+      stopLoss: Number(stopLoss.toFixed(precision)),
+      takeProfit1: Number(tp1.toFixed(precision)),
+      takeProfit2: Number(tp2.toFixed(precision)),
+      riskRewardRatio: `1:${Math.min(rr1, rr2).toFixed(1)}`,
+      confidence: "ปานกลาง",
+      suitableFor: "ผู้ที่เน้น mean reversion"
+    });
+  }
+  
+  // Scenario 4: Bearish scenarios (ถ้า trend ขาลง)
+  if (isBearishTrend || !isAboveEMA200) {
+    const entryPrice = currentPrice;
+    const stopLoss = ema20 + safeATR * 0.5;
+    const tp1 = supportLevel;
+    const tp2 = supportLevel - safeATR * 1.5;
+    
+    const risk = Math.abs(stopLoss - entryPrice);
+    const reward1 = Math.abs(entryPrice - tp1);
+    const reward2 = Math.abs(entryPrice - tp2);
+    const rr1 = reward1 / Math.max(risk, 0.0001);
+    const rr2 = reward2 / Math.max(risk, 0.0001);
+    
+    scenarios.push({
+      name: "ขาลงแบบยืนยัน",
+      description: "ราคาหลุดแนวรับสำคัญ",
+      entryCondition: isSupportBroken ? "✅ หลุดแนวรับแล้ว" : "⏳ รอหลุดแนวรับ",
+      entryPrice: Number(entryPrice.toFixed(precision)),
+      stopLoss: Number(stopLoss.toFixed(precision)),
+      takeProfit1: Number(tp1.toFixed(precision)),
+      takeProfit2: Number(tp2.toFixed(precision)),
+      riskRewardRatio: `1:${Math.min(rr1, rr2).toFixed(1)}`,
+      confidence: isSupportBroken ? "สูง" : "ปานกลาง",
+      suitableFor: "ผู้ที่เชื่อมั่นในขาลง"
+    });
+  }
+  
+  // หา scenario ที่เหมาะสมที่สุด
+  let recommendedScenario = "รอสัญญาณเพิ่มเติม";
+  let analysis = "";
+  
+  if (isBreakoutConfirmed && isBullishTrend) {
+    recommendedScenario = "ขาขึ้นแบบยืนยัน";
+    analysis = "แท่งปิดเหนือแนวต้าน + trend ขาขึ้น = breakout ยืนยัน เข้า BUY ได้";
+  } else if (isRejectionHigh && !isBullishTrend) {
+    recommendedScenario = "ขาลงจากการถูกปฏิเสธ";
+    analysis = "เกิด rejection ที่แนวต้าน + trend ไม่ชัดเจน = เข้า SELL ดักสวนได้";
+  } else if (currentPrice <= supportLevel * 1.002 && isBullishTrend) {
+    recommendedScenario = "ขาขึ้นแบบย่อ";
+    analysis = "ราคาย่อตัวมาโซนดี + trend ขาขึ้น = จุดเข้า BUY ดี";
+  } else {
+    analysis = "โซน 4,303–4,315 คือพื้นที่ตัดสินใจ ไม่ใช่จุดที่ได้เปรียบชัดเจน รอสัญญาณเพิ่มเติม";
+  }
+  
+  return {
+    scenarios,
+    recommendedScenario,
+    analysis
+  };
+}
+
+/**
+ * [แผน 48] Visual Level Reference System
+ * สร้างข้อมูลอ้างอิงแบบ visual สำหรับ TP/SL เพื่อแสดงว่าใช้แนวใดจากกราฟ
+ * 
+ * @param srBasedTPSL - ผลลัพธ์จาก calculateSRBasedTPSL
+ * @param currentPrice - ราคาปัจจุบัน
+ * @param symbol - สัญลักษณ์สินทรัพย์
+ * @param precision - จำนวนทศนิยม
+ */
+export function createVisualLevelReference(
+  srBasedTPSL: ReturnType<typeof calculateSRBasedTPSL>,
+  currentPrice: number,
+  symbol = "XAUUSD",
+  precision = 2
+): {
+  slLevel: string;
+  tp1Level: string;
+  tp2Level: string;
+  distanceToSL: string;
+  distanceToTP1: string;
+  distanceToTP2: string;
+} {
+  const sym = symbol.toUpperCase();
+  const isForex = precision >= 4;
+  const isJPY = sym.includes("JPY");
+  const isGold = sym.includes("XAU") || sym === "GOLD";
+  
+  const pipMultiplier = isForex ? 10000 : (isJPY || isGold ? 100 : 1);
+  
+  const slDistance = Math.abs(currentPrice - srBasedTPSL.stopLoss);
+  const tp1Distance = Math.abs(srBasedTPSL.takeProfit1 - currentPrice);
+  const tp2Distance = Math.abs(srBasedTPSL.takeProfit2 - currentPrice);
+  
+  const slPips = Math.round(slDistance * pipMultiplier);
+  const tp1Pips = Math.round(tp1Distance * pipMultiplier);
+  const tp2Pips = Math.round(tp2Distance * pipMultiplier);
+  
+  // สร้างข้อความแสดงแหล่งที่มาของแต่ละระดับ
+  const slLevel = `${srBasedTPSL.slSource} @ ${srBasedTPSL.stopLoss.toFixed(precision)}`;
+  const tp1Level = `${srBasedTPSL.tp1Source} @ ${srBasedTPSL.takeProfit1.toFixed(precision)}`;
+  const tp2Level = `${srBasedTPSL.tp2Source} @ ${srBasedTPSL.takeProfit2.toFixed(precision)}`;
+  
+  const distanceToSL = `${slPips} pips (${srBasedTPSL.slRationale})`;
+  const distanceToTP1 = `${tp1Pips} pips (${srBasedTPSL.tp1Rationale})`;
+  const distanceToTP2 = `${tp2Pips} pips (${srBasedTPSL.tp2Rationale})`;
+  
+  return {
+    slLevel,
+    tp1Level,
+    tp2Level,
+    distanceToSL,
+    distanceToTP1,
+    distanceToTP2
+  };
+}
+
+/**
+ * [แผน 49] Breakout Confirmation System
+ * ตรวจสอบว่า breakout ได้รับการยืนยันหรือไม่โดยรอ candle close
+ * 
+ * @param currentPrice - ราคาปัจจุบัน
+ * @param breakoutLevel - ระดับที่ต้องการ breakout
+ * @param lastCandle - แท่งเทียนล่าสุด
+ * @param timeframe - timeframe
+ * @param currentTime - เวลาปัจจุบัน
+ */
+export function checkBreakoutConfirmation(
+  currentPrice: number,
+  breakoutLevel: number,
+  lastCandle: { high: number; low: number; close: number; open: number; time: number },
+  timeframe: string,
+  currentTime?: number
+): {
+  isBreakoutConfirmed: boolean;
+  breakoutLevel: number;
+  currentPrice: number;
+  candleClose: number;
+  timeUntilNextCandle: number;
+  requiresConfirmation: boolean;
+  confidence: string;
+  recommendation: string;
+} {
+  const isAboveBreakout = currentPrice > breakoutLevel;
+  const candleClosedAbove = lastCandle.close > breakoutLevel;
+  const candleClosedBelow = lastCandle.close < breakoutLevel;
+  const isBullishCandle = lastCandle.close > lastCandle.open;
+  
+  // คำนวณเวลาจนถึงแท่งเทียนถัดไป
+  const timeframeMinutes = {
+    "1m": 1,
+    "5m": 5,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
+    "4h": 240,
+    "1D": 1440
+  }[timeframe] || 60;
+  
+  const lastCandleTime = lastCandle.time * 1000; // Convert to milliseconds
+  const currentTimestamp = currentTime || Date.now();
+  const timeSinceCandle = currentTimestamp - lastCandleTime;
+  const timeUntilNextCandle = Math.max(0, (timeframeMinutes * 60 * 1000) - timeSinceCandle);
+  
+  let isBreakoutConfirmed = false;
+  let requiresConfirmation = true;
+  let confidence = "ต่ำ";
+  let recommendation = "";
+  
+  if (candleClosedAbove && isBullishCandle) {
+    isBreakoutConfirmed = true;
+    requiresConfirmation = false;
+    confidence = "สูง";
+    recommendation = "✅ Breakout ยืนยันแล้ว แท่งปิดเหนือแนวต้านพร้อมแท่งเขียว";
+  } else if (candleClosedAbove && !isBullishCandle) {
+    isBreakoutConfirmed = true;
+    requiresConfirmation = false;
+    confidence = "ปานกลาง";
+    recommendation = "⚠️ Breakout ยืนยันแต่แท่งปิดเป็นแดง รอสัญญาณเพิ่มเติม";
+  } else if (isAboveBreakout && !candleClosedAbove) {
+    isBreakoutConfirmed = false;
+    requiresConfirmation = true;
+    confidence = "ปานกลางต่ำ";
+    recommendation = `⏳ รอแท่งปิดเหนือ ${breakoutLevel.toFixed(2)} เพื่อยืนยัน breakout (${Math.round(timeUntilNextCandle / 1000)} วินาที)`;
+  } else if (candleClosedBelow) {
+    isBreakoutConfirmed = false;
+    requiresConfirmation = false;
+    confidence = "ต่ำมาก";
+    recommendation = "❌ Breakout ล้มเหลว แท่งปิดต่ำกว่าแนวต้าน เป็น fakeout";
+  } else {
+    confidence = "ต่ำ";
+    recommendation = "⏳ ราคายังไม่ถึงระดับ breakout";
+  }
+  
+  return {
+    isBreakoutConfirmed,
+    breakoutLevel,
+    currentPrice,
+    candleClose: lastCandle.close,
+    timeUntilNextCandle: Math.round(timeUntilNextCandle / 1000),
+    requiresConfirmation,
+    confidence,
+    recommendation
+  };
+}
+
+/**
+ * [แผน 50] Enhanced MTF Trend Filter for Breakout Validation
+ * ตรวจสอบ trend บนหลาย timeframe เพื่อยืนยันความแข็งแรงของ breakout
+ * 
+ * @param mtfMatrix - Multi-timeframe matrix จากระบบ
+ * @param currentPrice - ราคาปัจจุบัน
+ * @param breakoutDirection - ทิศทางของ breakout (BUY/SELL)
+ */
+export function validateBreakoutWithMTF(
+  mtfMatrix: { m15: string; h1: string; h4: string; d1: string; alignmentScore?: number },
+  currentPrice: number,
+  breakoutDirection: "BUY" | "SELL"
+): {
+  isValid: boolean;
+  confidence: string;
+  mtfAlignment: string;
+  recommendation: string;
+  riskAdjustment: number; // 0.5 - 1.5 multiplier for position size
+} {
+  const { m15, h1, h4, d1, alignmentScore = 0 } = mtfMatrix;
+  
+  // ตรวจสอบ alignment ของทุก timeframe
+  const allBullish = m15 === "BULLISH" && h1 === "BULLISH" && h4 === "BULLISH" && d1 === "BULLISH";
+  const allBearish = m15 === "BEARISH" && h1 === "BEARISH" && h4 === "BEARISH" && d1 === "BEARISH";
+  const mostlyBullish = [m15, h1, h4, d1].filter(t => t === "BULLISH").length >= 3;
+  const mostlyBearish = [m15, h1, h4, d1].filter(t => t === "BEARISH").length >= 3;
+  
+  let isValid = false;
+  let confidence = "ต่ำ";
+  let mtfAlignment = "";
+  let recommendation = "";
+  let riskAdjustment = 1.0;
+  
+  if (breakoutDirection === "BUY") {
+    if (allBullish) {
+      isValid = true;
+      confidence = "สูงมาก";
+      mtfAlignment = "ทุก timeframe สอดคล้องขาขึ้น";
+      recommendation = "✅ MTF perfect alignment เข้า BUY ได้เต็มที่";
+      riskAdjustment = 1.5;
+    } else if (mostlyBullish && h4 === "BULLISH" && d1 === "BULLISH") {
+      isValid = true;
+      confidence = "สูง";
+      mtfAlignment = "HTF (H4/D1) ขาขึ้น + LTF ส่วนใหญ่ขาขึ้น";
+      recommendation = "✅ HTF trend แข็งแกร่ง เข้า BUY ได้";
+      riskAdjustment = 1.2;
+    } else if (h4 === "BULLISH" && d1 === "BULLISH") {
+      isValid = true;
+      confidence = "ปานกลาง";
+      mtfAlignment = "HTF (H4/D1) ขาขึ้น แต่ LTF ผสม";
+      recommendation = "⚠️ HTF สนับสนุน แต่ระวัง LTF ผันผวน";
+      riskAdjustment = 1.0;
+    } else if (alignmentScore >= 40) {
+      isValid = true;
+      confidence = "ปานกลางต่ำ";
+      mtfAlignment = "MTF score บวกแต่ไม่ strong";
+      recommendation = "⚠️ MTF ไม่ strong ลดขนาด position";
+      riskAdjustment = 0.8;
+    } else {
+      isValid = false;
+      confidence = "ต่ำ";
+      mtfAlignment = "MTF ขัดแย้ง";
+      recommendation = "❌ MTF ไม่สนับสนุน breakout ห้ามเข้า";
+      riskAdjustment = 0.5;
+    }
+  } else {
+    // SELL direction
+    if (allBearish) {
+      isValid = true;
+      confidence = "สูงมาก";
+      mtfAlignment = "ทุก timeframe สอดคล้องขาลง";
+      recommendation = "✅ MTF perfect alignment เข้า SELL ได้เต็มที่";
+      riskAdjustment = 1.5;
+    } else if (mostlyBearish && h4 === "BEARISH" && d1 === "BEARISH") {
+      isValid = true;
+      confidence = "สูง";
+      mtfAlignment = "HTF (H4/D1) ขาลง + LTF ส่วนใหญ่ขาลง";
+      recommendation = "✅ HTF trend แข็งแกร่ง เข้า SELL ได้";
+      riskAdjustment = 1.2;
+    } else if (h4 === "BEARISH" && d1 === "BEARISH") {
+      isValid = true;
+      confidence = "ปานกลาง";
+      mtfAlignment = "HTF (H4/D1) ขาลง แต่ LTF ผสม";
+      recommendation = "⚠️ HTF สนับสนุน แต่ระวัง LTF ผันผวน";
+      riskAdjustment = 1.0;
+    } else if (alignmentScore <= -40) {
+      isValid = true;
+      confidence = "ปานกลางต่ำ";
+      mtfAlignment = "MTF score ลบแต่ไม่ strong";
+      recommendation = "⚠️ MTF ไม่ strong ลดขนาด position";
+      riskAdjustment = 0.8;
+    } else {
+      isValid = false;
+      confidence = "ต่ำ";
+      mtfAlignment = "MTF ขัดแย้ง";
+      recommendation = "❌ MTF ไม่สนับสนุน breakout ห้ามเข้า";
+      riskAdjustment = 0.5;
+    }
+  }
+  
+  return {
+    isValid,
+    confidence,
+    mtfAlignment,
+    recommendation,
+    riskAdjustment
+  };
+}
+
+/**
+ * [แผน 51] Dynamic Risk/Reward Adjustment
+ * ปรับ risk/reward ตามความแข็งแรงของ signal และ confluence score
+ * 
+ * @param baseRR - Risk/Reward ratio พื้นฐาน (เช่น 1:1.5)
+ * @param confluenceScore - คะแนน confluence (0-100)
+ * @param signalStrength - ความแข็งแรงของ signal (STRONG/MODERATE/WEAK)
+ * @param mtfValidation - ผลการตรวจสอบ MTF
+ * @param volatility - ระดับความผันผวน (LOW/MEDIUM/HIGH)
+ */
+export function calculateDynamicRiskReward(
+  baseRR: number,
+  confluenceScore: number,
+  signalStrength: "STRONG" | "MODERATE" | "WEAK",
+  mtfValidation: { isValid: boolean; confidence: string; riskAdjustment: number },
+  volatility: "LOW" | "MEDIUM" | "HIGH" = "MEDIUM"
+): {
+  adjustedRR: string;
+  positionSizeMultiplier: number;
+  stopLossMultiplier: number;
+  takeProfitMultiplier: number;
+  recommendation: string;
+} {
+  let rrMultiplier = 1.0;
+  let positionSizeMultiplier = 1.0;
+  let slMultiplier = 1.0;
+  let tpMultiplier = 1.0;
+  let recommendation = "";
+  
+  // ปรับตาม confluence score
+  if (confluenceScore >= 85) {
+    rrMultiplier *= 1.3;
+    positionSizeMultiplier *= 1.2;
+  } else if (confluenceScore >= 75) {
+    rrMultiplier *= 1.1;
+    positionSizeMultiplier *= 1.1;
+  } else if (confluenceScore >= 65) {
+    rrMultiplier *= 1.0;
+    positionSizeMultiplier *= 1.0;
+  } else if (confluenceScore >= 55) {
+    rrMultiplier *= 0.9;
+    positionSizeMultiplier *= 0.8;
+  } else {
+    rrMultiplier *= 0.8;
+    positionSizeMultiplier *= 0.6;
+  }
+  
+  // ปรับตาม signal strength
+  if (signalStrength === "STRONG") {
+    rrMultiplier *= 1.2;
+    positionSizeMultiplier *= 1.1;
+  } else if (signalStrength === "MODERATE") {
+    rrMultiplier *= 1.0;
+    positionSizeMultiplier *= 1.0;
+  } else {
+    rrMultiplier *= 0.8;
+    positionSizeMultiplier *= 0.7;
+  }
+  
+  // ปรับตาม MTF validation
+  if (mtfValidation.isValid) {
+    positionSizeMultiplier *= mtfValidation.riskAdjustment;
+  } else {
+    positionSizeMultiplier *= 0.5;
+    rrMultiplier *= 0.7;
+  }
+  
+  // ปรับตาม volatility
+  if (volatility === "HIGH") {
+    slMultiplier *= 1.3;
+    tpMultiplier *= 1.4;
+    positionSizeMultiplier *= 0.7;
+  } else if (volatility === "LOW") {
+    slMultiplier *= 0.9;
+    tpMultiplier *= 0.9;
+    positionSizeMultiplier *= 1.1;
+  }
+  
+  // คำนวณค่าสุดท้าย
+  const adjustedRR = (baseRR * rrMultiplier).toFixed(1);
+  const finalPositionSize = Math.max(0.1, Math.min(2.0, positionSizeMultiplier));
+  const finalSL = Math.max(0.8, Math.min(2.0, slMultiplier));
+  const finalTP = Math.max(0.8, Math.min(3.0, tpMultiplier));
+  
+  // สร้าง recommendation
+  if (finalPositionSize >= 1.2 && mtfValidation.isValid) {
+    recommendation = "🚀 Signal แข็งแกร่ง + MTF สอดคล้อง เพิ่มขนาด position";
+  } else if (finalPositionSize >= 1.0) {
+    recommendation = "✅ Signal ดี เข้าได้ตามปกติ";
+  } else if (finalPositionSize >= 0.7) {
+    recommendation = "⚠️ Signal ปานกลาง ลดขนาด position";
+  } else {
+    recommendation = "❌ Signal อ่อนแรง หรือ MTF ไม่สนับสนุน รอสัญญาณที่ดีกว่า";
+  }
+  
+  return {
+    adjustedRR: `1:${adjustedRR}`,
+    positionSizeMultiplier: finalPositionSize,
+    stopLossMultiplier: finalSL,
+    takeProfitMultiplier: finalTP,
+    recommendation
+  };
+}
+
+/**
+ * [แผน 52] Advanced Volume Profile Analysis
+ * คำนวณ Volume Profile ที่ละเอียดขึ้น พร้อม POC, Value Area, Volume Imbalance
+ */
+export function calculateAdvancedVolumeProfile(
+  candles: Candle[],
+  precision = 2,
+  lookback = 100
+): AdvancedVolumeProfileInfo {
+  if (candles.length < 20) {
+    const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : 0;
+    return {
+      levels: [],
+      poc: currentPrice,
+      vah: currentPrice,
+      val: currentPrice,
+      valueArea: { min: currentPrice, max: currentPrice },
+      currentPriceInVA: true,
+      volumeImbalance: {
+        buyVolume: 0,
+        sellVolume: 0,
+        delta: 0,
+        imbalancePct: 0,
+        imbalanceStatus: "BALANCED"
+      },
+      absorptionZones: [],
+      footprintClusters: [],
+      vwapProfile: {
+        vwap: currentPrice,
+        stdDev1Upper: currentPrice,
+        stdDev1Lower: currentPrice,
+        stdDev2Upper: currentPrice,
+        stdDev2Lower: currentPrice,
+        currentZScore: 0
+      },
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับ Advanced Volume Profile"
+    };
+  }
+
+  const sample = candles.slice(-Math.min(lookback, candles.length));
+  const currentPrice = candles[candles.length - 1].close;
+  
+  // Calculate VWAP
+  let cumulativeTPV = 0; // Typical Price * Volume
+  let cumulativeVolume = 0;
+  
+  const candleData = sample.map(candle => {
+    const typicalPrice = (candle.high + candle.low + candle.close) / 3;
+    const tpv = typicalPrice * candle.volume;
+    cumulativeTPV += tpv;
+    cumulativeVolume += candle.volume;
+    return {
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+      volume: candle.volume,
+      typicalPrice,
+      tpv
+    };
+  });
+  
+  const vwap = cumulativeTPV / cumulativeVolume;
+  
+  // Calculate standard deviation for VWAP bands
+  const typicalPrices = candleData.map(d => d.typicalPrice);
+  const meanTP = typicalPrices.reduce((a, b) => a + b, 0) / typicalPrices.length;
+  const variance = typicalPrices.reduce((sum, tp) => sum + Math.pow(tp - meanTP, 2), 0) / typicalPrices.length;
+  const stdDev = Math.sqrt(variance);
+  
+  // Group candles by price levels for volume profile
+  const priceStep = (Math.max(...sample.map(c => c.high)) - Math.min(...sample.map(c => c.low))) / 50;
+  const volumeByPrice = new Map<number, { buyVolume: number; sellVolume: number; totalVolume: number }>();
+  
+  candleData.forEach(candle => {
+    const numLevels = Math.ceil((candle.high - candle.low) / priceStep);
+    for (let i = 0; i < numLevels; i++) {
+      const priceLevel = Number((candle.low + i * priceStep).toFixed(precision));
+      if (!volumeByPrice.has(priceLevel)) {
+        volumeByPrice.set(priceLevel, { buyVolume: 0, sellVolume: 0, totalVolume: 0 });
+      }
+      
+      const priceRatio = Math.min(1, (priceStep * (i + 1)) / (candle.high - candle.low));
+      const candleVolume = candle.volume * priceRatio;
+      
+      // Estimate buy/sell volume based on candle direction
+      if (candle.close > candle.open) {
+        volumeByPrice.get(priceLevel)!.buyVolume += candleVolume * 0.7;
+        volumeByPrice.get(priceLevel)!.sellVolume += candleVolume * 0.3;
+      } else if (candle.close < candle.open) {
+        volumeByPrice.get(priceLevel)!.buyVolume += candleVolume * 0.3;
+        volumeByPrice.get(priceLevel)!.sellVolume += candleVolume * 0.7;
+      } else {
+        volumeByPrice.get(priceLevel)!.buyVolume += candleVolume * 0.5;
+        volumeByPrice.get(priceLevel)!.sellVolume += candleVolume * 0.5;
+      }
+      
+      volumeByPrice.get(priceLevel)!.totalVolume += candleVolume;
+    }
+  });
+  
+  // Convert to array and sort by volume
+  const levels: VolumeProfileLevel[] = Array.from(volumeByPrice.entries()).map(([price, data]) => ({
+    price,
+    volume: data.totalVolume,
+    volumePercent: (data.totalVolume / cumulativeVolume) * 100,
+    isPOC: false,
+    isVAH: false,
+    isVAL: false,
+    vwap,
+    distanceFromPOC: 0
+  })).sort((a, b) => b.volume - a.volume);
+  
+  // Find POC (Point of Control) - highest volume level
+  if (levels.length > 0) {
+    levels[0].isPOC = true;
+  }
+  
+  const poc = levels.length > 0 ? levels[0].price : currentPrice;
+  
+  // Calculate Value Area (70% of volume)
+  let volumeAccumulated = 0;
+  const targetVolume = cumulativeVolume * 0.7;
+  let vah = poc;
+  let val = poc;
+  
+  for (const level of levels) {
+    volumeAccumulated += level.volume;
+    if (volumeAccumulated >= targetVolume) {
+      vah = Math.max(vah, level.price);
+      val = Math.min(val, level.price);
+      break;
+    }
+  }
+  
+  // Mark VAH and VAL
+  levels.forEach(level => {
+    level.isVAH = Math.abs(level.price - vah) < priceStep;
+    level.isVAL = Math.abs(level.price - val) < priceStep;
+    level.distanceFromPOC = Math.abs(level.price - poc);
+  });
+  
+  // Calculate volume imbalance
+  let totalBuyVolume = 0;
+  let totalSellVolume = 0;
+  
+  levels.forEach(level => {
+    const levelData = volumeByPrice.get(level.price);
+    if (levelData) {
+      totalBuyVolume += levelData.buyVolume;
+      totalSellVolume += levelData.sellVolume;
+    }
+  });
+  
+  const delta = totalBuyVolume - totalSellVolume;
+  const imbalancePct = (Math.abs(delta) / (totalBuyVolume + totalSellVolume)) * 100;
+  
+  let imbalanceStatus: AdvancedVolumeProfileInfo["volumeImbalance"]["imbalanceStatus"] = "BALANCED";
+  if (imbalancePct >= 60) {
+    imbalanceStatus = delta > 0 ? "STRONG_BUYING" : "STRONG_SELLING";
+  } else if (imbalancePct >= 40) {
+    imbalanceStatus = delta > 0 ? "MODERATE_BUYING" : "MODERATE_SELLING";
+  }
+  
+  // Detect absorption zones
+  const absorptionZones: AdvancedVolumeProfileInfo["absorptionZones"] = [];
+  levels.forEach(level => {
+    const levelData = volumeByPrice.get(level.price);
+    if (levelData) {
+      const absorptionRatio = Math.min(levelData.buyVolume, levelData.sellVolume) / levelData.totalVolume;
+      if (absorptionRatio > 0.6 && level.volumePercent > 1) {
+        absorptionZones.push({
+          price: level.price,
+          volume: level.volume,
+          absorptionStrength: absorptionRatio > 0.8 ? "HIGH" : "MEDIUM",
+          type: levelData.buyVolume > levelData.sellVolume ? "SELL_SIDE_ABSORPTION" : "BUY_SIDE_ABSORPTION"
+        });
+      }
+    }
+  });
+  
+  // Create footprint clusters
+  const footprintClusters: AdvancedVolumeProfileInfo["footprintClusters"] = [];
+  for (let i = 0; i < Math.min(levels.length, 10); i++) {
+    const level = levels[i];
+    const levelData = volumeByPrice.get(level.price);
+    if (levelData) {
+      footprintClusters.push({
+        price: level.price,
+        buyVolume: levelData.buyVolume,
+        sellVolume: levelData.sellVolume,
+        delta: levelData.buyVolume - levelData.sellVolume,
+        clusterStrength: level.volumePercent
+      });
+    }
+  }
+  
+  // Calculate current Z-score
+  const currentZScore = (currentPrice - vwap) / stdDev;
+  
+  const currentPriceInVA = currentPrice >= val && currentPrice <= vah;
+  
+  const description = `Advanced Volume Profile: POC @ ${poc.toFixed(precision)}, Value Area [${val.toFixed(precision)} - ${vah.toFixed(precision)}], VWAP @ ${vwap.toFixed(precision)}, Current Price ${currentPriceInVA ? "IN VA" : "OUTSIDE VA"}, Volume Imbalance: ${imbalanceStatus} (${imbalancePct.toFixed(1)}%)`;
+  
+  return {
+    levels,
+    poc,
+    vah,
+    val,
+    valueArea: { min: val, max: vah },
+    currentPriceInVA,
+    volumeImbalance: {
+      buyVolume: totalBuyVolume,
+      sellVolume: totalSellVolume,
+      delta,
+      imbalancePct,
+      imbalanceStatus
+    },
+    absorptionZones,
+    footprintClusters,
+    vwapProfile: {
+      vwap,
+      stdDev1Upper: vwap + stdDev,
+      stdDev1Lower: vwap - stdDev,
+      stdDev2Upper: vwap + 2 * stdDev,
+      stdDev2Lower: vwap - 2 * stdDev,
+      currentZScore
+    },
+    description
+  };
+}
+
+/**
+ * [แผน 53] Footprint Analysis & Order Flow
+ * วิเคราะห์ footprint data และ order flow patterns
+ */
+export function calculateFootprintAnalysis(
+  candles: Candle[],
+  precision = 2,
+  lookback = 50
+): FootprintAnalysisInfo {
+  if (candles.length < 10) {
+    return {
+      candles: [],
+      recentImbalance: {
+        type: "NEUTRAL",
+        strength: 0,
+        price: 0,
+        description: "ข้อมูลไม่เพียงพอสำหรับ Footprint Analysis"
+      },
+      absorptionAreas: [],
+      volumeSpikeAlerts: [],
+      deltaDivergence: {
+        detected: false,
+        type: "BULLISH_DIVERGENCE",
+        description: "ข้อมูลไม่เพียงพอ"
+      },
+      orderFlowSentiment: "NEUTRAL",
+      description: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับ Footprint Analysis"
+    };
+  }
+  
+  const sample = candles.slice(-Math.min(lookback, candles.length));
+  const currentPrice = candles[candles.length - 1].close;
+  
+  // Calculate average volume for spike detection
+  const volumes = sample.map(c => c.volume);
+  const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+  
+  // Create footprint data for each candle
+  const footprintCandles: FootprintData[] = sample.map(candle => {
+    const candleRange = candle.high - candle.low;
+    const buyVolume = candle.close > candle.open ? candle.volume * 0.7 : candle.volume * 0.3;
+    const sellVolume = candle.volume - buyVolume;
+    const delta = buyVolume - sellVolume;
+    const imbalance = (delta / candle.volume) * 100;
+    
+    // Determine if initiative or responsive
+    const prevCandle = sample[sample.indexOf(candle) - 1];
+    let isInitiative = false;
+    let isResponsive = false;
+    
+    if (prevCandle) {
+      if (candle.close > prevCandle.high && candle.close > candle.open) {
+        isInitiative = true;
+      } else if (candle.close < prevCandle.low && candle.close < candle.open) {
+        isInitiative = true;
+      } else {
+        isResponsive = true;
+      }
+    }
+    
+    // Determine footprint type
+    let footprintType: FootprintData["footprintType"] = "NEUTRAL";
+    if (Math.abs(imbalance) > 30) {
+      footprintType = imbalance > 0 ? "BULLISH_IMBALANCE" : "BEARISH_IMBALANCE";
+    } else if (isResponsive && Math.abs(imbalance) < 15) {
+      footprintType = "ABSORPTION";
+    }
+    
+    return {
+      price: candle.close,
+      buyVolume,
+      sellVolume,
+      delta,
+      imbalance,
+      isInitiative,
+      isResponsive,
+      footprintType
+    };
+  });
+  
+  // Detect recent imbalance
+  const recentCandles = footprintCandles.slice(-5);
+  const recentImbalanceStrength = Math.abs(recentCandles.reduce((sum, c) => sum + c.imbalance, 0)) / recentCandles.length;
+  
+  let recentImbalanceType: FootprintAnalysisInfo["recentImbalance"]["type"] = "NEUTRAL";
+  if (recentImbalanceStrength > 25) {
+    const avgDelta = recentCandles.reduce((sum, c) => sum + c.delta, 0) / recentCandles.length;
+    recentImbalanceType = avgDelta > 0 ? "BULLISH" : "BEARISH";
+  }
+  
+  const recentImbalance: FootprintAnalysisInfo["recentImbalance"] = {
+    type: recentImbalanceType,
+    strength: recentImbalanceStrength,
+    price: currentPrice,
+    description: recentImbalanceType === "NEUTRAL" 
+      ? "ไม่มี imbalance ที่ชัดเจนในช่วงล่าสุด" 
+      : `พบ ${recentImbalanceType} imbalance ที่ระดับ ${recentImbalanceStrength.toFixed(1)}% ในช่วงล่าสุด`
+  };
+  
+  // Detect absorption areas
+  const absorptionAreas: FootprintAnalysisInfo["absorptionAreas"] = [];
+  footprintCandles.forEach(candle => {
+    if (candle.footprintType === "ABSORPTION" && Math.abs(candle.imbalance) < 10) {
+      absorptionAreas.push({
+        price: candle.price,
+        type: candle.delta > 0 ? "SELL_ABSORPTION" : "BUY_ABSORPTION",
+        strength: 100 - Math.abs(candle.imbalance),
+        volume: candle.buyVolume + candle.sellVolume
+      });
+    }
+  });
+  
+  // Detect volume spikes
+  const volumeSpikeAlerts: FootprintAnalysisInfo["volumeSpikeAlerts"] = [];
+  sample.forEach(candle => {
+    const spikeRatio = candle.volume / avgVolume;
+    if (spikeRatio > 2.0) {
+      volumeSpikeAlerts.push({
+        price: candle.close,
+        spikeVolume: candle.volume,
+        avgVolume,
+        spikeRatio,
+        direction: candle.close > candle.open ? "BUY" : "SELL"
+      });
+    }
+  });
+  
+  // Detect delta divergence
+  const deltas = footprintCandles.map(c => c.delta);
+  const prices = footprintCandles.map(c => c.price);
+  
+  let deltaDivergence: FootprintAnalysisInfo["deltaDivergence"] = {
+    detected: false,
+    type: "BULLISH_DIVERGENCE",
+    description: "ไม่พบ delta divergence"
+  };
+  
+  // Simple divergence detection
+  if (deltas.length >= 10 && prices.length >= 10) {
+    const recentDeltas = deltas.slice(-5);
+    const recentPrices = prices.slice(-5);
+    const earlierDeltas = deltas.slice(-10, -5);
+    const earlierPrices = prices.slice(-10, -5);
+    
+    const recentDeltaTrend = recentDeltas[recentDeltas.length - 1] - recentDeltas[0];
+    const recentPriceTrend = recentPrices[recentPrices.length - 1] - recentPrices[0];
+    const earlierDeltaTrend = earlierDeltas[earlierDeltas.length - 1] - earlierDeltas[0];
+    const earlierPriceTrend = earlierPrices[earlierPrices.length - 1] - earlierPrices[0];
+    
+    if (recentDeltaTrend < 0 && recentPriceTrend > 0 && earlierDeltaTrend > 0) {
+      deltaDivergence = {
+        detected: true,
+        type: "BULLISH_DIVERGENCE",
+        description: "Delta ลดลงแต่ราคาเพิ่มขึ้น - Bullish Divergence"
+      };
+    } else if (recentDeltaTrend > 0 && recentPriceTrend < 0 && earlierDeltaTrend < 0) {
+      deltaDivergence = {
+        detected: true,
+        type: "BEARISH_DIVERGENCE",
+        description: "Delta เพิ่มขึ้นแต่ราคาลดลง - Bearish Divergence"
+      };
+    }
+  }
+  
+  // Determine overall order flow sentiment
+  const totalDelta = footprintCandles.reduce((sum, c) => sum + c.delta, 0);
+  const totalBuyVolume = footprintCandles.reduce((sum, c) => sum + c.buyVolume, 0);
+  const totalSellVolume = footprintCandles.reduce((sum, c) => sum + c.sellVolume, 0);
+  const avgImbalance = footprintCandles.reduce((sum, c) => sum + Math.abs(c.imbalance), 0) / footprintCandles.length;
+  
+  let orderFlowSentiment: FootprintAnalysisInfo["orderFlowSentiment"] = "NEUTRAL";
+  if (avgImbalance > 30) {
+    if (totalDelta > 0) {
+      orderFlowSentiment = totalDelta > totalBuyVolume * 0.3 ? "STRONG_BUY" : "MODERATE_BUY";
+    } else {
+      orderFlowSentiment = Math.abs(totalDelta) > totalSellVolume * 0.3 ? "STRONG_SELL" : "MODERATE_SELL";
+    }
+  }
+  
+  const description = `Footprint Analysis: Recent Imbalance ${recentImbalanceType} (${recentImbalanceStrength.toFixed(1)}%), Order Flow ${orderFlowSentiment}, Delta Divergence ${deltaDivergence.detected ? "DETECTED" : "NONE"}, Absorption Zones: ${absorptionAreas.length}, Volume Spikes: ${volumeSpikeAlerts.length}`;
+  
+  return {
+    candles: footprintCandles,
+    recentImbalance,
+    absorptionAreas,
+    volumeSpikeAlerts,
+    deltaDivergence,
+    orderFlowSentiment,
+    description
+  };
+}
+
