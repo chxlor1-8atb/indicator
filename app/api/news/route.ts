@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchLiveNews } from "@/lib/newsService";
+import { syncLiveEconomicCalendar, getNewsSafetyShieldStatus } from "@/lib/calendarEngine";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,7 +11,12 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get("category") || "all";
     const symbol = searchParams.get("symbol") || "";
 
-    const news = await fetchLiveNews(category);
+    // Parallel fetch news and sync live Forex Factory calendar
+    const [news] = await Promise.all([
+      fetchLiveNews(category),
+      syncLiveEconomicCalendar().catch(() => []),
+    ]);
+
     let filteredNews = news;
 
     if (symbol) {
@@ -20,11 +26,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const calendarStatus = symbol ? getNewsSafetyShieldStatus(symbol) : null;
+
     return NextResponse.json(
       {
         success: true,
         count: filteredNews.length,
         news: filteredNews,
+        calendarStatus,
         timestamp: Date.now(),
       },
       {

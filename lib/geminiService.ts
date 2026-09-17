@@ -2187,14 +2187,16 @@ export function generateRuleBasedAnalysis(
       autoFibonacci,
       fiveCorePillars,
       suggestedLotSize: {
-        balance500: Math.max(0.01, Number((5 / Math.max(slPips, 10)).toFixed(2))),
-        balance1k: Math.max(0.01, Number((10 / Math.max(slPips, 10)).toFixed(2))),
-        balance5k: Math.max(0.01, Number((50 / Math.max(slPips, 10)).toFixed(2))),
-        balance10k: Math.max(0.01, Number((100 / Math.max(slPips, 10)).toFixed(2))),
+        balance500: Math.max(0.01, Number(((5 / Math.max(slPips, 10)) * ((100 - (calendarSafety.positionSizeReductionPct || 0)) / 100)).toFixed(2))),
+        balance1k: Math.max(0.01, Number(((10 / Math.max(slPips, 10)) * ((100 - (calendarSafety.positionSizeReductionPct || 0)) / 100)).toFixed(2))),
+        balance5k: Math.max(0.01, Number(((50 / Math.max(slPips, 10)) * ((100 - (calendarSafety.positionSizeReductionPct || 0)) / 100)).toFixed(2))),
+        balance10k: Math.max(0.01, Number(((100 / Math.max(slPips, 10)) * ((100 - (calendarSafety.positionSizeReductionPct || 0)) / 100)).toFixed(2))),
       },
-      invalidationNote: structuralSL
+      invalidationNote: (calendarSafety.state === "APPROACHING_RED_FOLDER"
+        ? `⚠️ [เกราะข่าวกล่องแดง] มี ${calendarSafety.nextHighImpactEvent?.title} ในอีก ${calendarSafety.minutesToNextEvent} นาที: ปรับลด Lot 50% และเลื่อน SL บังหน้าทุนทันทีเมื่อกำไร +0.5R • `
+        : "") + (structuralSL
         ? `หากราคาหลุดแนวรับสวิง ${structuralSL.swingRefPrice} (Stop Loss: ${stopLoss}) ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`
-        : `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`,
+        : `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`),
     },
     pivotPoints,
     clusteredSR,

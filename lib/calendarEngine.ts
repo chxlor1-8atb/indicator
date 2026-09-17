@@ -27,10 +27,96 @@ export interface CalendarSafetyStatus {
   freezeReason: string;
   strategyPlaybook: string;
   relevantEvents: EconomicCalendarEvent[];
+  spreadSafetyMultiplier?: number;
+  positionSizeReductionPct?: number;
+  isLiveFeed?: boolean;
+}
+
+interface ForexFactoryRawItem {
+  title: string;
+  country: string;
+  date: string;
+  impact: string;
+  forecast?: string;
+  previous?: string;
+}
+
+let _liveEventsCache: EconomicCalendarEvent[] = [];
+let _lastCalendarSyncTime = 0;
+const CALENDAR_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * Fetches real-time Forex Factory calendar events from CDN and maps to GMT+7 Bangkok time.
+ */
+export async function syncLiveEconomicCalendar(): Promise<EconomicCalendarEvent[]> {
+  const now = Date.now();
+  if (_liveEventsCache.length > 0 && now - _lastCalendarSyncTime < CALENDAR_CACHE_TTL_MS) {
+    return _liveEventsCache;
+  }
+
+  try {
+    const res = await fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.json", {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(4500),
+      next: { revalidate: 900 },
+    });
+    if (!res.ok) return _liveEventsCache;
+
+    const rawList: ForexFactoryRawItem[] = await res.json();
+    if (!Array.isArray(rawList)) return _liveEventsCache;
+
+    const events: EconomicCalendarEvent[] = rawList
+      .filter((item) => item && item.title && item.date)
+      .map((item) => {
+        const dateObj = new Date(item.date);
+        const { hour, minute } = getThaiTimeParts(dateObj);
+        const timeStr = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
+        const impactUpper = (item.impact || "LOW").toUpperCase();
+        const impact: CalendarImpact =
+          impactUpper === "HIGH" ? "HIGH" : impactUpper === "MEDIUM" ? "MEDIUM" : impactUpper === "LOW" ? "LOW" : "HOLIDAY";
+
+        const cur = (item.country || "USD").toUpperCase();
+        let strategyAdvice = "⚪ ข้อมูลเศรษฐกิจทั่วไป กราฟวิ่งตามปัจจัยเทคนิคอลปกติ";
+        if (impact === "HIGH") {
+          strategyAdvice = `🟥 ข่าวกล่องแดงแรงสูง (${cur}): กราฟอาจสะบัดรุนแรงและสเปรดถ่าง ระงับออเดอร์อัตโนมัติ 30 นาทีก่อนข่าว และ 15 นาทีหลังข่าว`;
+        } else if (impact === "MEDIUM") {
+          strategyAdvice = `🟧 ข่าวกล่องส้ม (${cur}): ผันผวนปานกลาง แนะนำปรับลดขนาด Lot ลง 30% และเลื่อน SL บังหน้าทุนเมื่อกำไร`;
+        } else if (impact === "LOW") {
+          strategyAdvice = `🟨 ข่าวกล่องเหลือง (${cur}): ผลกระทบต่ำ กราฟวิ่งตามโครงสร้างแนวรับแนวต้านเทคนิคอลปกติ`;
+        }
+
+        return {
+          id: `ff_${cur}_${dateObj.getTime()}_${item.title.replace(/[^a-zA-Z0-9]/g, "").substring(0, 10)}`,
+          timeStr,
+          hour,
+          minute,
+          currency: cur,
+          impact,
+          title: `${impact === "HIGH" ? "🔴" : impact === "MEDIUM" ? "🟠" : impact === "LOW" ? "🟡" : "⚪"} ${item.title}`,
+          forecast: item.forecast || "-",
+          previous: item.previous || "-",
+          strategyAdvice,
+          timestamp: dateObj.getTime(),
+        };
+      });
+
+    if (events.length > 0) {
+      _liveEventsCache = events;
+      _lastCalendarSyncTime = now;
+    }
+  } catch (err) {
+    console.warn("[calendarEngine] Live calendar sync notice:", err);
+  }
+
+  return _liveEventsCache;
 }
 
 export function getDailyEconomicCalendar(symbol: string, customDate?: Date): EconomicCalendarEvent[] {
   const now = customDate || new Date();
+  // Trigger background refresh if stale or empty (non-blocking)
+  if (_liveEventsCache.length === 0 || Date.now() - _lastCalendarSyncTime > CALENDAR_CACHE_TTL_MS) {
+    syncLiveEconomicCalendar().catch(() => {});
+  }
   
   // Thailand Time (GMT+7) via Serverless-safe Intl
   const { day, month, year } = getThaiTimeParts(now);
@@ -183,6 +269,16 @@ export function getDailyEconomicCalendar(symbol: string, customDate?: Date): Eco
     },
   ];
 
+  // If live events exist for today, prioritize them
+  if (_liveEventsCache.length > 0) {
+    const todayStart = new Date(Date.UTC(year, month - 1, day, 0, 0, 0)).getTime();
+    const todayEnd = todayStart + 24 * 60 * 60 * 1000;
+    const liveToday = _liveEventsCache.filter((e) => e.timestamp >= todayStart && e.timestamp < todayEnd);
+    if (liveToday.length > 0) {
+      return liveToday.sort((a, b) => a.timestamp - b.timestamp);
+    }
+  }
+
   const events: EconomicCalendarEvent[] = rawEvents.map((e, idx) => {
     const eventDate = new Date(startOfDay.getTime() + (e.hour * 3600 + e.minute * 60) * 1000);
     return {
@@ -196,7 +292,7 @@ export function getDailyEconomicCalendar(symbol: string, customDate?: Date): Eco
       forecast: e.forecast,
       previous: e.previous,
       strategyAdvice: e.strategyAdvice,
-      timestamp: Math.floor(eventDate.getTime() / 1000),
+      timestamp: eventDate.getTime(),
     };
   });
 
@@ -209,8 +305,10 @@ export function getNewsSafetyShieldStatus(symbol: string, customDate?: Date): Ca
   // Thailand Time (GMT+7) via Serverless-safe Intl
   const { hour: currentHour, minute: currentMinute } = getThaiTimeParts(now);
   const currentTotalMinutes = currentHour * 60 + currentMinute;
+  const currentTimestamp = now.getTime();
 
   const allEvents = getDailyEconomicCalendar(symbol, customDate);
+  const isLive = _liveEventsCache.length > 0;
 
   const isGold = symbol.toUpperCase().includes("XAU") || symbol.toUpperCase() === "GOLD";
   const isCrypto = symbol.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some((c) => symbol.startsWith(c));
@@ -218,27 +316,60 @@ export function getNewsSafetyShieldStatus(symbol: string, customDate?: Date): Ca
   const isEURInvolved = symbol.includes("EUR");
   const isGBPInvolved = symbol.includes("GBP");
   const isJPYInvolved = symbol.includes("JPY");
+  const isAUDInvolved = symbol.includes("AUD");
+  const isCADInvolved = symbol.includes("CAD");
+  const isNZDInvolved = symbol.includes("NZD");
+  const isCHFInvolved = symbol.includes("CHF");
 
   const relevantEvents = allEvents.filter((e) => {
     if (e.currency === "USD" && isUSDInvolved) return true;
     if (e.currency === "EUR" && isEURInvolved) return true;
     if (e.currency === "GBP" && isGBPInvolved) return true;
     if (e.currency === "JPY" && isJPYInvolved) return true;
+    if (e.currency === "AUD" && isAUDInvolved) return true;
+    if (e.currency === "CAD" && isCADInvolved) return true;
+    if (e.currency === "NZD" && isNZDInvolved) return true;
+    if (e.currency === "CHF" && isCHFInvolved) return true;
     return false;
   });
 
   const redFolderEvents = relevantEvents.filter((e) => e.impact === "HIGH");
+  const orangeFolderEvents = relevantEvents.filter((e) => e.impact === "MEDIUM");
 
   let nextRedEvent: EconomicCalendarEvent | null = null;
   let minDiffMinutes = Infinity;
 
   for (const e of redFolderEvents) {
-    const eventTotalMinutes = e.hour * 60 + e.minute;
-    const diff = eventTotalMinutes - currentTotalMinutes;
+    let diff: number;
+    if (e.timestamp && e.timestamp > 100000000000) {
+      diff = Math.round((e.timestamp - currentTimestamp) / (60 * 1000));
+    } else {
+      const eventTotalMinutes = e.hour * 60 + e.minute;
+      diff = eventTotalMinutes - currentTotalMinutes;
+    }
 
     if (diff >= -15 && diff < minDiffMinutes) {
       minDiffMinutes = diff;
       nextRedEvent = e;
+    }
+  }
+
+  // Check orange folder events for caution
+  let isOrangeCaution = false;
+  let nextOrangeEvent: EconomicCalendarEvent | null = null;
+  let minOrangeDiff = Infinity;
+  for (const e of orangeFolderEvents) {
+    let diff: number;
+    if (e.timestamp && e.timestamp > 100000000000) {
+      diff = Math.round((e.timestamp - currentTimestamp) / (60 * 1000));
+    } else {
+      const eventTotalMinutes = e.hour * 60 + e.minute;
+      diff = eventTotalMinutes - currentTotalMinutes;
+    }
+    if (diff >= 0 && diff <= 15 && diff < minOrangeDiff) {
+      minOrangeDiff = diff;
+      nextOrangeEvent = e;
+      isOrangeCaution = true;
     }
   }
 
@@ -254,6 +385,9 @@ export function getNewsSafetyShieldStatus(symbol: string, customDate?: Date): Ca
       freezeReason: `ห้ามเปิดออเดอร์เด็ดขาด! กำลังจะมีการประกาศ ${nextRedEvent.title} (${nextRedEvent.timeStr}) ในอีก ${minDiffMinutes} นาที เสี่ยงโดนสเปรดถ่างและ Slippage มหาศาล`,
       strategyPlaybook: "🟥 กลยุทธ์กล่องแดง: หากไม่มีออเดอร์ 'ไม่ควรสวนเทรนด์ช่วงข่าวออก' หากมีกำไรอยู่ควรเคลียร์พอร์ต/เลื่อน SL มาบังหน้าทุนทันที",
       relevantEvents,
+      spreadSafetyMultiplier: 2.5,
+      positionSizeReductionPct: 100,
+      isLiveFeed: isLive,
     };
   }
 
@@ -270,6 +404,9 @@ export function getNewsSafetyShieldStatus(symbol: string, customDate?: Date): Ca
       freezeReason: `ข่าว ${nextRedEvent.title} เพิ่งประกาศออกไป กราฟกำลังสะบัดแรงและเซ็ตแนวรับ-แนวต้านใหม่ ควรรอให้จบแท่งเทียน 15 นาทีแรกก่อนพิจารณาเข้าเทรด`,
       strategyPlaybook: "⏳ กลยุทธ์หลังข่าว: รอการปฏิเสธราคา (Rejection) หรือจบแท่งแรกเพื่อยืนยันทิศทางจริง ไม่กระโดดตามน้ำ (FOMO)",
       relevantEvents,
+      spreadSafetyMultiplier: 2.0,
+      positionSizeReductionPct: 100,
+      isLiveFeed: isLive,
     };
   }
 
@@ -283,23 +420,33 @@ export function getNewsSafetyShieldStatus(symbol: string, customDate?: Date): Ca
       minutesToNextEvent: minDiffMinutes,
       tradeAllowed: true,
       freezeReason: `มีข่าวกล่องแดง ${nextRedEvent.title} ในอีก ${minDiffMinutes} นาที แนะนำให้ทยอยปิดทำกำไร (Lock Profit) หรือเลื่อน SL บังหน้าทุน`,
-      strategyPlaybook: "⚠️ กลยุทธ์เตรียมตัว: ตลาดอาจเริ่มชะลอตัวเพื่อรอตัวเลขข่าว แนะนำเก็บกำไรระยะสั้นและคุมความเสี่ยง",
+      strategyPlaybook: "⚠️ กลยุทธ์เตรียมตัว: ตลาดอาจเริ่มชะลอตัวเพื่อรอตัวเลขข่าว แนะนำปรับลดขนาด Lot 50% และขยายระยะ SL 1.5 เท่า ป้องกัน Spread Spike",
       relevantEvents,
+      spreadSafetyMultiplier: 1.5,
+      positionSizeReductionPct: 50,
+      isLiveFeed: isLive,
     };
   }
 
-  // 4. Safe Trading Window
+  // 4. Safe Trading Window (with optional orange caution)
   return {
     state: "SAFE_TRADING_WINDOW",
-    badgeText: "🟢 SAFE TRADING WINDOW",
-    badgeColor: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+    badgeText: isOrangeCaution ? `🟠 ORANGE CAUTION (อีก ${minOrangeDiff} นาที)` : "🟢 SAFE TRADING WINDOW",
+    badgeColor: isOrangeCaution ? "bg-amber-500/15 text-amber-300 border-amber-500/30" : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
     nextHighImpactEvent: nextRedEvent && minDiffMinutes > 60 ? nextRedEvent : null,
     minutesToNextEvent: nextRedEvent && minDiffMinutes > 60 ? minDiffMinutes : null,
     tradeAllowed: true,
     freezeReason: nextRedEvent
       ? `ปลอดภัย ไม่มีข่าวกล่องแดงในระยะประชิด (ข่าวใหญ่ถัดไป: ${nextRedEvent.title} เวลา ${nextRedEvent.timeStr})`
+      : isOrangeCaution
+      ? `มีข่าวกล่องส้ม ${nextOrangeEvent?.title} ในอีก ${minOrangeDiff} นาที ลดขนาดไม้ลง 30%`
       : "ปลอดภัย ไม่มีข่าวกล่องแดงกระทบคู่เงินนี้ในวันนี้ กราฟวิ่งตามปัจจัยเทคนิคอล 100%",
-    strategyPlaybook: "🟨/🟧 กลยุทธ์สภาวะปกติ: กราฟวิ่งตามแนวรับ-แนวต้านเชิงเทคนิคอลแม่นยำสูง สามารถเทรดตามระบบสัญญาณ AI ได้อย่างเต็มประสิทธิภาพ",
+    strategyPlaybook: isOrangeCaution
+      ? "🟧 กลยุทธ์กล่องส้ม: เทรดตามระบบได้ปกติแต่แนะนำลด Lot 30% เพื่อความปลอดภัย"
+      : "🟨/🟧 กลยุทธ์สภาวะปกติ: กราฟวิ่งตามแนวรับ-แนวต้านเชิงเทคนิคอลแม่นยำสูง สามารถเทรดตามระบบสัญญาณ AI ได้อย่างเต็มประสิทธิภาพ",
     relevantEvents,
+    spreadSafetyMultiplier: isOrangeCaution ? 1.2 : 1.0,
+    positionSizeReductionPct: isOrangeCaution ? 30 : 0,
+    isLiveFeed: isLive,
   };
 }

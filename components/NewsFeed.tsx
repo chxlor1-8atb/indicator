@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { NewsItem } from "@/lib/types";
 import { Newspaper, ExternalLink, Flame, TrendingUp, TrendingDown, Minus, Filter, Calendar, Clock, AlertOctagon, Copy, Check } from "lucide-react";
-import { getDailyEconomicCalendar } from "@/lib/calendarEngine";
+import { getDailyEconomicCalendar, getNewsSafetyShieldStatus } from "@/lib/calendarEngine";
 
 interface NewsFeedProps {
   news: NewsItem[];
@@ -28,6 +28,7 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
   };
 
   const calendarEvents = getDailyEconomicCalendar(selectedAsset);
+  const safetyStatus = getNewsSafetyShieldStatus(selectedAsset);
 
   const filteredNews = news.filter((item) => {
     if (filter === "HIGH_IMPACT") return item.impact === "HIGH";
@@ -159,67 +160,132 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
       {/* Content Feed */}
       <div className="mt-3 space-y-2.5 overflow-y-auto flex-1 max-h-[520px] lg:max-h-[calc(100vh-220px)] pr-1">
         {viewMode === "CALENDAR" ? (
-          /* Economic Calendar View */
-          calendarEvents.map((evt) => {
-            const isRed = evt.impact === "HIGH";
-            const isOrange = evt.impact === "MEDIUM";
-            const isYellow = evt.impact === "LOW";
-
-            return (
-              <div
-                key={evt.id}
-                className={`p-3 rounded-xl border transition-all ${
-                  isRed
-                    ? "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
-                    : isOrange
-                    ? "bg-amber-950/15 border-amber-500/30 hover:border-amber-500/50"
-                    : "bg-surface-50 border-slate-800 hover:border-slate-700"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs">
-                      {isRed ? "🔴" : isOrange ? "🟠" : isYellow ? "🟡" : "⚪"}
-                    </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-100 border border-slate-700 text-amber-300 font-bold">
-                      {evt.timeStr}
-                    </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-100 border border-slate-700 text-slate-300 font-bold">
-                      {evt.currency}
-                    </span>
+          <>
+            {/* Live Economic Calendar Shield Telemetry Banner */}
+            <div className={`p-3 rounded-xl border flex flex-col gap-2 mb-2.5 ${
+              safetyStatus.state === "RED_FOLDER_FREEZE"
+                ? "bg-rose-950/30 border-rose-500/50 shadow-lg shadow-rose-950/20"
+                : safetyStatus.state === "POST_NEWS_VOLATILITY"
+                ? "bg-amber-950/30 border-amber-500/50"
+                : safetyStatus.state === "APPROACHING_RED_FOLDER"
+                ? "bg-amber-950/20 border-amber-500/40"
+                : "bg-emerald-950/20 border-emerald-500/30"
+            }`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-lg ${
+                    !safetyStatus.tradeAllowed
+                      ? "bg-rose-500/20 text-rose-300 animate-pulse"
+                      : safetyStatus.state === "APPROACHING_RED_FOLDER"
+                      ? "bg-amber-500/20 text-amber-300"
+                      : "bg-emerald-500/20 text-emerald-300"
+                  }`}>
+                    <AlertOctagon className="w-4 h-4" />
                   </div>
-
-                  <span
-                    className={`text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase ${
-                      isRed
-                        ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
-                        : isOrange
-                        ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                        : "bg-slate-700/60 text-slate-300 border-slate-600"
-                    }`}
-                  >
-                    {isRed ? "กล่องแดง (รุนแรงสุด)" : isOrange ? "กล่องส้ม (ปานกลาง)" : "กล่องเหลือง (ผันผวนต่ำ)"}
-                  </span>
-                </div>
-
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <span className="text-xs font-semibold text-slate-100 block leading-tight">
-                    {evt.title}
-                  </span>
-                  <div className="text-right shrink-0 text-[10px] font-mono">
-                    <span className="text-slate-300 block">คาดการณ์: {evt.forecast}</span>
-                    <span className="text-slate-500 block">ครั้งก่อน: {evt.previous}</span>
+                  <div>
+                    <span className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                      {safetyStatus.badgeText}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">
+                      {safetyStatus.freezeReason}
+                    </span>
                   </div>
                 </div>
 
-                {/* Practical Advice for Beginners */}
-                <div className="p-2 rounded-lg bg-surface-100/90 border border-slate-800/90 text-[11px] text-slate-300 leading-relaxed">
-                  <span className="font-semibold text-amber-300">💡 คำแนะนำ: </span>
-                  {evt.strategyAdvice}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/40 border border-slate-700 text-purple-300">
+                    📡 Forex Factory Live
+                  </span>
                 </div>
               </div>
-            );
-          })
+
+              {/* Safety Specs Bar */}
+              <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono pt-2 border-t border-slate-800/80">
+                <div className="bg-black/30 p-1.5 rounded border border-slate-800 text-center">
+                  <span className="text-slate-400 block">สถานะเทรด</span>
+                  <span className={`font-bold ${safetyStatus.tradeAllowed ? "text-emerald-400" : "text-rose-400"}`}>
+                    {safetyStatus.tradeAllowed ? "✅ ALLOWED" : "⛔ FROZEN"}
+                  </span>
+                </div>
+                <div className="bg-black/30 p-1.5 rounded border border-slate-800 text-center">
+                  <span className="text-slate-400 block">เกราะ Spread</span>
+                  <span className="font-bold text-amber-300">
+                    {safetyStatus.spreadSafetyMultiplier ?? 1.0}x Buffer
+                  </span>
+                </div>
+                <div className="bg-black/30 p-1.5 rounded border border-slate-800 text-center">
+                  <span className="text-slate-400 block">การปรับ Lot</span>
+                  <span className={`font-bold ${
+                    (safetyStatus.positionSizeReductionPct ?? 0) > 0 ? "text-rose-400" : "text-emerald-400"
+                  }`}>
+                    {(safetyStatus.positionSizeReductionPct ?? 0) > 0 ? `-${safetyStatus.positionSizeReductionPct}%` : "100% ปกติ"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Economic Calendar View */}
+            {calendarEvents.map((evt) => {
+              const isRed = evt.impact === "HIGH";
+              const isOrange = evt.impact === "MEDIUM";
+              const isYellow = evt.impact === "LOW";
+
+              return (
+                <div
+                  key={evt.id}
+                  className={`p-3 rounded-xl border transition-all ${
+                    isRed
+                      ? "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
+                      : isOrange
+                      ? "bg-amber-950/15 border-amber-500/30 hover:border-amber-500/50"
+                      : "bg-surface-50 border-slate-800 hover:border-slate-700"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs">
+                        {isRed ? "🔴" : isOrange ? "🟠" : isYellow ? "🟡" : "⚪"}
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-100 border border-slate-700 text-amber-300 font-bold">
+                        {evt.timeStr}
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-100 border border-slate-700 text-slate-300 font-bold">
+                        {evt.currency}
+                      </span>
+                    </div>
+
+                    <span
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase ${
+                        isRed
+                          ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                          : isOrange
+                          ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                          : "bg-slate-700/60 text-slate-300 border-slate-600"
+                      }`}
+                    >
+                      {isRed ? "กล่องแดง (รุนแรงสุด)" : isOrange ? "กล่องส้ม (ปานกลาง)" : "กล่องเหลือง (ผันผวนต่ำ)"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className="text-xs font-semibold text-slate-100 block leading-tight">
+                      {evt.title}
+                    </span>
+                    <div className="text-right shrink-0 text-[10px] font-mono">
+                      <span className="text-slate-300 block">คาดการณ์: {evt.forecast}</span>
+                      <span className="text-slate-500 block">ครั้งก่อน: {evt.previous}</span>
+                    </div>
+                  </div>
+
+                  {/* Practical Advice for Beginners */}
+                  <div className="p-2 rounded-lg bg-surface-100/90 border border-slate-800/90 text-[11px] text-slate-300 leading-relaxed">
+                    <span className="font-semibold text-amber-300">💡 คำแนะนำ: </span>
+                    {evt.strategyAdvice}
+                  </div>
+                </div>
+              );
+            })}
+          </>
         ) : isLoading ? (
           <div className="space-y-2.5">
             {[1, 2, 3].map((i) => (

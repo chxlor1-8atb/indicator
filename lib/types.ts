@@ -891,7 +891,11 @@ export interface CalendarSafetyStatus {
   minutesToNextEvent: number | null;
   tradeAllowed: boolean;
   freezeReason: string;
+  strategyPlaybook?: string;
   relevantEvents: EconomicCalendarEvent[];
+  spreadSafetyMultiplier?: number;
+  positionSizeReductionPct?: number;
+  isLiveFeed?: boolean;
 }
 
 export interface IndicatorData {
