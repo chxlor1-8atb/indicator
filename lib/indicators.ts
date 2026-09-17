@@ -8522,9 +8522,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const footprintAbsorption = calculateFootprintAbsorption(cleanCandles);
   const mtfStructureMatrix = calculateMTFStructureMatrix(cleanCandles, precision, symbol);
   
-  // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
-  // const advancedVolumeProfile = calculateAdvancedVolumeProfile(cleanCandles, precision, 30);
-  // const footprintAnalysis = calculateFootprintAnalysis(cleanCandles, precision, 20);
+  // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis (Active)
+  const advancedVolumeProfile = calculateAdvancedVolumeProfile(cleanCandles, precision, 40);
+  const footprintAnalysis = calculateFootprintAnalysis(cleanCandles, precision, 20);
   
   // [แผน 54] Higher Timeframe Confluence Analysis (Simplified) - DISABLED FOR PERFORMANCE
   // const mtfConfluence = calculateMTFConfluence(cleanCandles, precision, symbol);
@@ -8736,9 +8736,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     parabolicSAR,
     aroon,
     vortex,
-    // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
-    // advancedVolumeProfile,
-    // footprintAnalysis,
+    // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis
+    advancedVolumeProfile,
+    footprintAnalysis,
     // [แผน 54] Higher Timeframe Confluence Analysis (Simplified) - DISABLED FOR PERFORMANCE
     // mtfConfluence,
     fisher,
@@ -9791,6 +9791,11 @@ export function calculateAdvancedVolumeProfile(
   
   const description = `Advanced Volume Profile: POC @ ${poc.toFixed(precision)}, Value Area [${val.toFixed(precision)} - ${vah.toFixed(precision)}], VWAP @ ${vwap.toFixed(precision)}, Current Price ${currentPriceInVA ? "IN VA" : "OUTSIDE VA"}, Volume Imbalance: ${imbalanceStatus} (${imbalancePct.toFixed(1)}%)`;
   
+  // High Volume Nodes (HVN) & Low Volume Nodes (LVN)
+  const avgLevelVol = levels.length > 0 ? levels.reduce((acc, l) => acc + l.volume, 0) / levels.length : 0;
+  const hvnLevels = levels.filter(l => l.volume >= avgLevelVol * 1.35).map(l => l.price);
+  const lvnLevels = levels.filter(l => l.volume <= avgLevelVol * 0.55).map(l => l.price);
+
   return {
     levels,
     poc,
@@ -9807,6 +9812,8 @@ export function calculateAdvancedVolumeProfile(
     },
     absorptionZones,
     footprintClusters,
+    hvnLevels,
+    lvnLevels,
     vwapProfile: {
       vwap,
       stdDev1Upper: vwap + stdDev,
@@ -9958,17 +9965,17 @@ export function calculateFootprintAnalysis(
     const earlierDeltaTrend = earlierDeltas[earlierDeltas.length - 1] - earlierDeltas[0];
     const earlierPriceTrend = earlierPrices[earlierPrices.length - 1] - earlierPrices[0];
     
-    if (recentDeltaTrend < 0 && recentPriceTrend > 0 && earlierDeltaTrend > 0) {
-      deltaDivergence = {
-        detected: true,
-        type: "BULLISH_DIVERGENCE",
-        description: "Delta ลดลงแต่ราคาเพิ่มขึ้น - Bullish Divergence"
-      };
-    } else if (recentDeltaTrend > 0 && recentPriceTrend < 0 && earlierDeltaTrend < 0) {
+    if (recentPriceTrend > 0 && recentDeltaTrend < 0) {
       deltaDivergence = {
         detected: true,
         type: "BEARISH_DIVERGENCE",
-        description: "Delta เพิ่มขึ้นแต่ราคาลดลง - Bearish Divergence"
+        description: "ราคาทำจุดสูงขึ้นแต่ Delta ลดลงอย่างมีนัยสำคัญ - Bearish Exhaustion Divergence (แรงซื้อหมด รายใหญ่เทขายกระจายของ)"
+      };
+    } else if (recentPriceTrend < 0 && recentDeltaTrend > 0) {
+      deltaDivergence = {
+        detected: true,
+        type: "BULLISH_DIVERGENCE",
+        description: "ราคาทำจุดต่ำลงแต่ Delta ยกตัวสูงขึ้น - Bullish Absorption Divergence (แรงซื้อสถาบันแอบดูดซับแรงขาย)"
       };
     }
   }

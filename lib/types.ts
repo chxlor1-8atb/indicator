@@ -583,6 +583,8 @@ export interface AdvancedVolumeProfileInfo {
     stdDev2Lower: number;
     currentZScore: number;
   };
+  hvnLevels?: number[]; // High Volume Nodes (support/resistance shelves)
+  lvnLevels?: number[]; // Low Volume Nodes (slippage/fast rejection zones)
   description: string;
 }
 
@@ -1118,6 +1120,8 @@ export interface AnalysisResult {
   breakevenAdvice?: BreakevenAdvice;
   roundLevel?: RoundLevelInfo;
   volumeProfile?: VolumeProfileInfo;
+  advancedVolumeProfile?: AdvancedVolumeProfileInfo;
+  footprintAnalysis?: FootprintAnalysisInfo;
   tdSequential?: TDSequentialInfo;
   spreadImpact?: SpreadImpactInfo;
   trailingStop?: TrailingStopInfo;
@@ -1260,6 +1264,8 @@ export interface AnalysisResult {
     trailingStop?: TrailingStopInfo;
     spreadImpact?: SpreadImpactInfo;
     volumeProfile?: VolumeProfileInfo;
+    advancedVolumeProfile?: AdvancedVolumeProfileInfo;
+    footprintAnalysis?: FootprintAnalysisInfo;
     kellySizing?: KellySizingInfo;
     anchoredVwap?: AnchoredVWAPInfo;
     cvd?: CVDInfo;
@@ -2174,6 +2180,17 @@ export interface AssetScannerSummary {
   updatedAt: number;
 }
 
+export type RiskProfileType = "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE";
+
+export interface PartialCloseEvent {
+  stage: "TP1" | "TP2";
+  price: number;
+  closedLots: number;
+  remainingLots: number;
+  pnlPips: number;
+  timestamp: number;
+}
+
 export interface MtBridgeOrder {
   id: string;
   symbol: string;
@@ -2197,6 +2214,14 @@ export interface MtBridgeOrder {
   approvedBy?: string;
   /** Unix timestamp ที่ approve */
   approvedAt?: number;
+  /** Advanced Order Management fields */
+  riskProfile?: RiskProfileType;
+  initialLots?: number;
+  remainingLots?: number;
+  partialCloses?: PartialCloseEvent[];
+  adaptiveTrailingActive?: boolean;
+  trailingSlPrice?: number;
+  trailingStage?: number;
 }
 
 export interface TelemetryLog {
@@ -2219,6 +2244,7 @@ export interface AutonomousPilotConfig {
   riskPercentPerTrade: number;
   accountType: "STANDARD" | "CENT";
   scanIntervalMs: number;
+  riskProfile?: RiskProfileType;
   /**
    * โหมดการทำงานของ Autonomous Pilot:
    * - "AUTO"        = สร้าง order และส่ง MT4/MT5 ทันที (ใช้เฉพาะ demo/paper trading)

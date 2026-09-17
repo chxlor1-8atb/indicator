@@ -4,6 +4,7 @@ import {
   addTelemetryLog,
   resolveOrdersAgainstLivePrice,
 } from "@/lib/autonomousEngine";
+import { validatePriceIntegrity } from "@/lib/priceIntegrity";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +18,10 @@ export async function GET(request: NextRequest) {
 
     if (format === "csv" || format === "mt") {
       // Format for MT4/MT5 EA line parser:
-      // TICKET_ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS
+      // TICKET_ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS,REMAINING_LOTS,STATUS,TRAILING_SL
       const lines = orders.map(
         (o) =>
-          `${o.id},${o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize}`
+          `${o.id},${o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize},${o.remainingLots ?? o.lotSize},${o.status},${o.trailingSlPrice ?? o.stopLoss}`
       );
       return new NextResponse(lines.join("\n"), {
         status: 200,
@@ -56,7 +57,10 @@ export async function POST(request: NextRequest) {
     const { orderId, action, symbol, executionPrice, profitPips } = body;
 
     if (symbol && executionPrice) {
-      resolveOrdersAgainstLivePrice(symbol, executionPrice);
+      const integrity = validatePriceIntegrity(symbol, executionPrice);
+      if (integrity.isValid) {
+        resolveOrdersAgainstLivePrice(symbol, executionPrice);
+      }
     }
 
     if (orderId && action) {

@@ -28,7 +28,7 @@ export class CircuitBreaker {
   constructor(options: CircuitBreakerOptions) {
     this.name = options.name;
     this.failureThreshold = Math.max(1, options.failureThreshold ?? 3);
-    this.resetTimeoutMs = Math.max(1000, options.resetTimeoutMs ?? 45000);
+    this.resetTimeoutMs = Math.max(50, options.resetTimeoutMs ?? 45000);
     this.successThreshold = Math.max(1, options.successThreshold ?? 2);
     this.fallback = options.fallback;
   }

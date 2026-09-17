@@ -607,33 +607,27 @@ export function generateRealisticCandles(symbol: string, basePrice = 2500, count
   return candles;
 }
 
-// In-memory cache with 15s TTL to prevent rate-limiting and maximize performance
-interface CacheEntry {
-  candles: Candle[];
-  timestamp: number;
-}
-const candleCache = new Map<string, CacheEntry>();
-const CANDLE_CACHE_TTL_MS = 15000; // 15 seconds
+// High-performance LRU Cache with 30s TTL and 100 entries capacity
+const candleLruCache = new LRUCache<string, Candle[]>({ maxSize: 100, defaultTtlMs: 30000 });
 
 /**
- * Helper to update memory cache and trigger background Neon rolling buffer persistence
+ * Helper to update memory LRU cache and trigger background Neon rolling buffer persistence
  */
 function cacheAndPersist(sym: string, tf: string, candles: Candle[]): Candle[] {
   const cacheKey = `${sym.toUpperCase()}_${tf}`;
-  candleCache.set(cacheKey, { candles, timestamp: Date.now() });
+  candleLruCache.set(cacheKey, candles);
   // Non-blocking fire-and-forget save to Neon rolling FIFO buffer
   saveCandlesRollingBuffer(sym, tf, candles).catch((err) => {
-    console.warn(`[Neon Buffer] Background save note for ${sym}:`, (err as Error)?.message || err);
+    logger.warn(`[Neon Buffer] Background save note for ${sym}:`, { service: "NeonBuffer", symbol: sym }, err);
   });
   return candles;
 }
 
 export async function getMarketCandles(symbol: string, interval = "1h"): Promise<Candle[]> {
   const cacheKey = `${symbol.toUpperCase()}_${interval}`;
-  const cached = candleCache.get(cacheKey);
-  const now = Date.now();
-  if (cached && (now - cached.timestamp) < CANDLE_CACHE_TTL_MS && cached.candles.length >= 20) {
-    return cached.candles;
+  const cached = candleLruCache.get(cacheKey);
+  if (cached && cached.length >= 20) {
+    return cached;
   }
 
   const asset = AVAILABLE_ASSETS.find((a) => a.symbol === symbol);
@@ -655,7 +649,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
   // 2. If Crypto, use Binance API (Real-time & Fast 500 candles)
   if (asset?.category === "crypto" || symbol.endsWith("USDT")) {
     try {
-      const candles = await bybitBreaker.execute(() => fetchCryptoCandles(symbol, interval, 500));
+      const candles = await binanceBreaker.execute(() => fetchCryptoCandles(symbol, interval, 500));
       if (candles.length >= 20) {
         return cacheAndPersist(symbol, interval, candles);
       }
@@ -675,7 +669,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
 
   // 4. Try Yahoo Finance for Commodities, Forex, Stocks, Indices
   try {
-    let candles = await tradingViewBreaker.execute(() => fetchYahooCandles(symbol, interval));
+    let candles = await yahooBreaker.execute(() => fetchYahooCandles(symbol, interval));
     if (candles.length >= 20) {
       // Dynamic calibration against TradingView institutional quote for Forex & Commodities
       const isInstitutional = asset?.category === "forex" || asset?.category === "commodities" || (symbol.length === 6 && !symbol.includes("USDT"));
@@ -707,9 +701,9 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     const isTimeout = (err instanceof Error && err.name === "TimeoutError") || String(err).includes("timeout");
     const isCircuitOpen = String(err).includes("Circuit breaker");
     if (!isTimeout && !isCircuitOpen) {
-      console.warn(`[Market Feed] Yahoo fetch note for ${symbol}:`, (err as Error)?.message || err);
+      logger.warn(`[Market Feed] Yahoo fetch note for ${symbol}:`, { service: "YahooFeed", symbol }, err);
     } else if (isCircuitOpen) {
-      console.warn(`[Market Feed] Circuit breaker open for Yahoo fetch on ${symbol}`);
+      logger.warn(`[Market Feed] Circuit breaker open for Yahoo fetch on ${symbol}`, { service: "YahooFeed", symbol });
     }
   }
 
@@ -717,11 +711,11 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
   try {
     const dbCandles = await getCachedCandles(symbol, interval, 200);
     if (dbCandles && dbCandles.length >= 20) {
-      candleCache.set(cacheKey, { candles: dbCandles, timestamp: Date.now() });
+      candleLruCache.set(cacheKey, dbCandles);
       return dbCandles;
     }
   } catch (dbErr) {
-    console.warn(`Neon DB fallback fetch failed for ${symbol}:`, dbErr);
+    logger.warn(`Neon DB fallback fetch failed for ${symbol}:`, { service: "NeonFallback", symbol }, dbErr);
   }
 
   // 6. Last resort synthetic fallback base prices

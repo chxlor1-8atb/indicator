@@ -158,6 +158,8 @@ export function evaluateMasterConfluence(
   const cvd = indicators.cvd;
   const volDelta = indicators.volumeDelta;
   const cmf = indicators.chaikinMoneyFlow;
+  const advVp = indicators.advancedVolumeProfile;
+  const fp = indicators.footprintAnalysis;
 
   if (bias === "BULLISH") {
     if (obvTrend === "UP") p4Score += 3;
@@ -166,8 +168,20 @@ export function evaluateMasterConfluence(
     if (cmf && cmf.cmf > 0.02) p4Score += 3;
     if (hasAnomalySpike) p4Score += 3;
     else if (hasVolumeSpike) p4Score += 2;
-    // Contradiction penalty: buying into heavy selling volume
+    // Advanced Volume Profile & Footprint Confluence
+    if (advVp && (advVp.volumeImbalance.imbalanceStatus === "STRONG_BUYING" || advVp.volumeImbalance.imbalanceStatus === "MODERATE_BUYING")) {
+      p4Score += 2;
+    }
+    if (fp?.deltaDivergence?.detected && fp.deltaDivergence.type === "BULLISH_DIVERGENCE") {
+      p4Score += 3; // Institutional absorption
+    }
+    if (fp?.orderFlowSentiment === "STRONG_BUY" || fp?.orderFlowSentiment === "MODERATE_BUY") {
+      p4Score += 2;
+    }
+    // Contradiction penalty: buying into heavy selling volume or bearish divergence
     if (volDelta && volDelta.sellerVolumePct >= 65 && cvd && cvd.cvdTrend === "FALLING") p4Score -= 4;
+    if (advVp?.volumeImbalance.imbalanceStatus === "STRONG_SELLING") p4Score -= 3;
+    if (fp?.deltaDivergence?.detected && fp.deltaDivergence.type === "BEARISH_DIVERGENCE") p4Score -= 4;
   } else if (bias === "BEARISH") {
     if (obvTrend === "DOWN") p4Score += 3;
     if (cvd && (cvd.cvdTrend === "FALLING" || cvd.divergence === "BEARISH_CVD_DIVERGENCE")) p4Score += 4;
@@ -175,8 +189,20 @@ export function evaluateMasterConfluence(
     if (cmf && cmf.cmf < -0.02) p4Score += 3;
     if (hasAnomalySpike) p4Score += 3;
     else if (hasVolumeSpike) p4Score += 2;
-    // Contradiction penalty: selling into heavy buying volume
+    // Advanced Volume Profile & Footprint Confluence
+    if (advVp && (advVp.volumeImbalance.imbalanceStatus === "STRONG_SELLING" || advVp.volumeImbalance.imbalanceStatus === "MODERATE_SELLING")) {
+      p4Score += 2;
+    }
+    if (fp?.deltaDivergence?.detected && fp.deltaDivergence.type === "BEARISH_DIVERGENCE") {
+      p4Score += 3; // Institutional exhaustion
+    }
+    if (fp?.orderFlowSentiment === "STRONG_SELL" || fp?.orderFlowSentiment === "MODERATE_SELL") {
+      p4Score += 2;
+    }
+    // Contradiction penalty: selling into heavy buying volume or bullish divergence
     if (volDelta && volDelta.buyerVolumePct >= 65 && cvd && cvd.cvdTrend === "RISING") p4Score -= 4;
+    if (advVp?.volumeImbalance.imbalanceStatus === "STRONG_BUYING") p4Score -= 3;
+    if (fp?.deltaDivergence?.detected && fp.deltaDivergence.type === "BULLISH_DIVERGENCE") p4Score -= 4;
   } else {
     p4Score += 6;
   }
@@ -185,10 +211,14 @@ export function evaluateMasterConfluence(
 
   const cvdText = cvd ? `CVD: ${cvd.cvdTrend === "RISING" ? "📈 Rising" : cvd.cvdTrend === "FALLING" ? "📉 Falling" : "Flat"}` : "";
   const deltaText = volDelta ? `Delta: ${volDelta.buyerVolumePct}%B/${volDelta.sellerVolumePct}%S` : "";
+  const advVpText = advVp ? `Imbalance: ${advVp.volumeImbalance.imbalanceStatus.replace("_", " ")}` : "";
+  const fpDivergenceText = fp?.deltaDivergence?.detected ? `⚡ FP: ${fp.deltaDivergence.type === "BULLISH_DIVERGENCE" ? "Absorption" : "Exhaustion"}` : "";
   const p4Status = [
     hasAnomalySpike ? `🚨 Volume Anomaly (${indicators.volumeAnomalies?.slice(-1)[0]?.ratio}x)` : hasVolumeSpike ? `Volume Spike (+${Math.round((lastCandle.volume / avgVol) * 100 - 100)}%)` : isVeryLowVolume ? `⚠️ Low Volume Deadzone` : `OBV ${obvTrend}`,
     cvdText,
     deltaText,
+    advVpText,
+    fpDivergenceText
   ].filter(Boolean).join(" | ");
 
   // ─── PILLAR 5: SMART MONEY & STRUCTURE / DEMAND-SUPPLY (Max 20) ───

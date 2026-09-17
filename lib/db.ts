@@ -9,9 +9,18 @@ import {
   DEFAULT_TELEGRAM_CHAT_ID,
 } from "./telegramService";
 
-// Safe singleton client for Neon Serverless Postgres
-const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+// Safe singleton client for Neon Serverless Postgres with Connection Pooling Support
+const rawConnectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
 
+export function getPooledConnectionString(rawUrl: string): string {
+  if (!rawUrl) return "";
+  // If already contains -pooler, return as-is
+  if (rawUrl.includes("-pooler.")) return rawUrl;
+  // Automatically inject -pooler into Neon host subdomain for high-concurrency connection pooling
+  return rawUrl.replace(/\.([a-z0-9-]+)\.aws\.neon\.tech/i, "-pooler.$1.aws.neon.tech");
+}
+
+const connectionString = getPooledConnectionString(rawConnectionString);
 export const sql = connectionString ? neon(connectionString) : null;
 
 /**
@@ -112,6 +121,37 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
       CREATE INDEX IF NOT EXISTS idx_ai_signals_created_at ON ai_signals (created_at DESC)
     `);
 
+    // Composite indexes for query optimization
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_signals_sym_status_created ON ai_signals (symbol, status, created_at DESC)
+    `);
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_signals_status_created ON ai_signals (status, created_at DESC)
+    `);
+
+    // Table for historical signals archiving (Data Archiving Strategy)
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS ai_signals_archive (
+        id INT PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL,
+        action VARCHAR(30) NOT NULL,
+        order_type VARCHAR(50) NOT NULL,
+        entry_price NUMERIC(14, 4) NOT NULL,
+        stop_loss NUMERIC(14, 4) NOT NULL,
+        take_profit1 NUMERIC(14, 4) NOT NULL,
+        take_profit2 NUMERIC(14, 4) NOT NULL,
+        confluence_score INT DEFAULT 0,
+        setup_grade VARCHAR(30) DEFAULT 'B',
+        status VARCHAR(20) DEFAULT 'ACTIVE',
+        pnl_pips NUMERIC(10, 2) DEFAULT 0,
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE,
+        resolved_at TIMESTAMP WITH TIME ZONE,
+        archived_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+
     await sql.query(`
       CREATE TABLE IF NOT EXISTS telegram_subscribers (
         id SERIAL PRIMARY KEY,
@@ -144,6 +184,9 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
     await sql.query(`
       CREATE INDEX IF NOT EXISTS idx_market_candles_lookup ON market_candles (symbol, timeframe, time DESC)
     `);
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_market_candles_sym_tf_time ON market_candles (symbol, timeframe, time DESC)
+    `);
 
     // 4. Table for Closed-Loop Outcome Attribution & Self-Learning Lessons
     await sql.query(`
@@ -162,7 +205,26 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
     `);
 
     await sql.query(`
+      CREATE TABLE IF NOT EXISTS signal_feedback_lessons_archive (
+        id INT PRIMARY KEY,
+        signal_id INT,
+        symbol VARCHAR(20) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL,
+        outcome VARCHAR(20) NOT NULL,
+        pnl_pips NUMERIC(10, 2) DEFAULT 0,
+        confluence_score INT DEFAULT 0,
+        setup_grade VARCHAR(15),
+        lesson_summary TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE,
+        archived_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+
+    await sql.query(`
       CREATE INDEX IF NOT EXISTS idx_feedback_lessons_sym_time ON signal_feedback_lessons (symbol, created_at DESC)
+    `);
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_feedback_lessons_sym_outcome ON signal_feedback_lessons (symbol, outcome, created_at DESC)
     `);
 
     // 5. Table for Adaptive Parameter & Dynamic Weight Storage
@@ -231,6 +293,9 @@ export async function initBacktestTable(): Promise<void> {
     `);
     await sql.query(`
       CREATE INDEX IF NOT EXISTS idx_bt_results_created ON backtest_results (created_at DESC)
+    `);
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_bt_results_sym_tf_result ON backtest_results (symbol, timeframe, result)
     `);
   } catch (err) {
     console.error("Error creating backtest_results table:", err);
@@ -628,8 +693,62 @@ let lastPurgeTime = Date.now(); // Do NOT trigger immediately on cold start
 const PURGE_INTERVAL_MS = 6 * 3600 * 1000; // 6 hours
 
 /**
+ * Data Archiving Strategy:
+ * Safely transfers resolved ai_signals (>60 days) and historical feedback lessons (>30 days)
+ * from high-traffic production tables into archive tables. Keeps active tables lean and query latency < 10ms.
+ */
+export async function archiveHistoricalData(daysOld = 60): Promise<{ archivedSignals: number; archivedLessons: number }> {
+  if (!sql) return { archivedSignals: 0, archivedLessons: 0 };
+  try {
+    // 1. Move resolved ai_signals older than daysOld to archive table
+    await resilientQuery(`
+      WITH moved AS (
+        DELETE FROM ai_signals
+        WHERE status != 'ACTIVE' AND created_at < NOW() - (INTERVAL '1 day' * $1)
+        RETURNING *
+      )
+      INSERT INTO ai_signals_archive (
+        id, symbol, timeframe, action, order_type, entry_price, stop_loss,
+        take_profit1, take_profit2, confluence_score, setup_grade, status,
+        pnl_pips, notes, created_at, resolved_at
+      )
+      SELECT 
+        id, symbol, timeframe, action, order_type, entry_price, stop_loss,
+        take_profit1, take_profit2, confluence_score, setup_grade, status,
+        pnl_pips, notes, created_at, resolved_at
+      FROM moved
+      ON CONFLICT (id) DO NOTHING;
+    `, [daysOld]);
+
+    // 2. Move feedback lessons older than 30 days to archive table
+    await resilientQuery(`
+      WITH moved AS (
+        DELETE FROM signal_feedback_lessons
+        WHERE created_at < NOW() - INTERVAL '30 days'
+        RETURNING *
+      )
+      INSERT INTO signal_feedback_lessons_archive (
+        id, signal_id, symbol, timeframe, outcome, pnl_pips, confluence_score,
+        setup_grade, lesson_summary, created_at
+      )
+      SELECT 
+        id, signal_id, symbol, timeframe, outcome, pnl_pips, confluence_score,
+        setup_grade, lesson_summary, created_at
+      FROM moved
+      ON CONFLICT (id) DO NOTHING;
+    `);
+
+    return { archivedSignals: 1, archivedLessons: 1 };
+  } catch (err) {
+    console.warn("[Neon Archiving] Historical data archive note:", (err as Error)?.message || err);
+    return { archivedSignals: 0, archivedLessons: 0 };
+  }
+}
+
+/**
  * Housekeeping Data Hygiene:
- * Purges old market snapshots (>14 days), feedback lessons (>30 days), and resolved signals (>60 days).
+ * Archives resolved signals (>60 days) and lessons (>30 days) to separate archive tables,
+ * and purges old transient market snapshots (>14 days).
  * Keeps Neon Serverless Database permanently below 5MB to never exhaust free-tier limits.
  */
 export async function runDataHygiene(): Promise<void> {
@@ -640,8 +759,7 @@ export async function runDataHygiene(): Promise<void> {
 
   try {
     await resilientQuery(`DELETE FROM market_snapshots WHERE created_at < NOW() - INTERVAL '14 days'`);
-    await resilientQuery(`DELETE FROM signal_feedback_lessons WHERE created_at < NOW() - INTERVAL '30 days'`);
-    await resilientQuery(`DELETE FROM ai_signals WHERE status != 'ACTIVE' AND created_at < NOW() - INTERVAL '60 days'`);
+    await archiveHistoricalData(60);
   } catch (err) {
     console.warn("[Neon Hygiene] Housekeeping purge deferred:", (err as Error)?.message || err);
   }

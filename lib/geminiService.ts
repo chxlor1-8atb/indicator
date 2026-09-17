@@ -12,6 +12,8 @@ import {
   RoundLevelInfo,
   StructuralStopLossInfo,
   VolumeProfileInfo,
+  AdvancedVolumeProfileInfo,
+  FootprintAnalysisInfo,
   TDSequentialInfo,
   SpreadImpactInfo,
   TrailingStopInfo,
@@ -138,6 +140,8 @@ import {
   calculateLiquidityVoid,
   calculateFibonacciExtension,
   calculateFootprintAbsorption,
+  calculateAdvancedVolumeProfile,
+  calculateFootprintAnalysis,
   calculateMTFStructureMatrix,
   calculateLiquidityInducement,
   calculateInstitutionalChoS,
@@ -542,6 +546,8 @@ export function generateRuleBasedAnalysis(
   const fibonacciExtension = indicators.fibonacciExtension || calculateFibonacciExtension(candles, tier1Bias === "BEARISH" ? "SELL" : "BUY", precision);
   const footprintAbsorption = indicators.footprintAbsorption || calculateFootprintAbsorption(candles);
   const mtfStructureMatrix = indicators.mtfStructureMatrix || calculateMTFStructureMatrix(candles, precision, symbol);
+  const advancedVolumeProfile = indicators.advancedVolumeProfile || calculateAdvancedVolumeProfile(candles, precision, 40);
+  const footprintAnalysis = indicators.footprintAnalysis || calculateFootprintAnalysis(candles, precision, 20);
 
   // ─── BATCH 9 PRE-COMPUTATIONS (PLANS 41-45) ───
   const liquidityInducement = indicators.liquidityInducement || calculateLiquidityInducement(candles, precision, symbol);
@@ -1023,6 +1029,23 @@ export function generateRuleBasedAnalysis(
       confidence = Math.min(95, confidence + 4);
     }
 
+    // [แผน 52 & 53] Advanced Volume Profile & Footprint Confirmation for BUY
+    if (footprintAnalysis.deltaDivergence.detected && footprintAnalysis.deltaDivergence.type === "BULLISH_DIVERGENCE") {
+      confidence = Math.min(98, confidence + 5);
+    }
+    if (advancedVolumeProfile.volumeImbalance.imbalanceStatus === "STRONG_BUYING") {
+      confidence = Math.min(98, confidence + 3);
+    } else if (advancedVolumeProfile.volumeImbalance.imbalanceStatus === "STRONG_SELLING") {
+      confidence = Math.max(40, confidence - 6);
+    }
+    // High Volume Node (HVN) Support Shelf Alignment
+    if (advancedVolumeProfile.hvnLevels && advancedVolumeProfile.hvnLevels.length > 0) {
+      const hvnSupport = advancedVolumeProfile.hvnLevels.find(lvl => lvl < currentPrice && (currentPrice - lvl) <= currentATR * 1.2 && lvl >= stopLoss);
+      if (hvnSupport && !isInsideDemandZone) {
+        pendingPrice = Math.max(pendingPrice, hvnSupport);
+      }
+    }
+
     // Demand Zone Structural SL Protection: ensure SL sits safely below the active Demand Zone
     if (activeBullishOB && activeBullishOB.priceMin < pendingPrice) {
       stopLoss = Number(Math.min(stopLoss, activeBullishOB.priceMin - currentATR * 0.2).toFixed(precision));
@@ -1168,6 +1191,23 @@ export function generateRuleBasedAnalysis(
     // Institutional Liquidity Sweep (Turtle Soup) Precision Confirmation Boost
     if (sessionSweep.sweepType === "BEARISH_SWEEP" || (candleMicrostructure.rejectionStrength === "STRONG_SELL_REJECTION" && candleMicrostructure.wickRatio >= 30)) {
       confidence = Math.min(95, confidence + 4);
+    }
+
+    // [แผน 52 & 53] Advanced Volume Profile & Footprint Confirmation for SELL
+    if (footprintAnalysis.deltaDivergence.detected && footprintAnalysis.deltaDivergence.type === "BEARISH_DIVERGENCE") {
+      confidence = Math.min(98, confidence + 5);
+    }
+    if (advancedVolumeProfile.volumeImbalance.imbalanceStatus === "STRONG_SELLING") {
+      confidence = Math.min(98, confidence + 3);
+    } else if (advancedVolumeProfile.volumeImbalance.imbalanceStatus === "STRONG_BUYING") {
+      confidence = Math.max(40, confidence - 6);
+    }
+    // High Volume Node (HVN) Resistance Shelf Alignment
+    if (advancedVolumeProfile.hvnLevels && advancedVolumeProfile.hvnLevels.length > 0) {
+      const hvnResistance = advancedVolumeProfile.hvnLevels.find(lvl => lvl > currentPrice && (lvl - currentPrice) <= currentATR * 1.2 && lvl <= stopLoss);
+      if (hvnResistance && !isInsideSupplyZone) {
+        pendingPrice = Math.min(pendingPrice, hvnResistance);
+      }
     }
 
     // Supply Zone Structural SL Protection: ensure SL sits safely above the active Supply Zone
@@ -1337,9 +1377,11 @@ export function generateRuleBasedAnalysis(
       note: volumeDelta.description,
     },
     {
-      name: `Pillar 7: Volume Profile Value Area (${volumeProfile.isInsideValueArea ? "In Value" : "Imbalance"})`,
-      passed: volumeProfile.isInsideValueArea || (tradeAction === "BUY" && currentPrice >= volumeProfile.poc),
-      note: volumeProfile.description,
+      name: `Pillar 7: Volume Profile & Footprint Order Flow (${advancedVolumeProfile.volumeImbalance.imbalanceStatus})`,
+      passed: (tradeAction === "BUY" && (advancedVolumeProfile.volumeImbalance.imbalanceStatus.includes("BUYING") || footprintAnalysis.deltaDivergence.type === "BULLISH_DIVERGENCE" || currentPrice >= volumeProfile.poc)) ||
+              (tradeAction === "SELL" && (advancedVolumeProfile.volumeImbalance.imbalanceStatus.includes("SELLING") || footprintAnalysis.deltaDivergence.type === "BEARISH_DIVERGENCE" || currentPrice <= volumeProfile.poc)) ||
+              volumeProfile.isInsideValueArea,
+      note: `${volumeProfile.description} • Footprint: ${footprintAnalysis.orderFlowSentiment} (Delta Div: ${footprintAnalysis.deltaDivergence.detected ? footprintAnalysis.deltaDivergence.type : "NONE"})`,
     },
     {
       name: `Pillar 8: Anchored VWAP & CVD Flow (${anchoredVwap.pricePosition})`,
@@ -1654,6 +1696,8 @@ export function generateRuleBasedAnalysis(
     breakevenAdvice,
     roundLevel,
     volumeProfile,
+    advancedVolumeProfile,
+    footprintAnalysis,
     tdSequential,
     spreadImpact,
     trailingStop,
@@ -1893,9 +1937,9 @@ export function generateRuleBasedAnalysis(
       correlationShield,
       fvgMitigation,
       marketStructureShift,
-      // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis - DISABLED FOR PERFORMANCE
-      // advancedVolumeProfile: indicators.advancedVolumeProfile,
-      // footprintAnalysis: indicators.footprintAnalysis,
+      // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis
+      advancedVolumeProfile,
+      footprintAnalysis,
       // [แผน 54] Higher Timeframe Confluence Analysis (Simplified) - DISABLED FOR PERFORMANCE
       // mtfConfluence: indicators.mtfConfluence,
       // Enhanced TP/SL Information
@@ -2407,6 +2451,8 @@ Respond ONLY with valid JSON matching this schema:
     parsed.breakevenAdvice = ruleAnalysis.breakevenAdvice;
     parsed.roundLevel = ruleAnalysis.roundLevel;
     parsed.volumeProfile = ruleAnalysis.volumeProfile;
+    parsed.advancedVolumeProfile = ruleAnalysis.advancedVolumeProfile;
+    parsed.footprintAnalysis = ruleAnalysis.footprintAnalysis;
     parsed.tdSequential = ruleAnalysis.tdSequential;
     parsed.spreadImpact = ruleAnalysis.spreadImpact;
     parsed.trailingStop = ruleAnalysis.trailingStop;
@@ -2499,6 +2545,8 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.trailingStop = ruleAnalysis.tradeSetup.trailingStop;
       parsed.tradeSetup.spreadImpact = ruleAnalysis.tradeSetup.spreadImpact;
       parsed.tradeSetup.volumeProfile = ruleAnalysis.tradeSetup.volumeProfile;
+      parsed.tradeSetup.advancedVolumeProfile = ruleAnalysis.tradeSetup.advancedVolumeProfile;
+      parsed.tradeSetup.footprintAnalysis = ruleAnalysis.tradeSetup.footprintAnalysis;
       parsed.tradeSetup.kellySizing = ruleAnalysis.tradeSetup.kellySizing;
       parsed.tradeSetup.anchoredVwap = ruleAnalysis.tradeSetup.anchoredVwap;
       parsed.tradeSetup.cvd = ruleAnalysis.tradeSetup.cvd;

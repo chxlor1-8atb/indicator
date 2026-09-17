@@ -5,10 +5,17 @@ import {
   TelemetryLog,
   AutonomousPilotConfig,
   AnalysisResult,
+  RiskProfileType,
 } from "./types";
 import { calculateAllIndicators, calculateATR } from "./indicators";
 import { getMarketCandles, AVAILABLE_ASSETS } from "./marketService";
 import { generateRuleBasedAnalysis } from "./geminiService";
+import { validatePriceIntegrity, validateOrderConfluence } from "./priceIntegrity";
+import {
+  calculateDynamicPositionSize,
+  calculateAdaptiveTrailingStop,
+  calculatePartialTpPlan,
+} from "./riskEngine";
 
 // ─── IN-MEMORY AUTONOMOUS STATE BUS ───
 const activeOrdersStore = new Map<string, MtBridgeOrder>();
@@ -124,7 +131,15 @@ export async function evaluateAssetAutonomous(
   isPreWarning?: boolean;
 }> {
   const sym = symbol.toUpperCase();
-  const currentPrice = candles[candles.length - 1]?.close || 0;
+  const lastCandle = candles[candles.length - 1];
+  const currentPrice = lastCandle?.close || 0;
+
+  // Real-Time Price Integrity Validation
+  const integrity = validatePriceIntegrity(sym, currentPrice, lastCandle);
+  if (!integrity.isValid) {
+    addTelemetryLog(sym, "SCAN", `Price integrity alert for ${sym}: ${integrity.reason}`);
+  }
+
   const prevPrice = candles[0]?.open || currentPrice;
   const change24h = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
   const high24h = Math.max(...candles.map((c) => c.high));
@@ -244,8 +259,39 @@ export async function evaluateAssetAutonomous(
 
     // If no existing pending order or price moved sufficiently
     if (!existingOrder || Math.abs(existingOrder.price - pendingPrice) > (currentAtr * 0.5)) {
+      // ─── Pre-Execution Order Confluence & Directional Hierarchy Validation ───
+      const confluenceValidation = validateOrderConfluence(
+        tradeSetup.action,
+        currentPrice,
+        pendingPrice,
+        slPrice,
+        tp1Price,
+        tp2Price,
+        1.1
+      );
+      if (!confluenceValidation.isValid) {
+        addTelemetryLog(sym, "VETO", `Order Confluence Check Failed: ${confluenceValidation.reason}`);
+        return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+      }
+
       decisionTriggered = true;
-      const lotSize = config.accountType === "CENT" ? 0.10 : 0.02;
+
+      // ─── Dynamic Position Sizing based on Risk Profile & Volatility ───
+      const dynamicSize = calculateDynamicPositionSize({
+        symbol: sym,
+        accountBalance: 1000,
+        currentPrice,
+        stopLossDistancePrice: Math.abs(pendingPrice - slPrice),
+        riskProfile: config.riskProfile || "MODERATE",
+        candles,
+        customRiskPct: config.riskPercentPerTrade,
+      });
+
+      const lotSize = config.accountType === "CENT"
+        ? Number((dynamicSize.calculatedLotSize * 5).toFixed(2))
+        : dynamicSize.calculatedLotSize;
+
+      const partialPlan = calculatePartialTpPlan(lotSize, tp1Price, tp2Price);
 
       // ─── AI RISK FLAGS: รวบรวมเหตุผลทั้งหมดที่ทำให้ควรให้มนุษย์ตรวจสอบ ───
       const aiRiskFlags: string[] = [];
@@ -290,6 +336,13 @@ export async function evaluateAssetAutonomous(
         expiresAt: Date.now() + 4 * 60 * 60 * 1000, // 4 hours validity
         aiRiskFlags,
         requiresHumanApproval,
+        riskProfile: config.riskProfile || "MODERATE",
+        initialLots: lotSize,
+        remainingLots: lotSize,
+        partialCloses: [],
+        adaptiveTrailingActive: true,
+        trailingSlPrice: slPrice,
+        trailingStage: 0,
       };
 
       activeOrdersStore.set(newOrder.id, newOrder);
@@ -298,11 +351,11 @@ export async function evaluateAssetAutonomous(
         sym,
         "DECISION",
         requiresHumanApproval
-          ? `⏳ รอการอนุมัติ: ${effectiveOrderType} @ ${pendingPrice} (Grade ${setupGrade} | Score ${totalScore}%${aiRiskFlags.length > 0 ? ` | ⚠️ Flags: ${aiRiskFlags.length}` : ""})`
-          : `Autonomous Decision: ${effectiveOrderType} @ ${pendingPrice} primed (Confluence ${totalScore}%, Grade ${setupGrade})`,
+          ? `⏳ รอการอนุมัติ: ${effectiveOrderType} @ ${pendingPrice} (Grade ${setupGrade} | Score ${totalScore}%${aiRiskFlags.length > 0 ? ` | ⚠️ Flags: ${aiRiskFlags.length}` : ""}) | Lot: ${lotSize}`
+          : `Autonomous Decision: ${effectiveOrderType} @ ${pendingPrice} primed (Confluence ${totalScore}%, Grade ${setupGrade}) | ${partialPlan.description}`,
         totalScore,
         setupGrade,
-        { price: pendingPrice, sl: slPrice, tp1: tp1Price, aiRiskFlags }
+        { price: pendingPrice, sl: slPrice, tp1: tp1Price, lotSize, partialPlan, aiRiskFlags }
       );
 
       addTelemetryLog(
@@ -310,7 +363,7 @@ export async function evaluateAssetAutonomous(
         "ORDER",
         requiresHumanApproval
           ? `🔐 Order #${newOrder.id.slice(-6)} อยู่ใน Human Review Queue${aiRiskFlags.length > 0 ? ` — Risk Flags: [${aiRiskFlags.join(", ")}]` : ""}`
-          : `Institutional Ticket dispatched to MT4/MT5 Bridge (SL: ${slPrice} | TP1: ${tp1Price})`
+          : `Institutional Ticket dispatched to MT4/MT5 Bridge (Lot: ${lotSize} | SL: ${slPrice} | TP1: ${tp1Price} [50%] | TP2: ${tp2Price})`
       );
     }
   }
@@ -418,87 +471,156 @@ export function getScannerCache() {
 }
 
 /**
- * Monitors and resolves active orders against live tick price
+ * Monitors and resolves active orders against live tick price.
+ * Features Price Integrity Validation, Partial Take Profit (50% at TP1),
+ * Risk-Free Breakeven Lock, and Multi-Stage Adaptive Trailing Stop.
  */
 export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: number) {
-  const orders = getActiveBridgeOrders(symbol);
+  const sym = symbol.toUpperCase();
+
+  // Price Integrity Validation
+  const integrity = validatePriceIntegrity(sym, currentPrice);
+  if (!integrity.isValid) return;
+
+  const orders = getActiveBridgeOrders(sym);
   if (orders.length === 0 || currentPrice <= 0) return;
 
+  const isGold = sym.includes("XAU") || sym.includes("GOLD");
+  const isJpy = sym.includes("JPY");
+  const pipMultiplier = isGold ? 10 : isJpy ? 100 : sym.endsWith("USDT") ? 1 : 10000;
+  const precision = isForexPair(sym) ? 4 : isJpy ? 2 : sym.endsWith("USDT") ? 2 : 2;
+
   for (const order of orders) {
+    const isBuy = order.orderType.includes("BUY");
+
+    // Case 1: PENDING -> FILLED
     if (order.status === "PENDING") {
-      // Check if limit order is filled
-      if (order.orderType === "BUY_LIMIT" && currentPrice <= order.price) {
+      const isFilled = isBuy ? currentPrice <= order.price : currentPrice >= order.price;
+      if (isFilled) {
         order.status = "FILLED";
+        order.initialLots = order.initialLots || order.lotSize;
+        order.remainingLots = order.remainingLots || order.lotSize;
+        order.trailingSlPrice = order.stopLoss;
+        order.trailingStage = 0;
         addTelemetryLog(
-          symbol,
+          sym,
           "RESOLVE",
-          `Order #${order.id.slice(-6)} FILLED @ ${currentPrice}. Trailing Stop & Breakeven monitors activated.`
-        );
-      } else if (order.orderType === "SELL_LIMIT" && currentPrice >= order.price) {
-        order.status = "FILLED";
-        addTelemetryLog(
-          symbol,
-          "RESOLVE",
-          `Order #${order.id.slice(-6)} FILLED @ ${currentPrice}. Trailing Stop & Breakeven monitors activated.`
+          `Order #${order.id.slice(-6)} FILLED @ ${currentPrice} (${order.lotSize} lot). Adaptive Trailing & Partial TP monitors activated.`
         );
       }
-    } else if (order.status === "FILLED") {
-      // Check TP / SL for filled orders
-      if (order.orderType === "BUY_LIMIT" || order.orderType === "BUY") {
-        if (currentPrice >= order.takeProfit2) {
-          order.status = "HIT_TP2";
-          addTelemetryLog(
-            symbol,
-            "RESOLVE",
-            `🏆 Order #${order.id.slice(-6)} HIT TP2 @ ${currentPrice}! Target reached, full profit secured.`
-          );
-          activeOrdersStore.delete(order.id);
-        } else if (currentPrice >= order.takeProfit1) {
+      continue;
+    }
+
+    // Case 2: Open active orders (FILLED or HIT_TP1)
+    if (order.status === "FILLED" || order.status === "HIT_TP1") {
+      const initialRisk = Math.abs(order.price - order.stopLoss) || (currentPrice * 0.005);
+      const estAtr = initialRisk / 1.5;
+
+      // Check Stop Loss
+      const isSlHit = isBuy ? currentPrice <= order.stopLoss : currentPrice >= order.stopLoss;
+      if (isSlHit) {
+        const pips = isBuy
+          ? (order.stopLoss - order.price) * pipMultiplier
+          : (order.price - order.stopLoss) * pipMultiplier;
+        const isBe = order.status === "HIT_TP1" || Math.abs(order.stopLoss - order.price) < (2 / pipMultiplier);
+
+        order.status = "HIT_SL";
+        addTelemetryLog(
+          sym,
+          "RESOLVE",
+          isBe
+            ? `🛡️ Order #${order.id.slice(-6)} closed at Break-Even @ ${currentPrice} (Risk-Free capital preserved).`
+            : `🛑 Order #${order.id.slice(-6)} HIT SL @ ${currentPrice} (${pips.toFixed(1)} pips). Invalidation stop executed.`
+        );
+        activeOrdersStore.delete(order.id);
+        continue;
+      }
+
+      // Check Take Profit 2 (Ultimate Target Win)
+      const isTp2Hit = isBuy ? currentPrice >= order.takeProfit2 : currentPrice <= order.takeProfit2;
+      if (isTp2Hit) {
+        const pips = Math.abs(order.takeProfit2 - order.price) * pipMultiplier;
+        order.status = "HIT_TP2";
+        addTelemetryLog(
+          sym,
+          "RESOLVE",
+          `🏆 Order #${order.id.slice(-6)} HIT TP2 @ ${currentPrice} (+${pips.toFixed(1)} pips)! 100% position profit secured.`
+        );
+        activeOrdersStore.delete(order.id);
+        continue;
+      }
+
+      // Check Take Profit 1 (Partial 50% Execution & Breakeven Lock)
+      if (order.status === "FILLED") {
+        const isTp1Hit = isBuy ? currentPrice >= order.takeProfit1 : currentPrice <= order.takeProfit1;
+        if (isTp1Hit) {
           order.status = "HIT_TP1";
-          order.stopLoss = order.price; // Move SL to Breakeven
+          const closedLots = Number(((order.initialLots || order.lotSize) * 0.5).toFixed(2));
+          order.remainingLots = Number(Math.max(0.01, (order.lotSize - closedLots)).toFixed(2));
+
+          // Lock SL to Breakeven (+ 1.5 pips spread buffer)
+          const bufferPrice = 1.5 / pipMultiplier;
+          order.stopLoss = isBuy
+            ? Number((order.price + bufferPrice).toFixed(precision))
+            : Number((order.price - bufferPrice).toFixed(precision));
+          order.trailingSlPrice = order.stopLoss;
+          order.trailingStage = 1;
+
+          const pips = Math.abs(order.takeProfit1 - order.price) * pipMultiplier;
+          if (!order.partialCloses) order.partialCloses = [];
+          order.partialCloses.push({
+            stage: "TP1",
+            price: currentPrice,
+            closedLots,
+            remainingLots: order.remainingLots,
+            pnlPips: Number(pips.toFixed(1)),
+            timestamp: Date.now(),
+          });
+
           addTelemetryLog(
-            symbol,
+            sym,
             "RESOLVE",
-            `🎯 Order #${order.id.slice(-6)} HIT TP1 @ ${currentPrice}! SL automatically adjusted to Breakeven (${order.price}).`
+            `🎯 Order #${order.id.slice(-6)} HIT TP1 @ ${currentPrice} (+${pips.toFixed(1)} pips)! Closed 50% (${closedLots} lot). SL moved to Breakeven (${order.stopLoss}). Runner (${order.remainingLots} lot) tracking TP2 with Adaptive Trail.`
           );
-        } else if (currentPrice <= order.stopLoss) {
-          order.status = "HIT_SL";
-          addTelemetryLog(
-            symbol,
-            "RESOLVE",
-            `🛑 Order #${order.id.slice(-6)} HIT SL @ ${currentPrice}. Invalidation stop triggered, capital preserved.`
-          );
-          activeOrdersStore.delete(order.id);
+          continue;
         }
-      } else if (order.orderType === "SELL_LIMIT" || order.orderType === "SELL") {
-        if (currentPrice <= order.takeProfit2) {
-          order.status = "HIT_TP2";
+      }
+
+      // Adaptive Trailing Stop (Trail by ATR when in profit >= 1.5R)
+      if (order.adaptiveTrailingActive) {
+        const trailing = calculateAdaptiveTrailingStop(
+          isBuy ? "BUY" : "SELL",
+          order.price,
+          currentPrice,
+          order.price,
+          order.stopLoss,
+          estAtr,
+          sym
+        );
+
+        const isBetterSl = isBuy
+          ? trailing.trailingSlPrice > order.stopLoss
+          : trailing.trailingSlPrice < order.stopLoss;
+
+        if (isBetterSl) {
+          order.stopLoss = trailing.trailingSlPrice;
+          order.trailingSlPrice = trailing.trailingSlPrice;
+          order.trailingStage = trailing.stage;
           addTelemetryLog(
-            symbol,
+            sym,
             "RESOLVE",
-            `🏆 Order #${order.id.slice(-6)} HIT TP2 @ ${currentPrice}! Target reached, full profit secured.`
+            `📈 Order #${order.id.slice(-6)} Adaptive Trail Ratchet: SL tightened to ${order.stopLoss} (${trailing.statusDescription})`
           );
-          activeOrdersStore.delete(order.id);
-        } else if (currentPrice <= order.takeProfit1) {
-          order.status = "HIT_TP1";
-          order.stopLoss = order.price; // Move SL to Breakeven
-          addTelemetryLog(
-            symbol,
-            "RESOLVE",
-            `🎯 Order #${order.id.slice(-6)} HIT TP1 @ ${currentPrice}! SL automatically adjusted to Breakeven (${order.price}).`
-          );
-        } else if (currentPrice >= order.stopLoss) {
-          order.status = "HIT_SL";
-          addTelemetryLog(
-            symbol,
-            "RESOLVE",
-            `🛑 Order #${order.id.slice(-6)} HIT SL @ ${currentPrice}. Invalidation stop triggered, capital preserved.`
-          );
-          activeOrdersStore.delete(order.id);
         }
       }
     }
   }
+}
+
+function isForexPair(sym: string): boolean {
+  return ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some(
+    (c) => sym.startsWith(c) || sym.endsWith(c)
+  ) && !sym.includes("JPY") && sym !== "XAUUSD";
 }
 
 /**

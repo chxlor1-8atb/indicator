@@ -1593,6 +1593,47 @@ export default function AnalysisCard({
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.volumeProfile.description}
                 </p>
+
+                {/* Advanced Volume Profile & Footprint Badges */}
+                {(analysis.advancedVolumeProfile || analysis.footprintAnalysis) && (
+                  <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                      {analysis.advancedVolumeProfile?.volumeImbalance && (
+                        <span className={`px-2 py-0.5 rounded font-mono font-bold ${
+                          analysis.advancedVolumeProfile.volumeImbalance.imbalanceStatus.includes("BUYING")
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                            : analysis.advancedVolumeProfile.volumeImbalance.imbalanceStatus.includes("SELLING")
+                            ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                            : "bg-slate-800 text-slate-300"
+                        }`}>
+                          ⚖️ {analysis.advancedVolumeProfile.volumeImbalance.imbalanceStatus.replace("_", " ")} ({analysis.advancedVolumeProfile.volumeImbalance.imbalancePct.toFixed(0)}%)
+                        </span>
+                      )}
+                      {analysis.footprintAnalysis?.orderFlowSentiment && analysis.footprintAnalysis.orderFlowSentiment !== "NEUTRAL" && (
+                        <span className={`px-2 py-0.5 rounded font-mono font-bold ${
+                          analysis.footprintAnalysis.orderFlowSentiment.includes("BUY")
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                            : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                        }`}>
+                          👣 Flow: {analysis.footprintAnalysis.orderFlowSentiment.replace("_", " ")}
+                        </span>
+                      )}
+                      {analysis.footprintAnalysis?.deltaDivergence?.detected && (
+                        <span className="px-2 py-0.5 rounded font-mono font-black bg-purple-500/20 text-purple-300 border border-purple-500/40 animate-pulse">
+                          ⚡ {analysis.footprintAnalysis.deltaDivergence.type === "BULLISH_DIVERGENCE" ? "Bullish Absorption Div" : "Bearish Exhaustion Div"}
+                        </span>
+                      )}
+                    </div>
+                    {analysis.advancedVolumeProfile?.hvnLevels && analysis.advancedVolumeProfile.hvnLevels.length > 0 && (
+                      <div className="text-[9px] text-slate-400">
+                        <span className="text-amber-400 font-semibold">HVN Shelves: </span>
+                        {analysis.advancedVolumeProfile.hvnLevels.slice(0, 3).map((lvl, idx) => (
+                          <span key={idx} className="font-mono text-slate-300 mr-1.5">{lvl}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
