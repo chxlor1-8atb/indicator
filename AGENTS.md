@@ -111,8 +111,10 @@ Indicator/
 │   └── types.ts                        # รวม Data Types และ Interfaces ทั้งหมด (~2.3k บรรทัด)
 │
 ├── scripts/                             # แดมอนและสคริปต์ทดสอบ
-│   ├── bot-daemon.mjs                  # Background Worker รันสแกนตลาดและส่ง Telegram ต่อเนื่อง
-│   └── verify-v2-enhancements.ts       # สคริปต์รันเทสระบบ Confluence, Risk, และ Cache
+│   ├── bot-daemon.mjs                  # Background Worker รันสแกนตลาดและส่ง Telegram ต่อเนื่อง (npm run bot)
+│   ├── verify-v2-enhancements.ts       # สคริปต์รันเทสระบบ Confluence, Risk, Micro Sizing และ Cache
+│   ├── test-anti-clash-orchestrator.ts # ทดสอบตรรกะ Anti-Clash Orchestrator และการตัดสัญญาณรบกวน
+│   └── test-quant-pipeline.ts          # ทดสอบ Data Hygiene, Fractional Diff และ Volume Profile
 │
 └── mql/                                 # ซอร์สโค้ด Expert Advisor บน MetaTrader
     ├── AI_Trend_Signal.mq4             # EA สำหรับ MetaTrader 4
@@ -295,6 +297,23 @@ graph TD
   - **Grade B (คะแนน $55 - 69$):** สัญญาณระดับปานกลาง แนะนำให้ลดขนาด Lot หรือรอการยืนยัน
   - **Grade C / WAIT (คะแนน $< 55$):** ตลาดไร้ทิศทาง หรือติดสภาวะข่าวเศรษฐกิจ สั่ง **ถือเงินสด** 100%
 
+#### ระบบ Strict HTF Confluence Guard (เกราะป้องกันเทรนด์ใหญ่ H4/D1):
+- **หลักการทำงาน:** ป้องกันข้อผิดพลาดร้ายแรงที่สุดของเทรดเดอร์คือ "การเทรดสวนแนวโน้มใหญ่ของสถาบัน"
+- ระบบจะวิเคราะห์แนวโน้มโครงสร้างของกรอบเวลา H4 และ Daily (EMA 200 Slope, Trend Ribbon, Structure)
+- จำแนกสถานะความสอดคล้อง (`htfAlignment`):
+  - `ALIGNED` (สอดคล้องสมบูรณ์): สัญญาณย่อย (เช่น M15/H1) วิ่งไปในทิศทางเดียวกับ H4/D1 เทรนด์ใหญ่ ได้รับคะแนน Confluence เต็มที่
+  - `NEUTRAL` (เป็นกลาง): ตลาดใหญ่เป็น Sideway ไร้เทรนด์ชัดเจน
+  - `CONFLICT` (ขัดแย้งรุนแรง): สัญญาณย่อยพยายามสวนทางกับเทรนด์ใหญ่ H4/D1 ระบบจะ **ตัดคะแนน Confluence Penalty ทันที หรือสั่งบล็อกออเดอร์ (Force WAIT)** ป้องกันการเข้า Buy ที่ดอย หรือ Sell ที่ก้นเหว
+
+#### ระบบ AI/ML Random Forest & Meta-Labeling Conviction Filter (Phase 3):
+- **แนวคิด Meta-Labeling:** ใช้อัลกอริทึม Machine Learning ทำหน้าที่เป็น "ผู้ตรวจทานขั้นที่สอง" (Secondary Gatekeeper) ไม่ได้ใช้ทำนายราคาดิบ แต่ใช้ทำนายว่า *"สัญญาณของระบบ Confluence รอบนี้ มีความน่าจะเป็นที่จะชน TP มากน้อยเพียงใด"*
+- นำ 24-Dimensional Quant Feature Vector (`lib/featureEngineering.ts`) ส่งเข้าสู่ Random Forest Ensemble (`lib/mlEngine.ts`)
+- ผลลัพธ์คือค่าความเชื่อมั่น (`mlConviction` ระดับ 0.00 – 1.00):
+  - **Conviction $\ge 0.70$ (High Conviction):** โมเดลสถาบันและ AI สอดคล้องกันอย่างมีนัยสำคัญ ได้รับ Bonus Confidence Scale
+  - **$0.55 \le \text{Conviction} < 0.70$ (Moderate Conviction):** ผ่านเกณฑ์ขั้นต่ำ ดำเนินการออกสัญญาณตาม Confluence ปกติ
+  - **Conviction $< 0.55$ (Low Conviction):** กรองสัญญาณหลอก (False Breakout / Noise) สั่งดาวน์เกรดหรือปรับเป็น WAIT ทันที
+- มีการแสดงผลบน UI การ์ดสัญญาณ `AnalysisCard.tsx` ด้วยเกจวัด AI/ML Ensemble Conviction Bar อย่างชัดเจน
+
 ---
 
 ### 4.4 Anti-Clash Strategy Orchestrator
@@ -360,22 +379,34 @@ graph TD
    - ใช้ระบบ Half-Kelly หรือ Fractional-Kelly เพื่อความปลอดภัยสูงสุด ไม่โอเวอร์เทรด
 3. **`filterOutlierWicks()` (`lib/priceIntegrity.ts`):**
    - กรองและตัดไส้เทียนประหลาดที่เกิดจากสเปรดถ่างช่วงเปลี่ยนวัน (Rollover Spreads) ออกก่อนนำไปคำนวณแนวรับต้าน ป้องกันการตั้ง SL/TP ที่ผิดเพี้ยน
+4. **พอร์ตโฟลิโอ Micro-Sizing Matrix ($10 ถึง $1,000):**
+   - มีการคำนวณและแสดงผลตารางขนาด Lot Size แยกตามระดับเงินทุนอย่างชัดเจน:
+     - **พอร์ต $10 USD:** แนะนำเปิดบัญชี Cent (1,000 USC) เทรด 0.01-0.02 Micro-lot คุมความเสี่ยงที่ 1-2% ($0.10-$0.20)
+     - **พอร์ต $50 USD:** สามารถเทรด Cent Account แบบสบายใจ หรือเทรด Standard 0.01 Lot เฉพาะคู่เงินสเปรดต่ำ
+     - **พอร์ต $100 / $500 / $1,000 USD:** ปรับ Lot อัตโนมัติตามระยะ SL ของโครงสร้างจริง (Structural ATR SL)
 
 ---
 
 ### 4.7 Macro News & Global Session Shields
 
-**ไฟล์หลัก:** [`lib/calendarEngine.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/calendarEngine.ts), [`lib/sessionEngine.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/sessionEngine.ts)
+**ไฟล์หลัก:** [`lib/calendarEngine.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/calendarEngine.ts), [`lib/sessionEngine.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/sessionEngine.ts), [`app/api/news/route.ts`](file:///c:/Users/Admin/Downloads/Indicator/app/api/news/route.ts)
 
-#### เกราะป้องกันข่าวเศรษฐกิจ 4 สี (Forex Factory 4-Color Shield):
-- ดึง RSS ข่าวเศรษฐกิจสหรัฐฯ, ยุโรป, ญี่ปุ่น และทองคำ
-- **กล่องแดง (High Impact - CPI, NFP, ดอกเบี้ย Fed):**
-  - สั่ง **ล็อกสถานะระบบเป็น WAIT ทันที (Freeze Mode)** ในช่วง **30 นาทีก่อนข่าวออก และ 15 นาทีหลังข่าวออก**
-  - ป้องกันการออกสัญญาณช่วงกราฟกระชากล้างสภาพคล่อง
-- **กล่องส้ม (Medium Impact - Retail Sales, PMI):**
-  - อนุญาตให้ออกสัญญาณตามเทรนด์ได้ แต่บังคับขยายระยะ SL ด้วยตัวคูณ ATR ป้องกันสะบัด
-- **กล่องเหลือง (Low Impact):** สภาวะปกติ เทรดได้ 100%
-- **กล่องเทา/ขาว (Bank Holiday):** เตือนสภาวะวอลุ่มต่ำและสเปรดถ่าง
+#### เกราะป้องกันข่าวเศรษฐกิจ 4 สี (Forex Factory 4-Color Shield & Pre-News Freeze - Phase 4):
+- **ระบบเชื่อมโยงข้อมูลสด (Real-Time Ingestion):** ดึง XML/RSS Feed จาก Forex Factory แบบเรียลไทม์ และมีระบบ Local Static Calendar สำรองกรณีเครือข่ายขัดข้อง
+- **เกราะป้องกัน 8 สกุลเงินหลัก (Currency Impact Matrix):** เฝ้าระวังข่าวเศรษฐกิจที่มีผลกระทบตรงต่อ `USD`, `EUR`, `GBP`, `JPY`, `AUD`, `CAD`, `NZD`, `CHF` รวมถึงสินทรัพย์ทองคำ (`XAUUSD`) และน้ำมัน (`USOIL`)
+- **4 ระดับสถานะความปลอดภัยและ Dynamic Risk Modulation:**
+  1. **🟥 `PRE_NEWS_FREEZE` (0 ถึง 30 นาทีก่อนข่าวกล่องแดง):**
+     - ล็อกระบบเป็น **WAIT ทันที (Freeze Mode)** ปิดกั้นการออกสัญญาณใหม่ 100% (`positionSizeReductionPct = 100%`)
+     - ตั้งค่า `spreadSafetyMultiplier = 2.5x` เผื่อระยะกระชากของราคา
+  2. **⏳ `POST_NEWS_COOLDOWN` (0 ถึง 15 นาทีหลังข่าวกล่องแดงออก):**
+     - ล็อกระบบต่อ 15 นาที เพื่อรอแท่งเทียนแทรกแซงแท่งแรกจบลง ป้องกันการติดกับดัก Fakeout / Whipsaw
+     - `positionSizeReductionPct = 100%`, `spreadSafetyMultiplier = 2.0x`
+  3. **⚠️ `APPROACHING_NEWS` (30 ถึง 60 นาทีก่อนข่าวกล่องแดง):**
+     - สัญญาณยังออกได้ตามปกติ แต่บังคับ **ลดขนาด Lot ลง 50%** (`positionSizeReductionPct = 50%`) และขยายระยะ SL 1.5 เท่า (`spreadSafetyMultiplier = 1.5x`) ป้องกันสเปรดถ่างล่วงหน้า
+  4. **🟢 `SAFE_TRADING_WINDOW` (หน้าต่างปลอดภัย):**
+     - หากมีข่าวกล่องส้ม (Orange Caution) ภายใน 15 นาที: แนะนำลด Lot 30% (`positionSizeReductionPct = 30%`), บัฟเฟอร์ SL 1.2x
+     - สภาวะปกติ: เทรดได้เต็มศักยภาพ 100% ตามสัญญาณเทคนิคอล
+- **Live Countdown UI (`components/NewsFeed.tsx`):** แสดงตัวเลขนับถอยหลังวินาทีต่อวินาที แถบสีสถานะ และ Strategy Playbook แนะนำการปฏิบัติตัวของเทรดเดอร์ในแต่ละช่วงข่าว
 
 #### นาฬิกาเซสชันตลาดโลก (GMT+7 เวลาไทย):
 - จำแนก 4 เซสชัน: Asian (06:00 - 14:00), London (14:00 - 23:00), New York (19:00 - 04:00)
@@ -471,7 +502,9 @@ graph TD
      - ความผันผวน: Bollinger Bandwidth, ATR Ratio, Realized Volatility
      - สภาพคล่อง: Volume Delta, CVD Divergence, FVG Proximity
 2. **`runMachineLearningInference()`**:
-   - ใช้อัลกอริทึม Random Forest Ensemble จำลองในการคำนวณทิศทางความน่าจะเป็น (Probability 0.0 – 1.0)
+   - ใช้อัลกอริทึม Random Forest Ensemble Inference จำลองเพื่อประเมินความน่าจะเป็นทางสถิติ (Probability 0.0 – 1.0)
+   - คำนวณค่า **Meta-Labeling Conviction Score** กรองสัญญาณเทรดที่ได้เปรียบสูง (High Probability Edge)
+   - หากค่าความเชื่อมั่นต่ำกว่า $0.55$ ระบบจะระงับการเทรดเพื่อหลีกเลี่ยงช่วงราคาไร้ทิศทางและ False Breakout
 3. **`optimizeIndicatorParameters()`**:
    - รันกระบวนการ Walk-Forward Grid Search บนประวัติแท่งเทียน เพื่อหาคาบเวลาของ EMA เร็ว/ช้า และ RSI ที่ให้ผลตอบแทนและ Win-Rate สูงที่สุดสำหรับคู่เงินนั้นๆ โดยเฉพาะ
 
@@ -510,6 +543,9 @@ graph TD
 | **ปรับแต่งกราฟแท่งเทียน / เส้นอินดิเคเตอร์บนกราฟ** | `components/MarketChart.tsx` | `MarketChart()`, การตั้งค่า TradingView Lightweight Charts |
 | **ปรับตั้งกฎเกราะป้องกันข่าวเศรษฐกิจ 4 สี** | `lib/calendarEngine.ts`<br/>`components/NewsFeed.tsx` | `getNewsSafetyShieldStatus()`, `fetchLiveNews()` |
 | **ปรับแต่งสะพานเชื่อม MetaTrader 4 / 5 (EA Bridge)** | `app/api/mt-bridge/route.ts`<br/>`mql/` | Handler `GET`/`POST`, สคริปต์ `AI_Trend_Signal.mq4/mq5` |
+| **ปรับแต่ง AI/ML Meta-Labeling & Feature Vector** | `lib/mlEngine.ts`<br/>`lib/featureEngineering.ts` | `runMachineLearningInference()`, `extractFeatureVector24D()` |
+| **ปรับแต่ง Strict HTF Confluence Guard (H4/D1)** | `lib/confluenceEngine.ts`<br/>`lib/geminiService.ts` | `evaluateMasterConfluence()`, `htfAlignment` |
+| **ปรับตั้งค่า Dynamic Spread Buffer & News Risk Reduction** | `lib/calendarEngine.ts`<br/>`lib/riskEngine.ts` | `getNewsSafetyShieldStatus()`, `spreadSafetyMultiplier` |
 
 ---
 
@@ -525,6 +561,18 @@ npm run lint
 
 # 3. รันเซิร์ฟเวอร์สำหรับพัฒนาในเครื่อง
 npm run dev
+
+# 4. รันแดมอนสแกนตลาดอัตโนมัติและส่งสัญญาณ Telegram (Autonomous Daemon)
+npm run bot
+
+# 5. รันสคริปต์ทดสอบระบบ Confluence, Micro Risk, และ In-Memory Cache
+npx tsx scripts/verify-v2-enhancements.ts
+
+# 6. รันการทดสอบระบบ Anti-Clash Strategy Orchestrator
+npx tsx scripts/test-anti-clash-orchestrator.ts
+
+# 7. รันการทดสอบ Quantitative Data Pipeline
+npx tsx scripts/test-quant-pipeline.ts
 ```
 
 ### ข้อควรจำทางสถาปัตยกรรมสำหรับ AI Coding Agents:
