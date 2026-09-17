@@ -43,7 +43,7 @@ async function runTest() {
         console.log(`  100+ Indicators calculated in ${indElapsedMs}ms`);
         console.log(`    EMA20: ${lastEma20.toFixed(4)} | EMA50: ${lastEma50.toFixed(4)} | RSI14: ${lastRsi.toFixed(1)}`);
         console.log(`    Volume Profile PoC: $${indicators.volumeProfile?.poc}`);
-        console.log(`    FVG Bullish Count: ${indicators.fvgZones?.bullishCount || 0} | Bearish Count: ${indicators.fvgZones?.bearishCount || 0}`);
+        console.log(`    FVG Active Count: ${indicators.fvgMitigation?.activeFVGs?.length || 0}`);
 
         const analysisStart = Date.now();
         const analysis = generateRuleBasedAnalysis(sym, "1h", candles, indicators, []);
@@ -52,7 +52,7 @@ async function runTest() {
         console.log(`    Signal: ${analysis.signal} (Confidence: ${analysis.confidence}%)`);
         console.log(`    Setup Grade: ${analysis.setupGrade}`);
         console.log(`    Order Type: ${analysis.tradeSetup?.orderType} (${analysis.tradeSetup?.action})`);
-        console.log(`    Entry: $${analysis.tradeSetup?.pendingPrice || analysis.tradeSetup?.entryPrice}`);
+        console.log(`    Entry: $${analysis.tradeSetup?.pendingPrice}`);
         console.log(`    SL: $${analysis.tradeSetup?.stopLoss} | TP1: $${analysis.tradeSetup?.takeProfit1} | TP2: $${analysis.tradeSetup?.takeProfit2}`);
         console.log(`  PASS: ${sym} PASSED ALL TESTS`);
       } else {
