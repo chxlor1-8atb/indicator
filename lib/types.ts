@@ -1215,6 +1215,12 @@ export interface AnalysisResult {
     assetCategory?: "forex" | "crypto" | "commodities" | "stocks";
     summary?: string;
     quadEma?: QuadEmaConfluence;
+    htfGuardStatus?: {
+      isGuarded: boolean;
+      guardType: "STRICT_LOCK" | "ALIGNED" | "NEUTRAL";
+      macroDominance: "BULLISH_DOMINANCE" | "BEARISH_DOMINANCE" | "MIXED";
+      guardReason?: string;
+    };
   };
   technicalAnalysis: {
     trend: "STRONG_UPTREND" | "UPTREND" | "SIDEWAYS" | "DOWNTREND" | "STRONG_DOWNTREND";
@@ -1302,6 +1308,12 @@ export interface AnalysisResult {
       requiresConfirmation: boolean;
       confidence: string;
       recommendation: string;
+    };
+    htfConfluence?: {
+      macroTrend: "BULLISH" | "BEARISH" | "NEUTRAL";
+      isCounterTrendBlocked: boolean;
+      htfScore: number;
+      guardNote?: string;
     };
     mtfValidation?: {
       isValid: boolean;

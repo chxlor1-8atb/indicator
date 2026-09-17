@@ -945,6 +945,37 @@ export default function AnalysisCard({
             </div>
           )}
 
+          {/* HTF Strict Confluence Guard Status Badge */}
+          {analysis.timeframeMatrix.htfGuardStatus && (
+            <div className={`p-2.5 rounded-lg text-xs font-bold flex items-center justify-between border ${
+              analysis.timeframeMatrix.htfGuardStatus.isGuarded
+                ? "bg-amber-500/15 border-amber-500/40 text-amber-300 animate-pulse"
+                : analysis.timeframeMatrix.htfGuardStatus.guardType === "ALIGNED"
+                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                : "bg-surface-50 border-slate-800 text-slate-400"
+            }`}>
+              <div className="flex items-center gap-2">
+                <ShieldAlert className={`w-4 h-4 ${analysis.timeframeMatrix.htfGuardStatus.isGuarded ? "text-amber-400" : analysis.timeframeMatrix.htfGuardStatus.guardType === "ALIGNED" ? "text-emerald-400" : "text-slate-400"}`} />
+                <span>
+                  {analysis.timeframeMatrix.htfGuardStatus.isGuarded
+                    ? `🛡️ HTF Strict Guard: ${analysis.timeframeMatrix.htfGuardStatus.guardReason || "ระงับการเข้าออเดอร์สวนเทรนด์ใหญ่ H4/D1"}`
+                    : analysis.timeframeMatrix.htfGuardStatus.guardType === "ALIGNED"
+                    ? "🏛️ HTF Confluence Locked: สัญญาณสอดคล้องกับเทรนด์ใหญ่ H4 และ D1 (Institutional Edge)"
+                    : `สภาวะ Macro Dominance: ${analysis.timeframeMatrix.htfGuardStatus.macroDominance.replace("_", " ")}`}
+                </span>
+              </div>
+              <span className={`font-mono text-[10px] px-2 py-0.5 rounded border ${
+                analysis.timeframeMatrix.htfGuardStatus.isGuarded
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : analysis.timeframeMatrix.htfGuardStatus.guardType === "ALIGNED"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : "bg-black/40 text-slate-400 border-slate-700"
+              }`}>
+                {analysis.timeframeMatrix.htfGuardStatus.isGuarded ? "STRICT LOCK" : analysis.timeframeMatrix.htfGuardStatus.guardType === "ALIGNED" ? "100% ALIGNED" : "NEUTRAL"}
+              </span>
+            </div>
+          )}
+
           {/* [แผน 9] Session Open Range Breakout (ORB) */}
           {analysis.sessionStatus?.orb && (
             <div className={`p-2.5 rounded-lg text-xs font-bold flex items-center justify-between border ${

@@ -74,8 +74,10 @@ export function evaluateMasterConfluence(
     if (lastHA && lastHA.isUp && lastHA.hasNoLowerWick) p1Score += 2; // [แผน 1] Strong Bullish Heikin-Ashi
     if (isEmaRibbonBull) p1Score += 3; // Triple EMA Ribbon stacked bull
     if (mtf) {
-      if (mtf.htfTrend === "BULLISH" || mtf.overallAlignment === "FULL_BULLISH_CONFLUENCE") p1Score += 4;
-      if (mtf.isHTFConflict || mtf.htfTrend === "BEARISH") p1Score -= 6;
+      if (mtf.overallAlignment === "FULL_BULLISH_CONFLUENCE") p1Score += 6;
+      else if (mtf.htfTrend === "BULLISH") p1Score += 4;
+      if (mtf.isHTFConflict) p1Score -= 9;
+      else if (mtf.htfTrend === "BEARISH") p1Score -= 7;
     }
   } else if (bias === "BEARISH") {
     if (stDirection === "DOWN") p1Score += 7;
@@ -87,8 +89,10 @@ export function evaluateMasterConfluence(
     if (lastHA && !lastHA.isUp && lastHA.hasNoUpperWick) p1Score += 2; // [แผน 1] Strong Bearish Heikin-Ashi
     if (isEmaRibbonBear) p1Score += 3; // Triple EMA Ribbon stacked bear
     if (mtf) {
-      if (mtf.htfTrend === "BEARISH" || mtf.overallAlignment === "FULL_BEARISH_CONFLUENCE") p1Score += 4;
-      if (mtf.isHTFConflict || mtf.htfTrend === "BULLISH") p1Score -= 6;
+      if (mtf.overallAlignment === "FULL_BEARISH_CONFLUENCE") p1Score += 6;
+      else if (mtf.htfTrend === "BEARISH") p1Score += 4;
+      if (mtf.isHTFConflict) p1Score -= 9;
+      else if (mtf.htfTrend === "BULLISH") p1Score -= 7;
     }
   } else {
     p1Score += 8;
@@ -299,6 +303,14 @@ export function evaluateMasterConfluence(
   } else if (totalScore >= 60) {
     grade = "B";
     verdict = "⚖️ สัญญาณเกรด B (เฝ้าระวัง): ปัจจัยก้ำกึ่ง ยังไม่ผ่านเกณฑ์ Sniper (แนะนำ WAIT เพื่อรักษา Win Rate)";
+  }
+
+  // HTF Conflict Guard: If MTF has direct HTF conflict, cap grade at B and warn
+  if (mtf?.isHTFConflict) {
+    if (grade === "A+" || grade === "A") {
+      grade = "B";
+    }
+    verdict = `🛡️ HTF Conflict Guard: สัญญาณขัดแย้งกับโครงสร้างระดับใหญ่ (${mtf.htfTrend}) - แนะนำชะลอการเข้าออเดอร์เพื่อป้องกัน False Breakout`;
   }
 
   if (isSelfTuned) {

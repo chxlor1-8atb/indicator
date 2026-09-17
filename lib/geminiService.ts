@@ -880,6 +880,28 @@ export function generateRuleBasedAnalysis(
     }
   }
 
+  // ─── SAFETY LOCK: HIGHER TIMEFRAME (HTF) STRICT CONFLUENCE GUARD (ANTI-COUNTER-TREND LOCK) ───
+  let isHtfBlocked = false;
+  let htfBlockReason = "";
+  const isHtfBuyBlocked = (signal === "STRONG_BUY" || signal === "BUY") && (macroBearish || mtfScore <= -40);
+  const isHtfSellBlocked = (signal === "STRONG_SELL" || signal === "SELL") && (macroBullish || mtfScore >= 40);
+
+  if (isHtfBuyBlocked) {
+    isHtfBlocked = true;
+    htfBlockReason = `สัญญาณ BUY ขัดแย้งกับเทรนด์ระดับ Macro H4/D1 (คะแนน MTF: ${mtfScore}%, H4: ${mtfMatrix.h4}, D1: ${mtfMatrix.d1}) - ล็อคระบบเพื่อป้องกันการโดนลากสวนเทรนด์ใหญ่`;
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  } else if (isHtfSellBlocked) {
+    isHtfBlocked = true;
+    htfBlockReason = `สัญญาณ SELL ขัดแย้งกับเทรนด์ระดับ Macro H4/D1 (คะแนน MTF: ${mtfScore}%, H4: ${mtfMatrix.h4}, D1: ${mtfMatrix.d1}) - ล็อคระบบเพื่อป้องกันการโดนลากสวนเทรนด์ใหญ่`;
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 40);
+  } else if (isInstitutionalAligned) {
+    confidence = Math.min(99, confidence + 5);
+  }
+
   // ─── BATCH 3 QUANT CALIBRATION (PLANS 11-15) ───
   // [แผน 11] Institutional Optimal Trade Entry (OTE - Fibonacci 61.8% – 78.6% Golden Pocket)
   const tradeDirection = (signal === "STRONG_SELL" || signal === "SELL") ? "BEARISH" : "BULLISH";
@@ -933,7 +955,9 @@ export function generateRuleBasedAnalysis(
     symbol
   );
 
-  if (signal === "STRONG_BUY" || signal === "BUY") {
+  if (isHtfBlocked) {
+    tradeAction = "NO_TRADE";
+  } else if (signal === "STRONG_BUY" || signal === "BUY") {
     tradeAction = "BUY";
     
     // [แผน 46] S/R-Based TP/SL Calculation
@@ -1513,6 +1537,8 @@ export function generateRuleBasedAnalysis(
 
   const prefixReason = !calendarSafety.tradeAllowed
     ? `[${calendarSafety.badgeText}] ${calendarSafety.freezeReason} `
+    : isHtfBlocked
+    ? `[🛡️ HTF STRICT GUARD] ${htfBlockReason} `
     : orchestrator.vetoTriggered
     ? `[🛡️ ANTI-CLASH VETO] ${orchestrator.vetoReason} `
     : "";
@@ -1782,7 +1808,15 @@ export function generateRuleBasedAnalysis(
     darkPoolDealerGamma,
     sovereignSingularityAlpha,
     classicTrio,
-    timeframeMatrix: mtfMatrix,
+    timeframeMatrix: {
+      ...mtfMatrix,
+      htfGuardStatus: {
+        isGuarded: isHtfBlocked,
+        guardType: isHtfBlocked ? "STRICT_LOCK" : isInstitutionalAligned ? "ALIGNED" : "NEUTRAL",
+        macroDominance: macroBullish ? "BULLISH_DOMINANCE" : macroBearish ? "BEARISH_DOMINANCE" : "MIXED",
+        guardReason: htfBlockReason || undefined,
+      },
+    },
     technicalAnalysis: {
       trend,
       rsiStatus: `RSI(${regimeInfo.optimalParams.rsiPeriod}): ${lastRSI.toFixed(1)} (StochRSI K: ${indicators.stochRSI?.slice(-1)[0]?.k ?? 50})`,
@@ -1969,6 +2003,12 @@ export function generateRuleBasedAnalysis(
         mtfAlignment: mtfValidation.mtfAlignment,
         recommendation: mtfValidation.recommendation,
         riskAdjustment: mtfValidation.riskAdjustment,
+      },
+      htfConfluence: {
+        macroTrend: macroBullish ? "BULLISH" : macroBearish ? "BEARISH" : "NEUTRAL",
+        isCounterTrendBlocked: isHtfBlocked,
+        htfScore: mtfScore,
+        guardNote: htfBlockReason || (isInstitutionalAligned ? "✅ Macro H4+D1 สอดคล้องกับทิศทางเทรดสมบูรณ์แบบ" : "สภาวะเทรนด์ปกติ"),
       },
       dynamicRiskReward: {
         adjustedRR: dynamicRiskReward.adjustedRR,
@@ -2536,6 +2576,19 @@ Respond ONLY with valid JSON matching this schema:
     parsed.fillProbabilitySlippage = ruleAnalysis.fillProbabilitySlippage;
     parsed.darkPoolDealerGamma = ruleAnalysis.darkPoolDealerGamma;
     parsed.sovereignSingularityAlpha = ruleAnalysis.sovereignSingularityAlpha;
+    parsed.timeframeMatrix = ruleAnalysis.timeframeMatrix;
+
+    if (ruleAnalysis.timeframeMatrix.htfGuardStatus?.isGuarded) {
+      parsed.signal = "WAIT";
+      parsed.setupGrade = "C (Wait)";
+      parsed.confidence = Math.min(parsed.confidence, 40);
+      if (parsed.tradeSetup) {
+        parsed.tradeSetup.action = "NO_TRADE";
+        parsed.tradeSetup.orderType = "WAIT_NO_ORDER";
+        parsed.tradeSetup.mtOrderLabel = "Wait / No Order";
+        parsed.tradeSetup.mtOrderAdvice = ruleAnalysis.tradeSetup.mtOrderAdvice;
+      }
+    }
 
     if (parsed.tradeSetup) {
       parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
@@ -2626,6 +2679,7 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.fillProbabilitySlippage = ruleAnalysis.tradeSetup.fillProbabilitySlippage;
       parsed.tradeSetup.darkPoolDealerGamma = ruleAnalysis.tradeSetup.darkPoolDealerGamma;
       parsed.tradeSetup.sovereignSingularityAlpha = ruleAnalysis.tradeSetup.sovereignSingularityAlpha;
+      parsed.tradeSetup.htfConfluence = ruleAnalysis.tradeSetup.htfConfluence;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;
