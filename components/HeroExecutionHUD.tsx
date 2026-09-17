@@ -53,11 +53,25 @@ export default function HeroExecutionHUD({
   const cal = analysis.calendarSafety;
   const orch = analysis.orchestrator;
   const entryPrice = ts.pendingPrice || (ts.entryZone ? (ts.entryZone.min + ts.entryZone.max) / 2 : 0);
-  const currentPrice = analysis.volumeProfile?.poc || entryPrice;
+  const currentPrice = analysis.currentPrice || analysis.volumeProfile?.poc || entryPrice;
+  
+  // ─── Sniper Micro-SL Mode ($10+ Capital Protection) ───
+  const [isSniperMode, setIsSniperMode] = useState<boolean>(true);
+  const sniper = ts.sniperMicroSL || analysis.sniperMicroSL;
+
+  const displayEntryPrice = isSniperMode && sniper ? sniper.entryLimit : entryPrice;
+  const displaySL = isSniperMode && sniper ? sniper.stopLoss : ts.stopLoss;
+  const displaySLPips = isSniperMode && sniper ? sniper.slPips : (ts.slPips || 50);
+  const displayTP1 = isSniperMode && sniper ? sniper.tp1Price : ts.takeProfit1;
+  const displayTP1Pips = isSniperMode && sniper ? sniper.tp1Pips : (ts.tp1Pips || 50);
+  const displayTP2 = isSniperMode && sniper ? sniper.tp2Price : ts.takeProfit2;
+  const displayTP2Pips = isSniperMode && sniper ? sniper.tp2Pips : (ts.tp2Pips || 100);
+  const displayRR = isSniperMode && sniper ? sniper.riskRewardRatio : (ts.riskRewardRatio || "1:2.0");
+
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const isGold = sym.includes("XAU") || sym.includes("GOLD");
   const pipMultiplier = isGold ? 10 : sym.includes("JPY") ? 100 : 10000;
-  const distancePips = Math.abs(Number((entryPrice - currentPrice) * pipMultiplier)).toFixed(1);
+  const distancePips = Math.abs(Number((displayEntryPrice - currentPrice) * pipMultiplier)).toFixed(1);
 
   // Trigger Status Analysis
   const isFreeze = Boolean(cal && !cal.tradeAllowed);
@@ -84,31 +98,18 @@ export default function HeroExecutionHUD({
   } else if (isBuy) {
     const mtName = ts.mtOrderLabel || (ts.orderType === "BUY_LIMIT" ? "Buy Limit" : ts.orderType === "BUY_STOP" ? "Buy Stop" : ts.orderType === "BUY_STOP_LIMIT" ? "Buy Stop Limit" : isLimit ? "Buy Limit" : "Market Execution");
     triggerTitle = `📱 MT5 คำสั่งแนะนำ: 【 ${mtName} 】`;
-    triggerMessage = `${ts.mtOrderAdvice ? `${ts.mtOrderAdvice} • ` : ""}ราคาเป้าหมาย ${entryPrice} (ห่าง ${distancePips} pips) • เป้า TP1 ${ts.takeProfit1} (+${ts.tp1Pips || 0} pips)`;
+    triggerMessage = `${ts.mtOrderAdvice ? `${ts.mtOrderAdvice} • ` : ""}ราคาเป้าหมาย ${displayEntryPrice} (ห่าง ${distancePips} pips) • เป้า TP1 ${displayTP1} (+${displayTP1Pips || 0} pips)`;
     triggerStatusIcon = isLimit ? <Clock className="w-5 h-5 text-emerald-400 shrink-0" /> : <Zap className="w-5 h-5 text-emerald-400 shrink-0 animate-bounce" />;
   } else if (isSell) {
     const mtName = ts.mtOrderLabel || (ts.orderType === "SELL_LIMIT" ? "Sell Limit" : ts.orderType === "SELL_STOP" ? "Sell Stop" : ts.orderType === "SELL_STOP_LIMIT" ? "Sell Stop Limit" : isLimit ? "Sell Limit" : "Market Execution");
     triggerTitle = `📱 MT5 คำสั่งแนะนำ: 【 ${mtName} 】`;
-    triggerMessage = `${ts.mtOrderAdvice ? `${ts.mtOrderAdvice} • ` : ""}ราคาเป้าหมาย ${entryPrice} (ห่าง ${distancePips} pips) • เป้า TP1 ${ts.takeProfit1} (+${ts.tp1Pips || 0} pips)`;
+    triggerMessage = `${ts.mtOrderAdvice ? `${ts.mtOrderAdvice} • ` : ""}ราคาเป้าหมาย ${displayEntryPrice} (ห่าง ${distancePips} pips) • เป้า TP1 ${displayTP1} (+${displayTP1Pips || 0} pips)`;
     triggerStatusIcon = isLimit ? <Clock className="w-5 h-5 text-rose-400 shrink-0" /> : <Zap className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />;
   } else {
     triggerTitle = "⚪ สถานะ: พักดูจังหวะ (ตลาดยังไม่ให้แต้มต่อ)";
     triggerMessage = "ยังไม่มีความได้เปรียบทางสถิติที่ชัดเจน นั่งทับมือรอการย่อตัวหรือการเบรกเอาท์ที่สมบูรณ์";
     triggerStatusIcon = <Clock className="w-5 h-5 text-slate-400 shrink-0" />;
   }
-
-  // ─── Sniper Micro-SL Mode ($10+ Capital Protection) ───
-  const [isSniperMode, setIsSniperMode] = useState<boolean>(true);
-  const sniper = ts.sniperMicroSL || analysis.sniperMicroSL;
-
-  const displayEntryPrice = isSniperMode && sniper ? sniper.entryLimit : entryPrice;
-  const displaySL = isSniperMode && sniper ? sniper.stopLoss : ts.stopLoss;
-  const displaySLPips = isSniperMode && sniper ? sniper.slPips : (ts.slPips || 50);
-  const displayTP1 = isSniperMode && sniper ? sniper.tp1Price : ts.takeProfit1;
-  const displayTP1Pips = isSniperMode && sniper ? sniper.tp1Pips : (ts.tp1Pips || 50);
-  const displayTP2 = isSniperMode && sniper ? sniper.tp2Price : ts.takeProfit2;
-  const displayTP2Pips = isSniperMode && sniper ? sniper.tp2Pips : (ts.tp2Pips || 100);
-  const displayRR = isSniperMode && sniper ? sniper.riskRewardRatio : (ts.riskRewardRatio || "1:2.0");
 
   // Lot Calculator Variables
   const balance = Math.max(1, Number(customBalance) || 10);
