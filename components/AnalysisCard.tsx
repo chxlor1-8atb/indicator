@@ -449,6 +449,121 @@ export default function AnalysisCard({
         setAccountType={setAccountType}
       />
 
+      {/* 🤖 AI/ML META-LABELING CONVICTION GATE (Marcos López de Prado Architecture) */}
+      {(analysis.metaLabeling || analysis.mlPrediction) && (
+        <div className={`p-4 rounded-2xl border transition-all ${
+          analysis.metaLabeling?.recommendation === "EXECUTE_HIGH_CONVICTION"
+            ? "bg-emerald-950/25 border-emerald-500/40 shadow-lg shadow-emerald-950/20"
+            : analysis.metaLabeling?.recommendation === "SKIP_LOW_PROBABILITY"
+            ? "bg-rose-950/25 border-rose-500/40 shadow-lg shadow-rose-950/20"
+            : "bg-surface-100/60 border-slate-800"
+        }`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+            <div className="flex items-center gap-2.5">
+              <div className={`p-2 rounded-xl border ${
+                analysis.metaLabeling?.recommendation === "EXECUTE_HIGH_CONVICTION"
+                  ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                  : analysis.metaLabeling?.recommendation === "SKIP_LOW_PROBABILITY"
+                  ? "bg-rose-500/20 border-rose-500/40 text-rose-400"
+                  : "bg-blue-500/20 border-blue-500/40 text-blue-400"
+              }`}>
+                <Brain className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-100">
+                    AI/ML Meta-Labeling Gate
+                  </h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    Random Forest Ensemble
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  {analysis.metaLabeling?.metaFilterReason || analysis.mlPrediction?.summary}
+                </p>
+              </div>
+            </div>
+
+            {/* Conviction Status Badge */}
+            <div className="flex items-center gap-2">
+              <div className={`px-3 py-1 rounded-xl text-xs font-bold border flex items-center gap-1.5 ${
+                analysis.metaLabeling?.recommendation === "EXECUTE_HIGH_CONVICTION"
+                  ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 animate-pulse"
+                  : analysis.metaLabeling?.recommendation === "SKIP_LOW_PROBABILITY"
+                  ? "bg-rose-500/20 border-rose-500/50 text-rose-300"
+                  : "bg-blue-500/20 border-blue-500/50 text-blue-300"
+              }`}>
+                {analysis.metaLabeling?.recommendation === "EXECUTE_HIGH_CONVICTION" ? (
+                  <>
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>HIGH CONVICTION PASS</span>
+                  </>
+                ) : analysis.metaLabeling?.recommendation === "SKIP_LOW_PROBABILITY" ? (
+                  <>
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>FILTER VETO (SKIP)</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>STANDARD PASS</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Bar & Probabilities */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3">
+            <div className="p-2.5 rounded-xl bg-black/30 border border-slate-800">
+              <div className="text-[10px] text-slate-400">Win Probability</div>
+              <div className="text-sm font-bold font-mono text-emerald-400">
+                {analysis.metaLabeling?.winProbability ?? analysis.mlPrediction?.confidence ?? 50}%
+              </div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-black/30 border border-slate-800">
+              <div className="text-[10px] text-slate-400">Expected Payoff E[R]</div>
+              <div className={`text-sm font-bold font-mono ${
+                (analysis.metaLabeling?.expectedPayoffR ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"
+              }`}>
+                {(analysis.metaLabeling?.expectedPayoffR ?? 0) >= 0 ? "+" : ""}
+                {analysis.metaLabeling?.expectedPayoffR ?? 0} R
+              </div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-black/30 border border-slate-800">
+              <div className="text-[10px] text-slate-400">Ensemble Direction</div>
+              <div className={`text-sm font-bold font-mono ${
+                analysis.mlPrediction?.mlDirection === "BUY" ? "text-emerald-400" : analysis.mlPrediction?.mlDirection === "SELL" ? "text-rose-400" : "text-slate-400"
+              }`}>
+                {analysis.mlPrediction?.mlDirection || "NEUTRAL"}
+              </div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-black/30 border border-slate-800">
+              <div className="text-[10px] text-slate-400">Training Samples</div>
+              <div className="text-sm font-bold font-mono text-purple-300">
+                {analysis.mlPrediction?.sampleCount ?? 0} Triple-Barrier
+              </div>
+            </div>
+          </div>
+
+          {/* ML Distribution Bar */}
+          {analysis.mlPrediction && (
+            <div className="mt-3 space-y-1.5">
+              <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                <span className="text-emerald-400">BUY: {analysis.mlPrediction.probabilities.buy}%</span>
+                <span className="text-slate-400">CHOP: {analysis.mlPrediction.probabilities.neutral}%</span>
+                <span className="text-rose-400">SELL: {analysis.mlPrediction.probabilities.sell}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full overflow-hidden flex bg-slate-800">
+                <div style={{ width: `${analysis.mlPrediction.probabilities.buy}%` }} className="bg-emerald-500 h-full transition-all" />
+                <div style={{ width: `${analysis.mlPrediction.probabilities.neutral}%` }} className="bg-slate-500 h-full transition-all" />
+                <div style={{ width: `${analysis.mlPrediction.probabilities.sell}%` }} className="bg-rose-500 h-full transition-all" />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 🎯 2.5. 5 CORE PRACTICAL TRADING PILLARS (5 เสาหลักเทรดจริง - แม่นยำ ไม่ขัดแย้งกันเอง) */}
       <FiveCorePillarsCard analysis={analysis} />
 
@@ -972,6 +1087,43 @@ export default function AnalysisCard({
                   : "bg-black/40 text-slate-400 border-slate-700"
               }`}>
                 {analysis.timeframeMatrix.htfGuardStatus.isGuarded ? "STRICT LOCK" : analysis.timeframeMatrix.htfGuardStatus.guardType === "ALIGNED" ? "100% ALIGNED" : "NEUTRAL"}
+              </span>
+            </div>
+          )}
+
+          {/* AI/ML Meta-Labeling Status Badge */}
+          {analysis.metaLabeling && (
+            <div className={`p-2.5 rounded-lg text-xs font-bold flex items-center justify-between border ${
+              analysis.metaLabeling.recommendation === "SKIP_LOW_PROBABILITY"
+                ? "bg-rose-500/15 border-rose-500/40 text-rose-300 animate-pulse"
+                : analysis.metaLabeling.recommendation === "EXECUTE_HIGH_CONVICTION"
+                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                : "bg-blue-500/10 border-blue-500/30 text-blue-300"
+            }`}>
+              <div className="flex items-center gap-2">
+                <Brain className={`w-4 h-4 ${
+                  analysis.metaLabeling.recommendation === "SKIP_LOW_PROBABILITY" ? "text-rose-400" : analysis.metaLabeling.recommendation === "EXECUTE_HIGH_CONVICTION" ? "text-emerald-400" : "text-blue-400"
+                }`} />
+                <span>
+                  {analysis.metaLabeling.recommendation === "SKIP_LOW_PROBABILITY"
+                    ? `🛡️ ML Meta-Labeling Veto: ${analysis.metaLabeling.metaFilterReason}`
+                    : analysis.metaLabeling.recommendation === "EXECUTE_HIGH_CONVICTION"
+                    ? `🚀 ML Meta-Labeling High Conviction: ${analysis.metaLabeling.metaFilterReason}`
+                    : `🤖 ML Meta-Labeling: ${analysis.metaLabeling.metaFilterReason}`}
+                </span>
+              </div>
+              <span className={`font-mono text-[10px] px-2 py-0.5 rounded border ${
+                analysis.metaLabeling.recommendation === "SKIP_LOW_PROBABILITY"
+                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                  : analysis.metaLabeling.recommendation === "EXECUTE_HIGH_CONVICTION"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : "bg-blue-500/20 text-blue-300 border-blue-500/40"
+              }`}>
+                {analysis.metaLabeling.recommendation === "EXECUTE_HIGH_CONVICTION"
+                  ? "HIGH CONVICTION"
+                  : analysis.metaLabeling.recommendation === "SKIP_LOW_PROBABILITY"
+                  ? "VETO (SKIP)"
+                  : "STANDARD"}
               </span>
             </div>
           )}

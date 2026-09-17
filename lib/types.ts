@@ -1122,6 +1122,14 @@ export interface AnalysisResult {
   volumeProfile?: VolumeProfileInfo;
   advancedVolumeProfile?: AdvancedVolumeProfileInfo;
   footprintAnalysis?: FootprintAnalysisInfo;
+  mlPrediction?: MLPredictionInfo;
+  metaLabeling?: {
+    isApproved: boolean;
+    winProbability: number;
+    expectedPayoffR: number;
+    recommendation: "EXECUTE_HIGH_CONVICTION" | "EXECUTE_STANDARD" | "SKIP_LOW_PROBABILITY";
+    metaFilterReason: string;
+  };
   tdSequential?: TDSequentialInfo;
   spreadImpact?: SpreadImpactInfo;
   trailingStop?: TrailingStopInfo;
@@ -1314,6 +1322,14 @@ export interface AnalysisResult {
       isCounterTrendBlocked: boolean;
       htfScore: number;
       guardNote?: string;
+    };
+    mlPrediction?: MLPredictionInfo;
+    metaLabeling?: {
+      isApproved: boolean;
+      winProbability: number;
+      expectedPayoffR: number;
+      recommendation: "EXECUTE_HIGH_CONVICTION" | "EXECUTE_STANDARD" | "SKIP_LOW_PROBABILITY";
+      metaFilterReason: string;
     };
     mtfValidation?: {
       isValid: boolean;

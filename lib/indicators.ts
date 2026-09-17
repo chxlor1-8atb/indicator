@@ -8419,6 +8419,14 @@ export function calculateAutoFibonacciRetracement(
   };
 }
 
+
+// ─── Indicator Result Cache (30s TTL, max 60 entries) ───
+// Cache key: symbol + lastCandleTimestamp + candleCount prevents stale hits
+// while returning instantly for repeated calls within same candle window.
+const _indicatorResultCache = new Map<string, { value: IndicatorData; expiresAt: number }>();
+const _INDICATOR_CACHE_TTL_MS = 30_000;
+const _INDICATOR_CACHE_MAX = 60;
+
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {
     return {
@@ -8433,6 +8441,20 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
       priceChange24h: 0,
       priceChangePercent24h: 0,
     };
+  }
+
+  // ─── Cache Check: Return cached result if candle window has not changed ───
+  const lastCandle = candles[candles.length - 1];
+  const _cacheKey = `${symbol.toUpperCase()}_${lastCandle.time}_${candles.length}`;
+  const _now = Date.now();
+  const _cached = _indicatorResultCache.get(_cacheKey);
+  if (_cached && _now < _cached.expiresAt) {
+    return _cached.value;
+  }
+  // Prune stale entries to prevent unbounded growth
+  if (_indicatorResultCache.size >= _INDICATOR_CACHE_MAX) {
+    const _oldest = _indicatorResultCache.keys().next().value;
+    if (_oldest !== undefined) _indicatorResultCache.delete(_oldest);
   }
 
   // Determine asset precision
@@ -8669,7 +8691,7 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   // Classic Trio Engine (MA 20 • MA 50 • RSI 14)
   const classicTrio = calculateClassicTrio(cleanCandles, precision, ema20, ema50, rsi14);
 
-  return {
+  const _result: IndicatorData = {
     rsi14,
     atr14,
     ema20,
@@ -8786,6 +8808,10 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     clusteredSR,
     autoFibonacci,
   };
+
+  // ─── Store result in cache before returning ───
+  _indicatorResultCache.set(_cacheKey, { value: _result, expiresAt: _now + _INDICATOR_CACHE_TTL_MS });
+  return _result;
 }
 
 /**

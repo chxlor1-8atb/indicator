@@ -282,29 +282,42 @@ export default function DashboardPage() {
             reconnectDelay = 1000;
           };
 
+          // ─── RAF Throttle: batch WebSocket ticks to ~60fps to prevent re-render storm ───
+          // High-volume pairs (BTC, ETH) can fire 5-15 messages/second.
+          // We buffer the latest price and flush it on the next animation frame,
+          // reducing React setState calls from ~10/s to ~60/s (frame-aligned).
+          let _rafId: number | null = null;
+          let _pendingPrice: number | null = null;
+
+          const _flushTick = () => {
+            _rafId = null;
+            if (_pendingPrice === null || !isMounted) return;
+            const formattedPrice = _pendingPrice;
+            _pendingPrice = null;
+            setCandles((prevCandles) => {
+              if (prevCandles.length === 0) return prevCandles;
+              const newCandles = [...prevCandles];
+              const last = { ...newCandles[newCandles.length - 1] };
+              last.close = formattedPrice;
+              last.high = Math.max(last.high, formattedPrice);
+              last.low = Math.min(last.low, formattedPrice);
+              newCandles[newCandles.length - 1] = last;
+              return newCandles;
+            });
+            setIndicators((prev) => ({ ...prev, currentPrice: formattedPrice }));
+            setLiveTickLastUpdated(Date.now());
+          };
+
           ws.onmessage = (event) => {
             if (!isMounted) return;
             try {
               const trade = JSON.parse(event.data);
               const livePrice = parseFloat(trade.p);
               if (livePrice && !isNaN(livePrice)) {
-                const formattedPrice = Number(livePrice.toFixed(2));
-                setCandles((prevCandles) => {
-                  if (prevCandles.length === 0) return prevCandles;
-                  const newCandles = [...prevCandles];
-                  const last = { ...newCandles[newCandles.length - 1] };
-                  last.close = formattedPrice;
-                  last.high = Math.max(last.high, formattedPrice);
-                  last.low = Math.min(last.low, formattedPrice);
-                  newCandles[newCandles.length - 1] = last;
-                  return newCandles;
-                });
-
-                setIndicators((prev) => ({
-                  ...prev,
-                  currentPrice: formattedPrice,
-                }));
-                setLiveTickLastUpdated(Date.now());
+                _pendingPrice = Number(livePrice.toFixed(2));
+                // Schedule flush on next animation frame (cancel any pending one)
+                if (_rafId !== null) cancelAnimationFrame(_rafId);
+                _rafId = requestAnimationFrame(_flushTick);
               }
             } catch {
               // Ignore malformed tick
@@ -312,6 +325,7 @@ export default function DashboardPage() {
           };
 
           ws.onclose = () => {
+            if (_rafId !== null) { cancelAnimationFrame(_rafId); _rafId = null; }
             if (isMounted) {
               reconnectTimeout = setTimeout(() => {
                 reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);

@@ -13,6 +13,7 @@ import {
   resilientQuery,
   updateSignalTelegramMessages,
   SaveAiSignalResult,
+  getTelegramSubscribers,
 } from "@/lib/db";
 import {
   sendTelegramMessage,
@@ -22,13 +23,17 @@ import {
   DEFAULT_TELEGRAM_CHAT_ID,
 } from "@/lib/telegramService";
 
+import { LRUCache } from "@/lib/cache";
+
 export const dynamic = "force-dynamic";
 
-const preWarningAlertThrottle = new Map<string, number>();
+// Use LRUCache (TTL + maxSize) instead of plain Maps to prevent unbounded memory growth
+// in long-running warm Serverless instances. TTL = cooldown + buffer to auto-evict.
+const preWarningAlertThrottle = new LRUCache<string, number>({ maxSize: 100, defaultTtlMs: 35 * 60 * 1000 });
 const PRE_WARNING_COOLDOWN_MS = 25 * 60 * 1000; // 25 minutes cooldown per asset
-const actionableAlertThrottle = new Map<string, number>();
+const actionableAlertThrottle = new LRUCache<string, number>({ maxSize: 200, defaultTtlMs: 25 * 60 * 1000 });
 const ACTIONABLE_COOLDOWN_MS = 20 * 60 * 1000; // 20 minutes cooldown per asset setup
-const preWarningMessagesMap = new Map<string, Array<{ chatId: string; messageId: number }>>();
+const preWarningMessagesMap = new LRUCache<string, Array<{ chatId: string; messageId: number }>>({ maxSize: 100, defaultTtlMs: 35 * 60 * 1000 });
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,37 +51,20 @@ export async function GET(request: NextRequest) {
       if (!scanResult.cached) {
         const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
         const envChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
-        
-        // ดึงค่า filter จาก database subscriber หรือใช้ environment variable เป็นค่า fallback
-        let primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
-        try {
-          const subscriber = await resilientQuery<{ alert_symbol: string }[]>(
-            `SELECT alert_symbol FROM telegram_subscribers WHERE chat_id = $1 AND is_active = TRUE LIMIT 1`,
-            [envChatId]
-          );
-          if (subscriber && subscriber.length > 0 && subscriber[0].alert_symbol) {
-            primaryFilter = subscriber[0].alert_symbol;
-          }
-        } catch (err) {
-          console.warn("Failed to fetch subscriber filter, using env variable:", err);
-        }
 
-        // รวบรวมรายชื่อผู้รับการแจ้งเตือนทั้งหมด ทั้งจาก Environment Variables และ Neon DB subscribers
+        // ดึงค่า filter จาก environment variable เป็น default สำหรับ primary chat
+        const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+
+        // รวบรวมรายชื่อผู้รับการแจ้งเตือนทั้งหมดจาก cached subscriber list (5-min TTL)
+        const allSubs = await getTelegramSubscribers();
         const subscribersMap = new Map<string, string>();
         if (envChatId) {
-          subscribersMap.set(envChatId, primaryFilter);
+          // Use the subscriber's own filter from DB if found, else fall back to env primary filter
+          const envSub = allSubs.find((s) => s.chat_id === envChatId);
+          subscribersMap.set(envChatId, envSub?.alert_symbol || primaryFilter);
         }
-        try {
-          const dbSubs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
-            `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
-          );
-          if (dbSubs && dbSubs.length > 0) {
-            for (const sub of dbSubs) {
-              subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
-            }
-          }
-        } catch (dbErr) {
-          console.warn("Could not query telegram_subscribers from DB:", dbErr);
+        for (const sub of allSubs) {
+          subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
         }
 
         // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram (AWAITED ป้องกัน Serverless kill)

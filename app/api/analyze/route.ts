@@ -11,6 +11,7 @@ import {
   resilientQuery,
   updateSignalTelegramMessages,
   SaveAiSignalResult,
+  getTelegramSubscribers,
 } from "@/lib/db";
 import {
   sendTelegramMessage,
@@ -96,35 +97,33 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Use cached subscriber list (5-min TTL) to avoid repeated DB round-trips
+        const allSubs = await getTelegramSubscribers();
+        const subscribersMap = new Map<string, string>();
+        if (envChatId) subscribersMap.set(envChatId, primaryFilter);
+        for (const sub of allSubs) {
+          subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
+        }
+
         const sentMessages: Array<{ chatId: string; messageId: number }> = [];
-
-        if (envChatId && isSymbolAllowedForAlert(analysis.symbol, primaryFilter)) {
-          const res = await sendTelegramMessage({ botToken, chatId: envChatId, analysis, currentPrice: analysis.currentPrice }).catch((e) => {
-            console.warn("[Analyze Dispatch] Primary Telegram error:", e);
-            return null;
-          });
-          if (res?.success && res.messageId) {
-            sentMessages.push({ chatId: envChatId, messageId: res.messageId });
+        // Dispatch to all subscribers in parallel (Promise.allSettled — never throws)
+        const sendPromises: Promise<unknown>[] = [];
+        subscribersMap.forEach((filter, targetChatId) => {
+          if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
+            sendPromises.push(
+              sendTelegramMessage({ botToken, chatId: targetChatId, analysis, currentPrice: analysis.currentPrice })
+                .then((res) => {
+                  if (res?.success && res.messageId) {
+                    sentMessages.push({ chatId: targetChatId, messageId: res.messageId });
+                  }
+                })
+                .catch((e) => {
+                  console.warn(`[Analyze Dispatch] Telegram error for ${targetChatId}:`, e);
+                })
+            );
           }
-        }
-
-        try {
-          const subs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
-            `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
-          );
-          if (subs && subs.length > 0) {
-            for (const sub of subs) {
-              if (sub.chat_id !== envChatId && isSymbolAllowedForAlert(analysis.symbol, sub.alert_symbol)) {
-                const res = await sendTelegramMessage({ botToken, chatId: sub.chat_id, analysis, currentPrice: analysis.currentPrice }).catch(() => null);
-                if (res?.success && res.messageId) {
-                  sentMessages.push({ chatId: sub.chat_id, messageId: res.messageId });
-                }
-              }
-            }
-          }
-        } catch (subErr) {
-          console.warn("Subscribers query note:", subErr);
-        }
+        });
+        await Promise.allSettled(sendPromises);
 
         if (saveRes && saveRes.signalId && sentMessages.length > 0) {
           await updateSignalTelegramMessages(saveRes.signalId, sentMessages);

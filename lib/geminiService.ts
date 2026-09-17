@@ -14,6 +14,7 @@ import {
   VolumeProfileInfo,
   AdvancedVolumeProfileInfo,
   FootprintAnalysisInfo,
+  MLPredictionInfo,
   TDSequentialInfo,
   SpreadImpactInfo,
   TrailingStopInfo,
@@ -221,6 +222,8 @@ import { getMarketSessionStatus } from "./sessionEngine";
 import { getNewsSafetyShieldStatus } from "./calendarEngine";
 import { getRecentLessons, getAdaptiveWeights, AdaptiveWeightsConfig, getCachedCandles } from "./db";
 import { getAssetPipMultiplier } from "./telegramService";
+import { extractFeatureVector24D } from "./featureEngineering";
+import { runMachineLearningInference } from "./mlEngine";
 
 export function generateRuleBasedAnalysis(
   symbol: string,
@@ -257,17 +260,18 @@ export function generateRuleBasedAnalysis(
     : 2;
 
   // ─── SELF-ADAPTIVE INDICATOR ENGINE (Real-Time Walk-Forward Parameter Application) ───
-  // Calculate and apply the exact EMA and RSI periods optimized for maximum Win Rate on this asset
-  const adaptiveFastList = optimizedConfig.isOptimized && optimizedConfig.emaFast !== 20
+  // Reuse pre-computed indicators when optimized periods match defaults to avoid redundant work.
+  // Only re-calculate when the optimizer has genuinely found a better period.
+  const adaptiveFastList = (optimizedConfig.isOptimized && optimizedConfig.emaFast !== 20)
     ? calculateEMA(candles, optimizedConfig.emaFast)
     : indicators.ema20;
-  const adaptiveSlowList = optimizedConfig.isOptimized && optimizedConfig.emaSlow !== 50
+  const adaptiveSlowList = (optimizedConfig.isOptimized && optimizedConfig.emaSlow !== 50)
     ? calculateEMA(candles, optimizedConfig.emaSlow)
     : indicators.ema50;
-  const adaptiveTrendList = optimizedConfig.isOptimized && optimizedConfig.emaTrend !== 200
+  const adaptiveTrendList = (optimizedConfig.isOptimized && optimizedConfig.emaTrend !== 200)
     ? calculateEMA(candles, optimizedConfig.emaTrend)
     : indicators.ema200;
-  const adaptiveRsiList = optimizedConfig.isOptimized && optimizedConfig.rsiPeriod !== 14
+  const adaptiveRsiList = (optimizedConfig.isOptimized && optimizedConfig.rsiPeriod !== 14)
     ? calculateRSI(candles, optimizedConfig.rsiPeriod)
     : indicators.rsi14;
 
@@ -276,9 +280,16 @@ export function generateRuleBasedAnalysis(
   const lastEMA50 = adaptiveSlowList.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.995).toFixed(precision));
   const lastEMA200 = adaptiveTrendList.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Number((currentPrice * 0.985).toFixed(precision));
 
-  // ATR for volatility measurement
-  const atrs = calculateATR(candles, 14);
-  const currentATR = atrs.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Math.max(currentPrice * 0.006, 0.5);
+  // ATR for volatility measurement — reuse pre-computed atr14 from indicators when available
+  const currentATR = (() => {
+    const precomputed = indicators.atr14;
+    if (precomputed && precomputed.length > 0) {
+      const val = precomputed.filter((v): v is number => v !== null && !isNaN(v)).pop();
+      if (val && val > 0) return val;
+    }
+    const atrs = calculateATR(candles, 14);
+    return atrs.filter((v): v is number => v !== null && !isNaN(v)).pop() ?? Math.max(currentPrice * 0.006, 0.5);
+  })();
 
   // Price Action & Divergence Detection with Adaptive RSI
   const rejection = detectCandleRejection(lastCandle, prevCandle);
@@ -677,6 +688,17 @@ export function generateRuleBasedAnalysis(
     indicators.ema50,
     indicators.rsi14
   );
+
+  // ─── AI/ML RANDOM FOREST INFERENCE & 24D QUANT FEATURE VECTOR ───
+  let mlPrediction: MLPredictionInfo | undefined = undefined;
+  try {
+    // Note: correlationShield (CorrelationShieldInfo) is not compatible with the intermarket
+    // parameter (IntermarketCorrelationInfo) — pass undefined to use the optional default.
+    const featureVector = extractFeatureVector24D(candles, indicators, symbol, mtfMatrix, undefined);
+    mlPrediction = runMachineLearningInference(featureVector, candles);
+  } catch (err) {
+    console.warn("[geminiService] ML inference failed:", err);
+  }
 
   // ─── DYNAMIC REGIME, SESSION, RED FOLDER & ADAPTIVE GATING SYNTHESIS ───
   const minThreshold = Math.max(62, adaptiveConfig?.minScoreThreshold ?? 62);
@@ -1322,7 +1344,8 @@ export function generateRuleBasedAnalysis(
 
   // [แผน 21] Volatility-Adjusted Kelly Criterion Sizing
   const winRate = historicalBacktest.winRate / 100 || 0.65;
-  const validATRs = atrs.filter((v): v is number => v !== null && !isNaN(v));
+  const _atr14Array = indicators.atr14 || calculateATR(candles, 14);
+  const validATRs = _atr14Array.filter((v): v is number => v !== null && !isNaN(v));
   const avgATR = validATRs.length > 0 ? validATRs.slice(-30).reduce((a, b) => a + b, 0) / Math.min(30, validATRs.length) : currentATR;
   const kellySizing = calculateKellyCriterionSizing(
     winRate,
@@ -1359,6 +1382,71 @@ export function generateRuleBasedAnalysis(
   // MCPI Conviction & Orchestrator Soft Calibration (Adjust confidence rather than hard-killing the setup)
   if (!mcpiConviction.isApprovedForExecution) {
     confidence = Math.max(45, confidence - 6);
+  }
+
+  // ─── AI/ML META-LABELING FILTER (MARCOS LÓPEZ DE PRADO PROTOCOL) ───
+  let metaLabeling: NonNullable<AnalysisResult["metaLabeling"]> = {
+    isApproved: true,
+    winProbability: 50,
+    expectedPayoffR: 0,
+    recommendation: "EXECUTE_STANDARD",
+    metaFilterReason: "สภาวะตลาดเป็นกลาง หรือไม่มีสัญญาณขัดแย้ง",
+  };
+
+  if (mlPrediction && tradeAction !== "NO_TRADE") {
+    const buyProb = mlPrediction.probabilities.buy / 100;
+    const sellProb = mlPrediction.probabilities.sell / 100;
+    const targetWinProb = tradeAction === "BUY" ? buyProb : sellProb;
+    const opposingProb = tradeAction === "BUY" ? sellProb : buyProb;
+
+    // Calculate expected payoff R = P(Win) * R_target - (1 - P(Win)) * 1.0
+    const riskAmount = Math.max(1e-5, Math.abs(pendingPrice - stopLoss));
+    const rewardAmount = Math.abs(takeProfit1 - pendingPrice);
+    const rr1 = rewardAmount / riskAmount;
+    const expectedPayoffR = Number((targetWinProb * rr1 - (1 - targetWinProb) * 1.0).toFixed(2));
+
+    const winProbPct = Math.round(targetWinProb * 100);
+    const oppProbPct = Math.round(opposingProb * 100);
+
+    if (targetWinProb < 0.40 || opposingProb >= 0.55 || expectedPayoffR < -0.20) {
+      metaLabeling = {
+        isApproved: false,
+        winProbability: winProbPct,
+        expectedPayoffR,
+        recommendation: "SKIP_LOW_PROBABILITY",
+        metaFilterReason: `🛡️ ML Meta-Labeling Filter: ความน่าจะเป็นชนะต่ำ (${winProbPct}%) หรือแบบจำลอง ML ชี้ทิศตรงข้าม (${oppProbPct}%) ค่าคาดหวัง E[R] ติดลบ (${expectedPayoffR}R) กรองออกเพื่อลด Drawdown`,
+      };
+      tradeAction = "NO_TRADE";
+      signal = "WAIT";
+      setupGrade = "C (Wait)";
+      confidence = Math.min(confidence, 42);
+    } else if (targetWinProb >= 0.65 && expectedPayoffR >= 0.35) {
+      metaLabeling = {
+        isApproved: true,
+        winProbability: winProbPct,
+        expectedPayoffR,
+        recommendation: "EXECUTE_HIGH_CONVICTION",
+        metaFilterReason: `🚀 ML Meta-Labeling Pass: แบบจำลอง Random Forest Ensemble ยืนยันความน่าจะเป็นชนะสูง (${winProbPct}%) ค่าคาดหวังผลตอบแทนเด่นชัด (+${expectedPayoffR}R) ผ่านเกณฑ์ระดับพรีเมียม`,
+      };
+      confidence = Math.min(98, confidence + 4);
+      if (setupGrade === "A") setupGrade = "A+";
+    } else {
+      metaLabeling = {
+        isApproved: true,
+        winProbability: winProbPct,
+        expectedPayoffR,
+        recommendation: "EXECUTE_STANDARD",
+        metaFilterReason: `✅ ML Meta-Labeling Pass: ความน่าจะเป็นชนะผ่านเกณฑ์มาตรฐาน (${winProbPct}%) ค่าคาดหวัง E[R]: ${expectedPayoffR >= 0 ? "+" : ""}${expectedPayoffR}R`,
+      };
+    }
+  } else if (mlPrediction && tradeAction === "NO_TRADE") {
+    metaLabeling = {
+      isApproved: true,
+      winProbability: Math.max(mlPrediction.probabilities.buy, mlPrediction.probabilities.sell),
+      expectedPayoffR: 0,
+      recommendation: "EXECUTE_STANDARD",
+      metaFilterReason: "ไม่มีสัญญาณเข้าหลักจากระบบปฐมภูมิ (Primary Signal is WAIT)",
+    };
   }
 
   // De-confliction Guarantee: Whenever signal is WAIT or fatal circuit breaker is active, tradeAction must strictly be NO_TRADE
@@ -1533,12 +1621,19 @@ export function generateRuleBasedAnalysis(
       ),
       note: `${classicTrio.summary} (คะแนนสอดคล้อง: ${classicTrio.alignmentScore}%, โบนัส WR: +${classicTrio.winRateBonus}%)`,
     },
+    {
+      name: `Pillar 27: AI/ML Predictive Random Forest & Meta-Labeling Filter (${metaLabeling.recommendation})`,
+      passed: metaLabeling.isApproved,
+      note: `${metaLabeling.metaFilterReason} • ML Probabilities: BUY ${mlPrediction?.probabilities.buy ?? 33}% / CHOP ${mlPrediction?.probabilities.neutral ?? 34}% / SELL ${mlPrediction?.probabilities.sell ?? 33}% (Sample: ${mlPrediction?.sampleCount ?? 0})`,
+    },
   ];
 
   const prefixReason = !calendarSafety.tradeAllowed
     ? `[${calendarSafety.badgeText}] ${calendarSafety.freezeReason} `
     : isHtfBlocked
     ? `[🛡️ HTF STRICT GUARD] ${htfBlockReason} `
+    : !metaLabeling.isApproved
+    ? `[🤖 ML META-FILTER] ${metaLabeling.metaFilterReason} `
     : orchestrator.vetoTriggered
     ? `[🛡️ ANTI-CLASH VETO] ${orchestrator.vetoReason} `
     : "";
@@ -1915,6 +2010,7 @@ export function generateRuleBasedAnalysis(
         `Dark Pool Dealer Gamma: [${darkPoolDealerGamma.gammaRegime}] GEX: ${darkPoolDealerGamma.netDealerGammaExposureScore} (Flip: ${darkPoolDealerGamma.syntheticGammaFlipLevel} | Pin: ${darkPoolDealerGamma.estimatedPinningStrike} | Dark Pool Index: ${darkPoolDealerGamma.darkPoolHiddenInventoryIndex}/100)`,
         `Grand Milestone 100 Sovereign Singularity: [${sovereignSingularityAlpha.milestone100Grade}] Score: ${sovereignSingularityAlpha.sovereignAlphaScore}/100 (Convergence: ${sovereignSingularityAlpha.singularityState} | Rec: ${sovereignSingularityAlpha.singularityRecommendation} | Lock 23: ${sovereignSingularityAlpha.safetyLock23Passed ? "PASSED" : "BLOCKED"})`,
         `Classic Trio (MA20 • MA50 • RSI14): ${classicTrio.summary} [Alignment: ${classicTrio.alignmentScore}%, Win Rate Boost: +${classicTrio.winRateBonus}%]`,
+        `AI/ML Meta-Labeling: [${metaLabeling.recommendation}] Win Prob: ${metaLabeling.winProbability}% | E[R]: ${metaLabeling.expectedPayoffR}R (${metaLabeling.metaFilterReason})`,
       ],
     },
     newsSentimentAnalysis: {
@@ -2010,6 +2106,8 @@ export function generateRuleBasedAnalysis(
         htfScore: mtfScore,
         guardNote: htfBlockReason || (isInstitutionalAligned ? "✅ Macro H4+D1 สอดคล้องกับทิศทางเทรดสมบูรณ์แบบ" : "สภาวะเทรนด์ปกติ"),
       },
+      mlPrediction,
+      metaLabeling,
       dynamicRiskReward: {
         adjustedRR: dynamicRiskReward.adjustedRR,
         positionSizeMultiplier: dynamicRiskReward.positionSizeMultiplier,
@@ -2103,6 +2201,8 @@ export function generateRuleBasedAnalysis(
     autoFibonacci,
     fiveCorePillars,
     orchestrator,
+    mlPrediction,
+    metaLabeling,
   };
 }
 
@@ -2577,8 +2677,10 @@ Respond ONLY with valid JSON matching this schema:
     parsed.darkPoolDealerGamma = ruleAnalysis.darkPoolDealerGamma;
     parsed.sovereignSingularityAlpha = ruleAnalysis.sovereignSingularityAlpha;
     parsed.timeframeMatrix = ruleAnalysis.timeframeMatrix;
+    parsed.mlPrediction = ruleAnalysis.mlPrediction;
+    parsed.metaLabeling = ruleAnalysis.metaLabeling;
 
-    if (ruleAnalysis.timeframeMatrix.htfGuardStatus?.isGuarded) {
+    if (ruleAnalysis.timeframeMatrix.htfGuardStatus?.isGuarded || (ruleAnalysis.metaLabeling && !ruleAnalysis.metaLabeling.isApproved)) {
       parsed.signal = "WAIT";
       parsed.setupGrade = "C (Wait)";
       parsed.confidence = Math.min(parsed.confidence, 40);
@@ -2680,6 +2782,8 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.darkPoolDealerGamma = ruleAnalysis.tradeSetup.darkPoolDealerGamma;
       parsed.tradeSetup.sovereignSingularityAlpha = ruleAnalysis.tradeSetup.sovereignSingularityAlpha;
       parsed.tradeSetup.htfConfluence = ruleAnalysis.tradeSetup.htfConfluence;
+      parsed.tradeSetup.mlPrediction = ruleAnalysis.tradeSetup.mlPrediction;
+      parsed.tradeSetup.metaLabeling = ruleAnalysis.tradeSetup.metaLabeling;
       if (ruleAnalysis.tradeSetup.structuralSL) {
         parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
         parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;

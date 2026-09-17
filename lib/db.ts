@@ -23,6 +23,45 @@ export function getPooledConnectionString(rawUrl: string): string {
 const connectionString = getPooledConnectionString(rawConnectionString);
 export const sql = connectionString ? neon(connectionString) : null;
 
+// ─── Telegram Subscriber Cache (5-minute TTL) ───
+// Subscriber list changes rarely (user adds/removes via bot commands).
+// Caching for 5 minutes eliminates redundant DB round-trips on every
+// analyze and autonomous-scanner request.
+interface SubscriberCacheEntry {
+  subscribers: Array<{ chat_id: string; alert_symbol: string }>;
+  expiresAt: number;
+}
+let _subscriberCache: SubscriberCacheEntry | null = null;
+const _SUBSCRIBER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Returns all active Telegram subscribers with in-memory caching (5min TTL).
+ * Falls back to empty array if DB is unavailable.
+ */
+export async function getTelegramSubscribers(): Promise<Array<{ chat_id: string; alert_symbol: string }>> {
+  const now = Date.now();
+  if (_subscriberCache && now < _subscriberCache.expiresAt) {
+    return _subscriberCache.subscribers;
+  }
+  try {
+    const rows = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+      `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+    );
+    const subscribers = rows && rows.length > 0 ? rows : [];
+    _subscriberCache = { subscribers, expiresAt: now + _SUBSCRIBER_CACHE_TTL_MS };
+    return subscribers;
+  } catch {
+    return _subscriberCache?.subscribers ?? [];
+  }
+}
+
+/**
+ * Invalidates the subscriber cache — call after adding/removing a subscriber.
+ */
+export function invalidateSubscriberCache(): void {
+  _subscriberCache = null;
+}
+
 /**
  * Resilient query wrapper with exponential backoff for transient network issues.
  */
