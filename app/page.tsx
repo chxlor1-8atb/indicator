@@ -525,7 +525,7 @@ export default function DashboardPage() {
               }`}
             >
               <Target className="w-3.5 h-3.5" />
-              <span>🎯 สัญญาณเทรด</span>
+              <span>สัญญาณเทรด</span>
             </button>
 
             <button
@@ -537,7 +537,7 @@ export default function DashboardPage() {
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5" />
-              <span>📈 กราฟสด</span>
+              <span>กราฟสด</span>
             </button>
 
             <button
@@ -549,7 +549,7 @@ export default function DashboardPage() {
               }`}
             >
               <Radio className="w-3.5 h-3.5" />
-              <span>📡 เรดาร์ตลาด</span>
+              <span>เรดาร์ตลาด</span>
             </button>
 
             <button
@@ -561,7 +561,7 @@ export default function DashboardPage() {
               }`}
             >
               <Newspaper className="w-3.5 h-3.5" />
-              <span>📰 ข่าวเศรษฐกิจ</span>
+              <span>ข่าวเศรษฐกิจ</span>
             </button>
 
             <button
@@ -573,7 +573,7 @@ export default function DashboardPage() {
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
-              <span>📜 บันทึกสถิติ</span>
+              <span>บันทึกสถิติ</span>
             </button>
 
             <button
@@ -585,7 +585,7 @@ export default function DashboardPage() {
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>🖥️ รวมทั้งหมด</span>
+              <span>รวมทั้งหมด</span>
             </button>
           </div>
 

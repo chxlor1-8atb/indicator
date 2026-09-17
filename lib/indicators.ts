@@ -1063,10 +1063,41 @@ export function calculateSniperPrecisionEntry(
   precision = 2
 ): {
   recommendedLimit: number;
-  entryType: "FVG_50_CE" | "OB_MEAN_THRESHOLD" | "OTE_705_SWEETSPOT" | "POC_SHELF" | "DISCOUNT_SNIPER";
+  entryType: "FVG_POC_CONFLUENCE" | "FVG_50_CE" | "OB_MEAN_THRESHOLD" | "OTE_705_SWEETSPOT" | "POC_SHELF" | "DISCOUNT_SNIPER";
   entryRationale: string;
 } {
   const isBuy = action === "BUY";
+
+  // 0. SUPREME CONFLUENCE: FVG + Volume Profile PoC (คัดโซนคุณภาพสูงสุดตามหลักสถาบัน)
+  // หากมี FVG หลายโซน ให้เลือกโซนที่มี PoC (Point of Control) สถิตอยู่ข้างในเป็นอันดับแรกเสมอ!
+  if (
+    fvgMitigation &&
+    fvgMitigation.activeFVGs &&
+    fvgMitigation.activeFVGs.length > 0 &&
+    volumeProfile &&
+    volumeProfile.poc > 0
+  ) {
+    const poc = volumeProfile.poc;
+    const pipBuffer = precision >= 4 ? 0.00015 : 0.15;
+    const fvgWithPoc = fvgMitigation.activeFVGs.find((f) => {
+      const isDirectionMatch = isBuy
+        ? f.type === "BULLISH_FVG" && f.consequentEncroachment < currentPrice
+        : f.type === "BEARISH_FVG" && f.consequentEncroachment > currentPrice;
+      if (!isDirectionMatch) return false;
+      const minPrice = Math.min(f.top, f.bottom);
+      const maxPrice = Math.max(f.top, f.bottom);
+      return poc >= minPrice - pipBuffer && poc <= maxPrice + pipBuffer;
+    });
+
+    if (fvgWithPoc) {
+      const qualityEntry = Number(((fvgWithPoc.consequentEncroachment + poc) / 2).toFixed(precision));
+      return {
+        recommendedLimit: qualityEntry,
+        entryType: "FVG_POC_CONFLUENCE",
+        entryRationale: `⭐ คัดโซนคุณภาพเกรด A+ (FVG + PoC): โซน ${fvgWithPoc.type} (${Math.min(fvgWithPoc.top, fvgWithPoc.bottom).toFixed(precision)} - ${Math.max(fvgWithPoc.top, fvgWithPoc.bottom).toFixed(precision)}) ทับซ้อนตรงกับ Volume Profile PoC (${poc.toFixed(precision)}) สถาบันสะสมวอลุ่มหนาแน่นที่สุด`,
+      };
+    }
+  }
 
   // 1. FVG Consequent Encroachment (50% CE)
   if (fvgMitigation && fvgMitigation.activeFVGs && fvgMitigation.activeFVGs.length > 0) {

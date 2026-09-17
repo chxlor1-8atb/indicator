@@ -36,7 +36,7 @@ export default function MarketOpportunityRadar({
   isLoading = false,
 }: MarketOpportunityRadarProps) {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<"ALL" | "ACTIONABLE" | "FOREX" | "COMMODITIES" | "CRYPTO">("ALL");
+  const [activeTab, setActiveTab] = useState<"ALL" | "ACTIONABLE" | "FOREX" | "COMMODITIES">("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Filter and sort summaries
@@ -62,8 +62,6 @@ export default function MarketOpportunityRadar({
       list = list.filter((s) => s.category === "forex");
     } else if (activeTab === "COMMODITIES") {
       list = list.filter((s) => s.category === "commodities");
-    } else if (activeTab === "CRYPTO") {
-      list = list.filter((s) => s.category === "crypto");
     }
 
     // Sort: Actionable first, then by Confluence Score descending
@@ -222,7 +220,6 @@ export default function MarketOpportunityRadar({
                 { id: "ACTIONABLE", label: `🔥 พร้อมเทรด (${actionableCount})` },
                 { id: "FOREX", label: "Forex Majors & Crosses" },
                 { id: "COMMODITIES", label: "ทองคำ & สินค้าโภคภัณฑ์" },
-                { id: "CRYPTO", label: "Crypto" },
               ].map((tab) => (
                 <button
                   key={tab.id}

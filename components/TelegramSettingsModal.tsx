@@ -11,9 +11,6 @@ interface TelegramSettingsModalProps {
 
 const ALL_WATCHLIST = [
   { symbol: "XAUUSD", name: "Gold" },
-  { symbol: "BTCUSDT", name: "Bitcoin" },
-  { symbol: "ETHUSDT", name: "Ethereum" },
-  { symbol: "SOLUSDT", name: "Solana" },
   { symbol: "EURUSD", name: "EUR/USD" },
   { symbol: "GBPUSD", name: "GBP/USD" },
   { symbol: "USDJPY", name: "USD/JPY" },
@@ -50,15 +47,12 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
 
   const isAll = alertSymbols === "ALL" || alertSymbols === "";
   const isGoldOnly = alertSymbols === "XAUUSD" || alertSymbols === "GOLD";
-  const isCryptoOnly = alertSymbols === "CRYPTO" || alertSymbols === "BTCUSDT,ETHUSDT,SOLUSDT";
   const isForexOnly = alertSymbols === "FOREX";
 
   const selectedList = isAll
     ? ALL_WATCHLIST.map((a) => a.symbol)
     : isGoldOnly
     ? ["XAUUSD"]
-    : isCryptoOnly
-    ? ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
     : isForexOnly
     ? ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD"]
     : alertSymbols.split(",").map((s) => s.trim().toUpperCase());
@@ -251,14 +245,14 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
               <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                 <span>เลือกคู่เงินที่ต้องการรับแจ้งเตือน</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono">
-                  {isAll ? "ทุกคู่ (15 สินทรัพย์)" : isGoldOnly ? "ทองคำอย่างเดียว" : isCryptoOnly ? "คริปโต (BTC, ETH, SOL)" : isForexOnly ? "Forex (9 คู่)" : `${selectedList.length} คู่ที่เลือก`}
+                  {isAll ? "ทุกคู่ (12 สินทรัพย์ MT5)" : isGoldOnly ? "ทองคำอย่างเดียว" : isForexOnly ? "Forex (9 คู่)" : `${selectedList.length} คู่ที่เลือก`}
                 </span>
               </label>
               <span className="text-[11px] text-slate-400">กรองเฉพาะคู่ที่เทรด</span>
             </div>
 
             {/* Quick Preset Buttons */}
-            <div className="grid grid-cols-4 gap-1.5 mb-2.5">
+            <div className="grid grid-cols-3 gap-1.5 mb-2.5">
               <button
                 type="button"
                 onClick={() => setAlertSymbols("ALL")}
@@ -268,7 +262,7 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
                     : "bg-surface-50 border-slate-800 text-slate-400 hover:text-slate-200"
                 }`}
               >
-                🌐 ทุกคู่ (15)
+                🌐 ทุกคู่ (12)
               </button>
               <button
                 type="button"
@@ -280,17 +274,6 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
                 }`}
               >
                 🟡 ทองคำ
-              </button>
-              <button
-                type="button"
-                onClick={() => setAlertSymbols("CRYPTO")}
-                className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                  isCryptoOnly
-                    ? "bg-purple-500/20 border-purple-500 text-purple-300 shadow-sm"
-                    : "bg-surface-50 border-slate-800 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                ₿ คริปโต
               </button>
               <button
                 type="button"

@@ -183,20 +183,14 @@ function parseRssItems(xmlText: string, source: string): NewsItem[] {
 
 function detectRelatedSymbols(text: string): string[] {
   const symbols: string[] = [];
-  if (text.includes("gold") || text.includes("xau") || text.includes("bullion") || text.includes("precious metal") || text.includes("silver")) symbols.push("XAUUSD");
-  if (text.includes("oil") || text.includes("crude") || text.includes("opec") || text.includes("energy") || text.includes("brent") || text.includes("wti")) symbols.push("USOIL");
-  if (text.includes("bitcoin") || text.includes("btc")) symbols.push("BTCUSDT");
-  if (text.includes("ethereum") || text.includes("eth")) symbols.push("ETHUSDT");
-  if (text.includes("solana") || text.includes("sol")) symbols.push("SOLUSDT");
-  if (text.includes("euro") || text.includes("ecb") || text.includes("eur")) symbols.push("EURUSD");
+  if (text.includes("gold") || text.includes("xau") || text.includes("bullion") || text.includes("precious metal") || text.includes("silver")) symbols.push("XAUUSD", "XAGUSD");
+  if (text.includes("oil") || text.includes("crude") || text.includes("opec") || text.includes("energy") || text.includes("brent") || text.includes("wti")) symbols.push("USOIL", "UKOIL");
+  if (text.includes("euro") || text.includes("ecb") || text.includes("eur")) symbols.push("EURUSD", "EURJPY");
   if (text.includes("yen") || text.includes("boj") || text.includes("jpy") || text.includes("japan")) symbols.push("USDJPY", "GBPJPY", "EURJPY");
   if (text.includes("pound") || text.includes("boe") || text.includes("gbp") || text.includes("uk")) symbols.push("GBPUSD", "GBPJPY");
   if (text.includes("dollar") || text.includes("fed") || text.includes("treasury") || text.includes("fomc") || text.includes("powell") || text.includes("cpi") || text.includes("inflation") || text.includes("rate cut") || text.includes("rate hike")) {
-    symbols.push("XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "SPY");
+    symbols.push("XAUUSD", "EURUSD", "GBPUSD", "USDJPY");
   }
-  if (text.includes("s&p") || text.includes("wall street") || text.includes("stocks") || text.includes("nasdaq") || text.includes("dow")) symbols.push("SPY");
-  if (text.includes("nvidia") || text.includes("ai chip")) symbols.push("NVDA");
-  if (text.includes("tesla") || text.includes("musk") || text.includes("ev")) symbols.push("TSLA");
   return symbols;
 }
 
@@ -342,14 +336,14 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
       },
       {
         id: "fallback-4",
-        title: "Bitcoin and Digital Assets Consolidate Following Institutional Inflows",
-        summary: "Crypto markets trade in range-bound structure as ETF flows stabilize across major global exchanges.",
-        url: "https://www.coindesk.com",
-        source: "Crypto Pulse",
+        title: "Global Central Banks Navigate Inflation Dynamics & Policy Divergence",
+        summary: "Major currency pairs consolidate as market participants evaluate interest rate trajectories from the Fed, ECB, and BOJ.",
+        url: "https://www.reuters.com",
+        source: "Global FX Pulse",
         publishedAt: new Date().toISOString(),
         sentiment: "NEUTRAL",
         impact: "MEDIUM",
-        relatedSymbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+        relatedSymbols: ["EURUSD", "GBPUSD", "USDJPY"],
         sentimentConfidence: 0.0,
         isContradictory: false,
         isFallback: true,

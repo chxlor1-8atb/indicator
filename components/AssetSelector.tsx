@@ -21,9 +21,7 @@ interface AssetSelectorProps {
 const CATEGORIES: { id: "all" | AssetCategory; label: string }[] = [
   { id: "all", label: "All Assets" },
   { id: "forex", label: "Forex (39 Pairs)" },
-  { id: "commodities", label: "Gold & Commodities" },
-  { id: "crypto", label: "Crypto" },
-  { id: "stocks", label: "Indices & Stocks" },
+  { id: "commodities", label: "Gold & Commodities (MT5)" },
 ];
 
 export interface TimeframeItem {

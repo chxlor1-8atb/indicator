@@ -84,7 +84,7 @@ export default function SignalJournalCard() {
       targetAssets = AVAILABLE_ASSETS.filter((a) => a.category === "forex");
     } else if (category === "core") {
       targetAssets = AVAILABLE_ASSETS.filter((a) =>
-        ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "BTCUSDT", "USOIL"].includes(a.symbol)
+        ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "USOIL"].includes(a.symbol)
       );
     }
 

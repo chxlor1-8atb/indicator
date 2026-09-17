@@ -22,16 +22,16 @@ const activeOrdersStore = new Map<string, MtBridgeOrder>();
 const telemetryLogsStore: TelemetryLog[] = [];
 const MAX_LOGS = 60;
 
-// Watchlist of top high-conviction institutional assets (Gold, Oil, Silver, Crypto, Forex Majors)
+// Watchlist of top high-conviction institutional assets tradable on MT5 (Gold, Oil, Silver, Forex Majors & Crosses)
 // Optimized to 8 core assets to stay well within Vercel Serverless CPU limits
 export const AUTONOMOUS_WATCHLIST = [
   "XAUUSD",
-  "BTCUSDT",
-  "ETHUSDT",
-  "USOIL",
   "EURUSD",
   "GBPUSD",
   "USDJPY",
+  "GBPJPY",
+  "AUDUSD",
+  "USOIL",
   "XAGUSD",
 ];
 

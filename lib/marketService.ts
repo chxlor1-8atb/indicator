@@ -57,30 +57,6 @@ export const AVAILABLE_ASSETS: AssetInfo[] = [
   { symbol: "USDSEK", name: "USD / SEK (ดอลลาร์/โครนาสวีเดน)", category: "forex", baseAsset: "USD", quoteAsset: "SEK", precision: 4 },
   { symbol: "USDNOK", name: "USD / NOK (ดอลลาร์/โครนานอร์เวย์)", category: "forex", baseAsset: "USD", quoteAsset: "NOK", precision: 4 },
   { symbol: "USDPLN", name: "USD / PLN (ดอลลาร์/ซลอตีโปแลนด์)", category: "forex", baseAsset: "USD", quoteAsset: "PLN", precision: 4 },
-
-  // ─── Crypto Top Coins ───
-  { symbol: "BTCUSDT", name: "Bitcoin / USDT", category: "crypto", baseAsset: "BTC", quoteAsset: "USDT", precision: 2 },
-  { symbol: "ETHUSDT", name: "Ethereum / USDT", category: "crypto", baseAsset: "ETH", quoteAsset: "USDT", precision: 2 },
-  { symbol: "SOLUSDT", name: "Solana / USDT", category: "crypto", baseAsset: "SOL", quoteAsset: "USDT", precision: 2 },
-  { symbol: "BNBUSDT", name: "BNB / USDT", category: "crypto", baseAsset: "BNB", quoteAsset: "USDT", precision: 2 },
-  { symbol: "XRPUSDT", name: "XRP / USDT (Ripple)", category: "crypto", baseAsset: "XRP", quoteAsset: "USDT", precision: 4 },
-  { symbol: "ADAUSDT", name: "Cardano / USDT", category: "crypto", baseAsset: "ADA", quoteAsset: "USDT", precision: 4 },
-  { symbol: "DOGEUSDT", name: "Dogecoin / USDT", category: "crypto", baseAsset: "DOGE", quoteAsset: "USDT", precision: 4 },
-  { symbol: "AVAXUSDT", name: "Avalanche / USDT", category: "crypto", baseAsset: "AVAX", quoteAsset: "USDT", precision: 2 },
-  { symbol: "LINKUSDT", name: "Chainlink / USDT", category: "crypto", baseAsset: "LINK", quoteAsset: "USDT", precision: 2 },
-  { symbol: "SUIUSDT", name: "Sui / USDT", category: "crypto", baseAsset: "SUI", quoteAsset: "USDT", precision: 4 },
-
-  // ─── Indices & Stocks ───
-  { symbol: "SPY", name: "S&P 500 ETF (US500)", category: "stocks", baseAsset: "SPY", quoteAsset: "USD", precision: 2 },
-  { symbol: "QQQ", name: "Nasdaq 100 ETF (NAS100)", category: "stocks", baseAsset: "QQQ", quoteAsset: "USD", precision: 2 },
-  { symbol: "DIA", name: "Dow Jones ETF (US30)", category: "stocks", baseAsset: "DIA", quoteAsset: "USD", precision: 2 },
-  { symbol: "NVDA", name: "NVIDIA Corp.", category: "stocks", baseAsset: "NVDA", quoteAsset: "USD", precision: 2 },
-  { symbol: "TSLA", name: "Tesla Inc.", category: "stocks", baseAsset: "TSLA", quoteAsset: "USD", precision: 2 },
-  { symbol: "AAPL", name: "Apple Inc.", category: "stocks", baseAsset: "AAPL", quoteAsset: "USD", precision: 2 },
-  { symbol: "MSFT", name: "Microsoft Corp.", category: "stocks", baseAsset: "MSFT", quoteAsset: "USD", precision: 2 },
-  { symbol: "AMZN", name: "Amazon.com Inc.", category: "stocks", baseAsset: "AMZN", quoteAsset: "USD", precision: 2 },
-  { symbol: "META", name: "Meta Platforms", category: "stocks", baseAsset: "META", quoteAsset: "USD", precision: 2 },
-  { symbol: "AMD", name: "Advanced Micro Devices", category: "stocks", baseAsset: "AMD", quoteAsset: "USD", precision: 2 },
 ];
 
 /**
@@ -446,24 +422,6 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
     "USDSEK": "SEK=X",
     "USDNOK": "NOK=X",
     "USDPLN": "PLN=X",
-    "SPY": "SPY",
-    "QQQ": "QQQ",
-    "DIA": "DIA",
-    "NVDA": "NVDA",
-    "TSLA": "TSLA",
-    "AAPL": "AAPL",
-    "MSFT": "MSFT",
-    "AMZN": "AMZN",
-    "META": "META",
-    "AMD": "AMD",
-    "BTCUSDT": "BTC-USD",
-    "ETHUSDT": "ETH-USD",
-    "SOLUSDT": "SOL-USD",
-    "BNBUSDT": "BNB-USD",
-    "XRPUSDT": "XRP-USD",
-    "ADAUSDT": "ADA-USD",
-    "DOGEUSDT": "DOGE-USD",
-    "AVAXUSDT": "AVAX-USD",
   };
 
   let ySymbol = yahooSymbolMap[symbol.toUpperCase()];
@@ -763,18 +721,6 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     USDSEK: 10.45,
     USDNOK: 10.85,
     USDPLN: 3.980,
-    BTCUSDT: 88500,
-    ETHUSDT: 2800,
-    SOLUSDT: 195,
-    BNBUSDT: 650,
-    XRPUSDT: 1.45,
-    SPY: 590,
-    QQQ: 510,
-    DIA: 435,
-    NVDA: 135,
-    TSLA: 260,
-    AAPL: 230,
-    MSFT: 420,
   };
 
   const basePrice = fallbackPrices[symbol] || 100;
