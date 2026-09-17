@@ -9232,29 +9232,23 @@ export function calculateSRBasedTPSL(
     const emaSupport = Math.min(ema20, ema50);
     const pivotSupport = pivotPoints?.s1 || (currentPrice - safeATR);
     
-    // เลือก SL จากแหล่งที่ใกล้ที่สุดแต่ปลอดภัย
+    // กำหนดระยะความปลอดภัยขั้นต่ำของ Stop Loss อย่างน้อย 1.25 ATR เพื่อกันโดนสะบัดไส้เทียน
+    const minSafeSLDistance = safeATR * 1.25;
     const slCandidates = [
-      { value: nearestSupport, source: "Support Level", rationale: "แนวรับสำคัญจากราฟ" },
-      { value: emaSupport, source: "EMA Support", rationale: "เส้นค่าเฉลี่ยระยะสั้น" },
-      { value: pivotSupport, source: "Pivot S1", rationale: "Pivot Point Support 1" },
-      { value: currentPrice - safeATR * 1.2, source: "ATR", rationale: "ATR-based SL (1.2x)" }
-    ].filter(c => c.value > 0 && c.value < currentPrice);
+      { value: nearestSupport ? nearestSupport - safeATR * 0.35 : 0, source: "Support Shield", rationale: "แนวรับสำคัญพร้อมบัฟเฟอร์ 0.35 ATR" },
+      { value: emaSupport ? emaSupport - safeATR * 0.3 : 0, source: "EMA Support Shield", rationale: "เส้นค่าเฉลี่ยระยะสั้นพร้อมบัฟเฟอร์" },
+      { value: pivotSupport ? pivotSupport - safeATR * 0.25 : 0, source: "Pivot S1 Shield", rationale: "Pivot Point S1 พร้อมบัฟเฟอร์" },
+      { value: currentPrice - safeATR * 1.35, source: "ATR Shield", rationale: "ATR-based Robust SL (1.35x)" }
+    ].filter(c => c.value > 0 && (currentPrice - c.value) >= minSafeSLDistance);
     
-    // เลือก SL ที่ใกล้ที่สุดแต่ไม่ใกล้เกินไป (อย่างน้อย 0.5 ATR)
-    const safeSLCandidates = slCandidates.filter(c => (currentPrice - c.value) >= safeATR * 0.5);
-    const slChoice = safeSLCandidates.length > 0 
-      ? safeSLCandidates.sort((a, b) => (currentPrice - a.value) - (currentPrice - b.value))[0]
-      : slCandidates.sort((a, b) => (currentPrice - a.value) - (currentPrice - b.value))[0];
+    // เลือก SL ที่ให้ระยะความปลอดภัยเหมาะสมที่สุด (ใกล้เคียง 1.35 ATR)
+    const slChoice = slCandidates.length > 0 
+      ? slCandidates.sort((a, b) => (currentPrice - a.value) - (currentPrice - b.value))[0]
+      : { value: currentPrice - safeATR * 1.35, source: "ATR Robust", rationale: "ATR-based Robust SL (1.35x) - floor" };
     
-    if (slChoice) {
-      stopLoss = Number(slChoice.value.toFixed(precision));
-      slSource = slChoice.source;
-      slRationale = slChoice.rationale;
-    } else {
-      stopLoss = Number((currentPrice - safeATR * 1.2).toFixed(precision));
-      slSource = "ATR";
-      slRationale = "ATR-based SL (1.2x) - fallback";
-    }
+    stopLoss = Number(slChoice.value.toFixed(precision));
+    slSource = slChoice.source;
+    slRationale = slChoice.rationale;
     
     // 2. Take Profit 1 Calculation - หาแนวต้านที่ใกล้ที่สุดด้านบน
     const nearestResistance = resistanceLevels
@@ -9318,27 +9312,23 @@ export function calculateSRBasedTPSL(
     const emaResistance = Math.max(ema20, ema50);
     const pivotResistance = pivotPoints?.r1 || (currentPrice + safeATR);
     
+    // กำหนดระยะความปลอดภัยขั้นต่ำของ Stop Loss อย่างน้อย 1.25 ATR เพื่อกันโดนสะบัดไส้เทียน
+    const minSafeSLDistance = safeATR * 1.25;
     const slCandidates = [
-      { value: nearestResistance, source: "Resistance Level", rationale: "แนวต้านสำคัญจากราฟ" },
-      { value: emaResistance, source: "EMA Resistance", rationale: "เส้นค่าเฉลี่ยระยะสั้น" },
-      { value: pivotResistance, source: "Pivot R1", rationale: "Pivot Point Resistance 1" },
-      { value: currentPrice + safeATR * 1.2, source: "ATR", rationale: "ATR-based SL (1.2x)" }
-    ].filter(c => c.value > currentPrice);
+      { value: nearestResistance ? nearestResistance + safeATR * 0.35 : 0, source: "Resistance Shield", rationale: "แนวต้านสำคัญพร้อมบัฟเฟอร์ 0.35 ATR" },
+      { value: emaResistance ? emaResistance + safeATR * 0.3 : 0, source: "EMA Resistance Shield", rationale: "เส้นค่าเฉลี่ยระยะสั้นพร้อมบัฟเฟอร์" },
+      { value: pivotResistance ? pivotResistance + safeATR * 0.25 : 0, source: "Pivot R1 Shield", rationale: "Pivot Point R1 พร้อมบัฟเฟอร์" },
+      { value: currentPrice + safeATR * 1.35, source: "ATR Shield", rationale: "ATR-based Robust SL (1.35x)" }
+    ].filter(c => c.value > 0 && (c.value - currentPrice) >= minSafeSLDistance);
     
-    const safeSLCandidates = slCandidates.filter(c => (c.value - currentPrice) >= safeATR * 0.5);
-    const slChoice = safeSLCandidates.length > 0 
-      ? safeSLCandidates.sort((a, b) => (a.value - currentPrice) - (b.value - currentPrice))[0]
-      : slCandidates.sort((a, b) => (a.value - currentPrice) - (b.value - currentPrice))[0];
+    // เลือก SL ที่ให้ระยะความปลอดภัยเหมาะสมที่สุด (ใกล้เคียง 1.35 ATR)
+    const slChoice = slCandidates.length > 0 
+      ? slCandidates.sort((a, b) => (a.value - currentPrice) - (b.value - currentPrice))[0]
+      : { value: currentPrice + safeATR * 1.35, source: "ATR Robust", rationale: "ATR-based Robust SL (1.35x) - floor" };
     
-    if (slChoice) {
-      stopLoss = Number(slChoice.value.toFixed(precision));
-      slSource = slChoice.source;
-      slRationale = slChoice.rationale;
-    } else {
-      stopLoss = Number((currentPrice + safeATR * 1.2).toFixed(precision));
-      slSource = "ATR";
-      slRationale = "ATR-based SL (1.2x) - fallback";
-    }
+    stopLoss = Number(slChoice.value.toFixed(precision));
+    slSource = slChoice.source;
+    slRationale = slChoice.rationale;
     
     // 2. Take Profit 1 Calculation - หาแนวรับที่ใกล้ที่สุดด้านล่าง
     const nearestSupport = supportLevels

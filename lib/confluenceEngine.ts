@@ -68,6 +68,9 @@ export function evaluateMasterConfluence(
     if (stDirection === "UP") p1Score += 7;
     if (currentPrice > lastEMA200) p1Score += 5;
     if (isADXStrong) p1Score += 5;
+    else if (lastADX < 18) p1Score -= 6; // Chop / Sideways deadzone penalty
+    const currentATR = indicators.atr14?.slice(-1)[0] ?? (currentPrice * 0.005);
+    if (currentATR > 0 && Math.abs(currentPrice - lastEMA200) > currentATR * 2.5) p1Score -= 5; // Climax overextension penalty
     if (isEMA50SlopeBull) p1Score += 4;
     else p1Score -= 4; // Penalty if slope is falling against BUY
     if (isAboveVWAP) p1Score += 2; // [แผน 2] VWAP confirmation
@@ -90,6 +93,9 @@ export function evaluateMasterConfluence(
     if (stDirection === "DOWN") p1Score += 7;
     if (currentPrice < lastEMA200) p1Score += 5;
     if (isADXStrong) p1Score += 5;
+    else if (lastADX < 18) p1Score -= 6; // Chop / Sideways deadzone penalty
+    const currentATR = indicators.atr14?.slice(-1)[0] ?? (currentPrice * 0.005);
+    if (currentATR > 0 && Math.abs(currentPrice - lastEMA200) > currentATR * 2.5) p1Score -= 5; // Climax overextension penalty
     if (isEMA50SlopeBear) p1Score += 4;
     else p1Score -= 4; // Penalty if slope is rising against SELL
     if (!isAboveVWAP) p1Score += 2; // [แผน 2] VWAP confirmation
@@ -127,12 +133,18 @@ export function evaluateMasterConfluence(
   const intraBar = indicators.intraBarMomentum;
 
   if (bias === "BULLISH") {
-    if (lastRSI >= 42 && lastRSI <= 72) p2Score += 7;
+    if (lastRSI >= 42 && lastRSI <= 66) p2Score += 7;
+    else if (lastRSI > 66 && lastRSI <= 70) p2Score += 3;
+    else if (lastRSI > 70) p2Score -= 4; // Overbought peak exhaustion penalty
+    else if (lastRSI < 38) p2Score -= 4; // Counter-momentum penalty
     if (isRsiBullHook) p2Score += 3;
     if (lastStoch.k >= lastStoch.d) p2Score += 6;
     if (intraBar && intraBar.bias === "STRONG_BUYERS") p2Score += 4; // [แผน 5] Intra-bar live buyers
   } else if (bias === "BEARISH") {
-    if (lastRSI >= 28 && lastRSI <= 58) p2Score += 7;
+    if (lastRSI >= 34 && lastRSI <= 58) p2Score += 7;
+    else if (lastRSI >= 30 && lastRSI < 34) p2Score += 3;
+    else if (lastRSI < 30) p2Score -= 4; // Oversold bottom exhaustion penalty
+    else if (lastRSI > 62) p2Score -= 4; // Counter-momentum penalty
     if (isRsiBearHook) p2Score += 3;
     if (lastStoch.k <= lastStoch.d) p2Score += 6;
     if (intraBar && intraBar.bias === "STRONG_SELLERS") p2Score += 4; // [แผน 5] Intra-bar live sellers
@@ -147,8 +159,9 @@ export function evaluateMasterConfluence(
   const lastBB = indicators.bollingerBands?.slice(-1)[0] ?? { upper: currentPrice * 1.01, middle: currentPrice, lower: currentPrice * 0.99, bandwidth: 2.0 };
   const prevBB = indicators.bollingerBands && indicators.bollingerBands.length > 5 ? indicators.bollingerBands.slice(-6)[0] : lastBB;
   
-  const isSqueezing = (lastBB?.bandwidth ?? 2.0) < 1.5;
-  const isExpanding = (lastBB?.bandwidth ?? 2.0) > (prevBB?.bandwidth ?? 1.5);
+  // Dynamic relative expansion & squeeze (works across Forex, Gold, Crypto)
+  const isExpanding = prevBB?.bandwidth ? (lastBB?.bandwidth ?? 0) > prevBB.bandwidth * 1.05 : false;
+  const isSqueezing = prevBB?.bandwidth ? (lastBB?.bandwidth ?? 0) < prevBB.bandwidth * 0.92 : false;
 
   if (isExpanding) p3Score += 12; // Volatility expansion
   if (bias === "BULLISH" && currentPrice >= (lastBB?.middle ?? currentPrice)) p3Score += 8;
@@ -258,7 +271,8 @@ export function evaluateMasterConfluence(
     if (premDisc) {
       if (premDisc.zone === "DEEP_DISCOUNT" || premDisc.zone === "DISCOUNT") p5Score += 5;
       else if (premDisc.zone === "EQUILIBRIUM") p5Score += 2;
-      else if (premDisc.zone === "EXTREME_PREMIUM") p5Score -= 5; // Penalty for buying top
+      else if (premDisc.zone === "EXTREME_PREMIUM") p5Score -= 6; // Penalty for buying top
+      else if (premDisc.zone === "PREMIUM") p5Score -= 3; // Penalty for buying expensive premium
     }
 
     // 3. Market Structure Shift (BOS / ChoCH displacement)
@@ -277,7 +291,8 @@ export function evaluateMasterConfluence(
     if (premDisc) {
       if (premDisc.zone === "EXTREME_PREMIUM" || premDisc.zone === "PREMIUM") p5Score += 5;
       else if (premDisc.zone === "EQUILIBRIUM") p5Score += 2;
-      else if (premDisc.zone === "DEEP_DISCOUNT") p5Score -= 5; // Penalty for shorting bottom
+      else if (premDisc.zone === "DEEP_DISCOUNT") p5Score -= 6; // Penalty for shorting bottom
+      else if (premDisc.zone === "DISCOUNT") p5Score -= 3; // Penalty for shorting cheap discount
     }
 
     // 3. Market Structure Shift (BOS / ChoCH displacement)
@@ -289,7 +304,7 @@ export function evaluateMasterConfluence(
     p5Score += 8;
   }
   if (indicators.supportLevels.length > 0 && indicators.resistanceLevels.length > 0) p5Score += 2;
-  p5Score = Math.max(3, Math.min(20, p5Score));
+  p5Score = Math.max(0, Math.min(20, p5Score));
 
   const zoneDesc = premDisc ? `Zone: ${premDisc.zone} (${premDisc.percentile}%)` : "";
   const obDesc = orderBlocks?.nearestBlock ? `OB: ${orderBlocks.nearestBlock.type}` : "SMC: Structure Normal";
