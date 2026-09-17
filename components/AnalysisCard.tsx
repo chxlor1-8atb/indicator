@@ -564,6 +564,70 @@ export default function AnalysisCard({
         </div>
       )}
 
+      {/* 🎯 2.4. SNIPER PRECISION LIMIT & MICRO-SL MATRIX ($10 USD CAPITAL PROTOCOL) */}
+      {(analysis.sniperMicroSL || analysis.tradeSetup?.sniperMicroSL) && (
+        <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/30 via-surface-100 to-slate-900 p-4 space-y-3 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-inner">
+                <Target className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm font-bold text-slate-100">
+                    🎯 Sniper Micro-SL & Precision Entry Protocol
+                  </h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                    $10 USD Capital Ready
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                    High R:R {(analysis.sniperMicroSL || analysis.tradeSetup?.sniperMicroSL)?.riskRewardRatio}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  {(analysis.sniperMicroSL || analysis.tradeSetup?.sniperMicroSL)?.microCapitalRationale}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                Invalidation: {(analysis.sniperMicroSL || analysis.tradeSetup?.sniperMicroSL)?.invalidationType}
+              </span>
+            </div>
+          </div>
+
+          {/* 4 Stats Grid */}
+          {(() => {
+            const sn = (analysis.sniperMicroSL || analysis.tradeSetup?.sniperMicroSL)!;
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-2.5 rounded-xl bg-black/40 border border-slate-800 space-y-0.5">
+                  <span className="text-[10px] text-slate-400 block font-medium">จุดเข้า Limit (50% CE/OB)</span>
+                  <span className="text-base font-mono font-black text-amber-300 block">{sn.entryLimit}</span>
+                  <span className="text-[9px] text-slate-500 block">ดักของถูก / ไม่ไล่ราคา</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-rose-500/30 space-y-0.5">
+                  <span className="text-[10px] text-rose-400 block font-medium">Sniper SL (ชิดขอบ)</span>
+                  <span className="text-base font-mono font-black text-rose-300 block">{sn.stopLoss}</span>
+                  <span className="text-[9px] text-rose-400/80 font-mono block">สั้นเพียง {sn.slPips} pips</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30 space-y-0.5">
+                  <span className="text-[10px] text-emerald-400 block font-medium">ความเสี่ยงบน 0.01 Lot</span>
+                  <span className="text-base font-mono font-black text-emerald-300 block">-${sn.dollarRiskOn001Lot} USD</span>
+                  <span className="text-[9px] text-emerald-400/80 font-mono block">ทุน $10 เสี่ยง {((sn.dollarRiskOn001Lot / 10) * 100).toFixed(0)}%</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30 space-y-0.5">
+                  <span className="text-[10px] text-emerald-400 block font-medium">เป้าหมายกำไร (TP1 / TP2)</span>
+                  <span className="text-base font-mono font-black text-emerald-400 block">+{sn.tp1Pips}p / +{sn.tp2Pips}p</span>
+                  <span className="text-[9px] text-emerald-400/80 font-mono block">กำไร +${(sn.dollarRiskOn001Lot * 2).toFixed(1)} / +${(sn.dollarRiskOn001Lot * 4).toFixed(1)}</span>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* 🎯 2.5. 5 CORE PRACTICAL TRADING PILLARS (5 เสาหลักเทรดจริง - แม่นยำ ไม่ขัดแย้งกันเอง) */}
       <FiveCorePillarsCard analysis={analysis} />
 

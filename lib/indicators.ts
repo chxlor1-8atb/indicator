@@ -1220,7 +1220,7 @@ export function calculateSniperMicroSL(
     const tp1Pips = Math.round((tp1Price - entryPrice) * pipMultiplier);
     const tp2Pips = Math.round((tp2Price - entryPrice) * pipMultiplier);
 
-    const dollarRiskOn001Lot = Number((0.01 * slPips * (pipDollarPer001 * 10)).toFixed(2));
+    const dollarRiskOn001Lot = Number((slPips * pipDollarPer001).toFixed(2));
     const isSmallAccountFriendly = dollarRiskOn001Lot <= 1.80;
 
     return {
@@ -1280,7 +1280,7 @@ export function calculateSniperMicroSL(
     const tp1Pips = Math.round((entryPrice - tp1Price) * pipMultiplier);
     const tp2Pips = Math.round((entryPrice - tp2Price) * pipMultiplier);
 
-    const dollarRiskOn001Lot = Number((0.01 * slPips * (pipDollarPer001 * 10)).toFixed(2));
+    const dollarRiskOn001Lot = Number((slPips * pipDollarPer001).toFixed(2));
     const isSmallAccountFriendly = dollarRiskOn001Lot <= 1.80;
 
     return {
