@@ -26,6 +26,9 @@ const MAX_LOGS = 60;
 // Optimized to 8 core assets to stay well within Vercel Serverless CPU limits
 export const AUTONOMOUS_WATCHLIST = [
   "XAUUSD",
+  "BTCUSDT",
+  "ETHUSDT",
+  "SOLUSDT",
   "EURUSD",
   "GBPUSD",
   "USDJPY",
@@ -192,6 +195,12 @@ export async function evaluateAssetAutonomous(
     orderType,
     regime: regimeTitle,
     isNewsFrozen,
+    dealingRangeZone: tradeSetup.dealingRangeZone || analysis.premiumDiscount?.zone,
+    mtfConfluenceSummary: analysis.timeframeMatrix ? {
+      score: analysis.timeframeMatrix.alignmentScore ?? 50,
+      alignment: analysis.timeframeMatrix.h1,
+      htfTrend: analysis.timeframeMatrix.h4,
+    } : undefined,
     pendingPrice: orderType !== "WAIT_NO_ORDER" ? pendingPrice : undefined,
     slPrice: orderType !== "WAIT_NO_ORDER" ? slPrice : undefined,
     tpPrice: orderType !== "WAIT_NO_ORDER" ? tp1Price : undefined,

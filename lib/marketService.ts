@@ -1,5 +1,5 @@
 import { AssetInfo, Candle } from "./types";
-import { saveCandlesRollingBuffer, getCachedCandles, BacktestTrade } from "./db";
+import { saveCandlesRollingBuffer, getCachedCandles, BacktestTrade, recordClosedCandleTransition } from "./db";
 import { calculateEMA, calculateRSI, calculateADX, calculateATR } from "./indicators";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
 import { LRUCache } from "./cache";
@@ -57,6 +57,20 @@ export const AVAILABLE_ASSETS: AssetInfo[] = [
   { symbol: "USDSEK", name: "USD / SEK (ดอลลาร์/โครนาสวีเดน)", category: "forex", baseAsset: "USD", quoteAsset: "SEK", precision: 4 },
   { symbol: "USDNOK", name: "USD / NOK (ดอลลาร์/โครนานอร์เวย์)", category: "forex", baseAsset: "USD", quoteAsset: "NOK", precision: 4 },
   { symbol: "USDPLN", name: "USD / PLN (ดอลลาร์/ซลอตีโปแลนด์)", category: "forex", baseAsset: "USD", quoteAsset: "PLN", precision: 4 },
+
+  // ─── Top Crypto Picks (12 เหรียญยอดนิยมสำหรับสายเทรด) ───
+  { symbol: "BTCUSDT", name: "Bitcoin / USDT (บิตคอยน์)", category: "crypto", baseAsset: "BTC", quoteAsset: "USDT", precision: 2 },
+  { symbol: "ETHUSDT", name: "Ethereum / USDT (อีเธอเรียม)", category: "crypto", baseAsset: "ETH", quoteAsset: "USDT", precision: 2 },
+  { symbol: "SOLUSDT", name: "Solana / USDT (โซลานา)", category: "crypto", baseAsset: "SOL", quoteAsset: "USDT", precision: 2 },
+  { symbol: "BNBUSDT", name: "BNB / USDT (ไบแนนซ์คอยน์)", category: "crypto", baseAsset: "BNB", quoteAsset: "USDT", precision: 2 },
+  { symbol: "XRPUSDT", name: "XRP / USDT (ริปเปิล)", category: "crypto", baseAsset: "XRP", quoteAsset: "USDT", precision: 4 },
+  { symbol: "DOGEUSDT", name: "Dogecoin / USDT (ดอจคอยน์)", category: "crypto", baseAsset: "DOGE", quoteAsset: "USDT", precision: 4 },
+  { symbol: "SUIUSDT", name: "Sui / USDT (ซุย)", category: "crypto", baseAsset: "SUI", quoteAsset: "USDT", precision: 4 },
+  { symbol: "ADAUSDT", name: "Cardano / USDT (คาร์ดาโน)", category: "crypto", baseAsset: "ADA", quoteAsset: "USDT", precision: 4 },
+  { symbol: "AVAXUSDT", name: "Avalanche / USDT (อวาแลนช์)", category: "crypto", baseAsset: "AVAX", quoteAsset: "USDT", precision: 2 },
+  { symbol: "LINKUSDT", name: "Chainlink / USDT (เชนลิงก์)", category: "crypto", baseAsset: "LINK", quoteAsset: "USDT", precision: 3 },
+  { symbol: "NEARUSDT", name: "NEAR Protocol / USDT (เนียร์)", category: "crypto", baseAsset: "NEAR", quoteAsset: "USDT", precision: 3 },
+  { symbol: "PEPEUSDT", name: "Pepe / USDT (เปเป้)", category: "crypto", baseAsset: "PEPE", quoteAsset: "USDT", precision: 6 },
 ];
 
 /**
@@ -422,6 +436,18 @@ export async function fetchYahooCandles(symbol: string, interval = "1h"): Promis
     "USDSEK": "SEK=X",
     "USDNOK": "NOK=X",
     "USDPLN": "PLN=X",
+    "BTCUSDT": "BTC-USD",
+    "ETHUSDT": "ETH-USD",
+    "SOLUSDT": "SOL-USD",
+    "BNBUSDT": "BNB-USD",
+    "XRPUSDT": "XRP-USD",
+    "DOGEUSDT": "DOGE-USD",
+    "SUIUSDT": "SUI20947-USD",
+    "ADAUSDT": "ADA-USD",
+    "AVAXUSDT": "AVAX-USD",
+    "LINKUSDT": "LINK-USD",
+    "NEARUSDT": "NEAR-USD",
+    "PEPEUSDT": "PEPE24478-USD",
   };
 
   let ySymbol = yahooSymbolMap[symbol.toUpperCase()];
@@ -578,6 +604,10 @@ function cacheAndPersist(sym: string, tf: string, candles: Candle[]): Candle[] {
   saveCandlesRollingBuffer(sym, tf, candles).catch((err) => {
     logger.warn(`[Neon Buffer] Background save note for ${sym}:`, { service: "NeonBuffer", symbol: sym }, err);
   });
+  // Non-blocking closed-candle transition capture & incremental ledger update
+  recordClosedCandleTransition(sym, tf, candles).catch((err) => {
+    logger.warn(`[Neon Archive] Closed candle archive note for ${sym}:`, { service: "NeonArchive", symbol: sym }, err);
+  });
   return candles;
 }
 
@@ -721,6 +751,18 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     USDSEK: 10.45,
     USDNOK: 10.85,
     USDPLN: 3.980,
+    BTCUSDT: 68500.0,
+    ETHUSDT: 3550.0,
+    SOLUSDT: 185.0,
+    BNBUSDT: 590.0,
+    XRPUSDT: 0.585,
+    DOGEUSDT: 0.142,
+    SUIUSDT: 1.85,
+    ADAUSDT: 0.455,
+    AVAXUSDT: 28.5,
+    LINKUSDT: 14.5,
+    NEARUSDT: 5.25,
+    PEPEUSDT: 0.0000085,
   };
 
   const basePrice = fallbackPrices[symbol] || 100;

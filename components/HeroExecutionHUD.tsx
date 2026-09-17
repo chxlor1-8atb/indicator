@@ -70,7 +70,14 @@ export default function HeroExecutionHUD({
 
   const sym = analysis.symbol ? analysis.symbol.toUpperCase() : "";
   const isGold = sym.includes("XAU") || sym.includes("GOLD");
-  const pipMultiplier = isGold ? 10 : sym.includes("JPY") ? 100 : 10000;
+  const isCryptoAsset = sym.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "SUI", "ADA", "AVAX", "LINK", "PEPE", "NEAR"].some(c => sym.startsWith(c));
+  const pipMultiplier = isGold
+    ? 10
+    : isCryptoAsset
+    ? (currentPrice > 100 ? 1 : currentPrice > 1 ? 10 : currentPrice > 0.01 ? 10000 : 1000000)
+    : sym.includes("JPY")
+    ? 100
+    : 10000;
   const distancePips = Math.abs(Number((displayEntryPrice - currentPrice) * pipMultiplier)).toFixed(1);
 
   // Trigger Status Analysis
@@ -79,6 +86,12 @@ export default function HeroExecutionHUD({
   const hasBuySignal = (ts.orderType?.includes("BUY") || analysis.signal?.includes("BUY")) && !isFreeze;
   const hasSellSignal = (ts.orderType?.includes("SELL") || analysis.signal?.includes("SELL")) && !isFreeze;
   const isActionable = hasBuySignal || hasSellSignal;
+
+  // Institutional Multi-Timeframe & SMC Dealing Range
+  const mtf = analysis.timeframeMatrix;
+  const dealingZone = ts.dealingRangeZone;
+  const dealingPercentile = ts.dealingRangePercentile ?? 50;
+  const isPostNewsSniper = cal?.state === "POST_NEWS_SNIPER_ACTIVE" || Boolean(ts.isPostNewsSniper);
 
   const isExecutionLocked = isFreeze || !isActionable;
   const isBuy = hasBuySignal;
@@ -241,6 +254,165 @@ export default function HeroExecutionHUD({
           </span>
         </div>
       </div>
+
+      {/* ─── 1.1 INSTITUTIONAL MTF ALIGNMENT & DEALING RANGE HUD ─── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80">
+        {/* Left Box: Multi-Timeframe Alignment Ribbon */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Multi-Timeframe Ribbon (MTF)</span>
+            </span>
+            {mtf?.alignmentScore !== undefined && (
+              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                mtf.alignmentScore >= 40 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" :
+                mtf.alignmentScore <= -40 ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" :
+                "bg-slate-800 text-slate-400 border border-slate-700"
+              }`}>
+                Confluence {mtf.alignmentScore > 0 ? `+${mtf.alignmentScore}` : mtf.alignmentScore}%
+              </span>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-4 gap-1.5 text-center font-mono">
+            {[
+              { tf: "15M", val: mtf?.m15 || "NEUTRAL", sub: "Intraday" },
+              { tf: "1H", val: mtf?.h1 || "NEUTRAL", sub: "Trend" },
+              { tf: "4H", val: mtf?.h4 || "NEUTRAL", sub: "Macro" },
+              { tf: "1D", val: mtf?.d1 || "NEUTRAL", sub: "Cycle" },
+            ].map((item) => {
+              const isBull = item.val === "BULLISH";
+              const isBear = item.val === "BEARISH";
+              return (
+                <div
+                  key={item.tf}
+                  className={`px-1.5 py-1 rounded-lg border text-[11px] transition-all ${
+                    isBull
+                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                      : isBear
+                      ? "bg-rose-500/15 border-rose-500/40 text-rose-300"
+                      : "bg-slate-900 border-slate-800 text-slate-400"
+                  }`}
+                >
+                  <div className="font-bold flex items-center justify-center gap-0.5">
+                    <span>{item.tf}</span>
+                    <span className="text-[9px]">{isBull ? "▲" : isBear ? "▼" : "•"}</span>
+                  </div>
+                  <div className="text-[9px] uppercase tracking-tight opacity-80">
+                    {isBull ? "BULL" : isBear ? "BEAR" : "FLAT"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {mtf?.htfGuardStatus?.isGuarded && (
+            <div className="text-[10px] text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 flex items-center gap-1 font-mono">
+              <ShieldCheck className="w-3 h-3 text-amber-400 shrink-0" />
+              <span className="truncate">{mtf.htfGuardStatus.guardReason || "HTF Strict Guard: ห้ามเทรดสวนเทรนด์ใหญ่"}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right Box: Institutional SMC Dealing Range Meter */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-mono font-bold text-slate-300 flex items-center gap-1.5">
+              <Target className="w-3.5 h-3.5 text-teal-400" />
+              <span>Institutional Dealing Range (SMC)</span>
+            </span>
+            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+              dealingZone === "DISCOUNT" || dealingZone === "DEEP_DISCOUNT" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" :
+              dealingZone === "PREMIUM" || dealingZone === "EXTREME_PREMIUM" ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" :
+              "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
+            }`}>
+              {dealingZone || "EQUILIBRIUM"} ({dealingPercentile}%)
+            </span>
+          </div>
+
+          {/* Dealing Range Visual Meter */}
+          <div className="space-y-1">
+            <div className="relative h-3 w-full bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+              {/* Discount Zone (Green) */}
+              <div className="absolute left-0 top-0 bottom-0 w-[45%] bg-emerald-500/30 border-r border-emerald-500/40" />
+              {/* Equilibrium Zone (Indigo) */}
+              <div className="absolute left-[45%] top-0 bottom-0 w-[10%] bg-indigo-500/40 border-r border-indigo-500/40" />
+              {/* Premium Zone (Red) */}
+              <div className="absolute left-[55%] top-0 bottom-0 w-[45%] bg-rose-500/30" />
+              {/* Current Price Marker Needle */}
+              <div
+                className="absolute top-0 bottom-0 w-1.5 bg-amber-400 shadow-md shadow-amber-400/80 -translate-x-1/2 z-10 rounded-full"
+                style={{ left: `${Math.min(100, Math.max(0, dealingPercentile))}%` }}
+                title={`ราคาปัจจุบันอยู่ที่ ${dealingPercentile}% ของ Dealing Range`}
+              />
+            </div>
+            <div className="flex justify-between text-[9px] font-mono text-slate-400 px-0.5">
+              <span className="text-emerald-400">Discount (ซื้อถูก)</span>
+              <span className="text-indigo-300">50% Eq</span>
+              <span className="text-rose-400">Premium (ขายแพง)</span>
+            </div>
+          </div>
+
+          {/* Institutional Bias Advice */}
+          <div className="text-[10.5px] font-mono text-slate-300 flex items-center justify-between">
+            <span>แต้มต่อสถาบัน:</span>
+            <span className={`font-bold ${
+              dealingPercentile <= 45 ? "text-emerald-400" :
+              dealingPercentile >= 55 ? "text-rose-400" :
+              "text-indigo-300"
+            }`}>
+              {dealingPercentile <= 45 ? "✅ สะสม Buy ใน Discount (แต้มต่อสูง)" :
+               dealingPercentile >= 55 ? "✅ ดัก Sell ใน Premium (แต้มต่อสูง)" :
+               "⚖️ ราคากลาง Fair Value (รอฟอร์มตัว)"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── 1.2 POST-NEWS SNIPER MODE ACTIVE CALLOUT ─── */}
+      {isPostNewsSniper && (
+        <div className="p-3 rounded-xl border border-teal-500/60 bg-gradient-to-r from-teal-950/60 via-emerald-950/40 to-slate-900 shadow-lg glow-teal flex items-start gap-2.5">
+          <div className="p-1.5 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-500/40 shrink-0">
+            <Zap className="w-4 h-4 text-teal-300 animate-pulse" />
+          </div>
+          <div className="space-y-1 w-full text-xs">
+            <div className="flex items-center justify-between flex-wrap gap-1">
+              <span className="font-black text-teal-200 tracking-wide flex items-center gap-1.5">
+                <span>⚡ POST-NEWS SNIPER ACTIVE (จังหวะสไนเปอร์หลังข่าว 15-45 นาที)</span>
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/40 font-bold">
+                Turtle Soup Retest Setup
+              </span>
+            </div>
+            <p className="text-slate-300 leading-relaxed text-[11px]">
+              {cal?.strategyPlaybook || "ตลาดกวาดสภาพคล่อง (Liquidity Sweep) สิ้นสุดแล้ว สเปรดเริ่มหดตัวสู่ระดับปกติ แนะนำวาง Pending Limit ดักจังหวะย่อทดสอบ Breaker Block / News FVG พร้อมวาง SL หลบหลังยอดไส้ข่าว"}
+            </p>
+            {cal?.economicSurprise && (
+              <div className="flex items-center gap-2 pt-1 border-t border-teal-500/20 font-mono text-[10.5px] text-teal-300 flex-wrap">
+                <span>📊 Economic Surprise:</span>
+                <span className={`px-1.5 py-0.2 rounded font-bold ${
+                  cal.economicSurprise.surpriseSentiment === "HAWKISH" ? "bg-emerald-500/20 text-emerald-300" :
+                  cal.economicSurprise.surpriseSentiment === "DOVISH" ? "bg-rose-500/20 text-rose-300" :
+                  "bg-slate-800 text-slate-300"
+                }`}>
+                  {cal.economicSurprise.surpriseSentiment} ({cal.economicSurprise.deviationSigma > 0 ? `+${cal.economicSurprise.deviationSigma}` : cal.economicSurprise.deviationSigma}σ)
+                </span>
+                <span className="text-slate-400">
+                  (Actual: {cal.economicSurprise.actual} vs F/C: {cal.economicSurprise.forecast})
+                </span>
+              </div>
+            )}
+            {cal?.newsSweepInfo && (
+              <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400 flex-wrap">
+                <span>🎯 Swept Side: <strong className="text-amber-300">{cal.newsSweepInfo.sweptSide}</strong></span>
+                {cal.newsSweepInfo.sweepHigh > 0 && <span>High: <strong className="text-rose-300">{cal.newsSweepInfo.sweepHigh}</strong></span>}
+                {cal.newsSweepInfo.sweepLow > 0 && <span>Low: <strong className="text-emerald-300">{cal.newsSweepInfo.sweepLow}</strong></span>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ─── 2. PROMINENT ENTRY TRIGGER CALLOUT (กล่องจังหวะเข้าออเดอร์ชัดเจนสุดๆ) ─── */}
       <div className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all ${

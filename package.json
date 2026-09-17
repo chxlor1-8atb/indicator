@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "bot": "node scripts/bot-daemon.mjs"
+    "bot": "node scripts/bot-daemon.mjs",
+    "winrate": "npx tsx scripts/get-system-winrate.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

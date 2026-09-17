@@ -4,7 +4,7 @@ import {
   addTelemetryLog,
   resolveOrdersAgainstLivePrice,
 } from "@/lib/autonomousEngine";
-import { validatePriceIntegrity } from "@/lib/priceIntegrity";
+import { validatePriceIntegrity, validateSpreadSafety } from "@/lib/priceIntegrity";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,30 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const format = searchParams.get("format");
     const symbol = searchParams.get("symbol") || undefined;
+    const currentSpread = parseFloat(searchParams.get("spread") || "0");
+
+    if (symbol && currentSpread > 0) {
+      const spreadCheck = validateSpreadSafety(symbol, currentSpread);
+      if (!spreadCheck.isSafe) {
+        if (format === "csv" || format === "mt") {
+          return new NextResponse(`// SPREAD_BLOWOUT: ${spreadCheck.warning}`, {
+            status: 200,
+            headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+          });
+        }
+        return NextResponse.json(
+          {
+            success: true,
+            count: 0,
+            orders: [],
+            spreadSafety: spreadCheck,
+            warning: spreadCheck.warning,
+            timestamp: Date.now(),
+          },
+          { headers: { "Cache-Control": "no-store" } }
+        );
+      }
+    }
 
     const orders = getActiveBridgeOrders(symbol);
 

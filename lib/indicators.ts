@@ -542,6 +542,8 @@ export function detectFairValueGaps(candles: Candle[], precalculatedATR?: (numbe
   return fvgs.slice(-5); // Return the top 5 most recent validated FVGs
 }
 
+export const calculateFairValueGaps = detectFairValueGaps;
+
 // ─── Price Action Candlestick Rejection Detection ───
 export interface CandleRejectionResult {
   isBullishRejection: boolean;
@@ -1008,7 +1010,8 @@ export function calculateStructuralStopLoss(
   action: "BUY" | "SELL",
   atrValue?: number,
   currentPrice?: number,
-  precision = 2
+  precision = 2,
+  orderBlockBoundary?: number
 ): StructuralStopLossInfo {
   const p = currentPrice || candles[candles.length - 1]?.close || 1;
   const atr = atrValue || p * 0.005;
@@ -1022,23 +1025,26 @@ export function calculateStructuralStopLoss(
     if (c.low < swingLow) swingLow = c.low;
   }
 
-  const liquidityBuffer = Number((atr * 0.5).toFixed(precision));
+  // Institutional Spread Buffer: 0.5x ATR or at least 15 pips equivalent
+  const liquidityBuffer = Number(Math.max(atr * 0.5, p * 0.0008).toFixed(precision));
 
   if (action === "BUY") {
-    const rawSL = swingLow - liquidityBuffer;
+    const refPrice = orderBlockBoundary && orderBlockBoundary < swingLow ? orderBlockBoundary : swingLow;
+    const rawSL = refPrice - liquidityBuffer;
     const finalSL = rawSL < p ? rawSL : p - atr * 1.5;
     return {
       stopLoss: Number(finalSL.toFixed(precision)),
-      swingRefPrice: Number(swingLow.toFixed(precision)),
+      swingRefPrice: Number(refPrice.toFixed(precision)),
       liquidityBuffer,
       protectionType: "SWING_LOW_BUFFER",
     };
   } else {
-    const rawSL = swingHigh + liquidityBuffer;
+    const refPrice = orderBlockBoundary && orderBlockBoundary > swingHigh ? orderBlockBoundary : swingHigh;
+    const rawSL = refPrice + liquidityBuffer;
     const finalSL = rawSL > p ? rawSL : p + atr * 1.5;
     return {
       stopLoss: Number(finalSL.toFixed(precision)),
-      swingRefPrice: Number(swingHigh.toFixed(precision)),
+      swingRefPrice: Number(refPrice.toFixed(precision)),
       liquidityBuffer,
       protectionType: "SWING_HIGH_BUFFER",
     };
@@ -1090,11 +1096,12 @@ export function calculateSniperPrecisionEntry(
     });
 
     if (fvgWithPoc) {
-      const qualityEntry = Number(((fvgWithPoc.consequentEncroachment + poc) / 2).toFixed(precision));
+      // The institutional entry is anchored directly at the POC (Point of Control)
+      const qualityEntry = Number(poc.toFixed(precision));
       return {
         recommendedLimit: qualityEntry,
         entryType: "FVG_POC_CONFLUENCE",
-        entryRationale: `⭐ คัดโซนคุณภาพเกรด A+ (FVG + PoC): โซน ${fvgWithPoc.type} (${Math.min(fvgWithPoc.top, fvgWithPoc.bottom).toFixed(precision)} - ${Math.max(fvgWithPoc.top, fvgWithPoc.bottom).toFixed(precision)}) ทับซ้อนตรงกับ Volume Profile PoC (${poc.toFixed(precision)}) สถาบันสะสมวอลุ่มหนาแน่นที่สุด`,
+        entryRationale: `⭐ คัดโซนคุณภาพเกรด A+ (FVG + PoC): ดัก Limit ตรงระดับ Volume Profile PoC (${poc.toFixed(precision)}) ภายในโซน ${fvgWithPoc.type} (${Math.min(fvgWithPoc.top, fvgWithPoc.bottom).toFixed(precision)} - ${Math.max(fvgWithPoc.top, fvgWithPoc.bottom).toFixed(precision)}) สถาบันสะสมวอลุ่มหนาแน่นที่สุด`,
       };
     }
   }
@@ -2482,6 +2489,7 @@ export function calculateCandleMicrostructure(candles: Candle[]): CandleMicrostr
     bodyDominance,
     isPinBar,
     isFullBodyThrust,
+    wickDirection: rejectionStrength === "STRONG_BUY_REJECTION" ? "BOTTOM_REJECTION" : rejectionStrength === "STRONG_SELL_REJECTION" ? "TOP_REJECTION" : "NONE",
     description,
   };
 }
@@ -9023,6 +9031,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   // Classic Trio Engine (MA 20 • MA 50 • RSI 14)
   const classicTrio = calculateClassicTrio(cleanCandles, precision, ema20, ema50, rsi14);
 
+  // [แผน 54] Higher Timeframe Confluence Analysis (Fast & Resilient)
+  const mtfConfluence = calculateMTFConfluence(cleanCandles, precision, sym);
+
   const _result: IndicatorData = {
     rsi14,
     atr14,
@@ -9093,8 +9104,8 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis
     advancedVolumeProfile,
     footprintAnalysis,
-    // [แผน 54] Higher Timeframe Confluence Analysis (Simplified) - DISABLED FOR PERFORMANCE
-    // mtfConfluence,
+    // [แผน 54] Higher Timeframe Confluence Analysis
+    mtfConfluence,
     fisher,
     connorsRSI,
     awesomeOsc,

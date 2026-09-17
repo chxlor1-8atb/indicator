@@ -128,6 +128,20 @@ export function orchestrateStrategyDecision(input: OrchestratorInput): Orchestra
       ];
       clashResolutionReason = "โฟกัสเฉพาะสัดส่วนเรขาคณิตและโซน PRZ ปิดระบบตามเทรนด์เดิมเพื่อโฟกัสจุดวกกลับที่มีความแม่นยำสูง (Precision Reversal)";
       break;
+
+    case "POST_NEWS_SNIPER":
+      activeIndicators = [
+        "🧲 News Liquidity Sweep (Turtle Soup)",
+        "⚡ Post-News FVG Imbalance Retest",
+        "📐 M5 Market Structure Shift (MSS/CHoCH)",
+        "🛡️ Structural Stop Loss at News Spike Boundary",
+      ];
+      mutedIndicators = [
+        "⛔ General Trend Indicators (Muted: กราฟหลังข่าววิ่งด้วยสภาพคล่องเฉพาะ)",
+        "⛔ Overbought/Oversold Indicators (Muted: สเปรดและความผันผวนสูง)",
+      ];
+      clashResolutionReason = "โหมดดักตลบหลังข่าว (Post-News Sniper): โฟกัสเฉพาะจุดกวาดสภาพคล่องและการ Retest ของ News FVG ปลอดภัยจาก HFT Trap";
+      break;
   }
 
   // ─── 4. HIERARCHICAL VETO CHECKS (VETO HIERARCHY) ───
@@ -249,11 +263,50 @@ export function orchestrateStrategyDecision(input: OrchestratorInput): Orchestra
         primaryEngine = "Harmonic Scanner";
         executionAdvice = "กำลังสแกนหารูปทรง Harmonic Pattern สัดส่วนทองคำ";
       }
+    } else if (effectivePreset === "POST_NEWS_SNIPER") {
+      const isBullSweep = indicators.sessionSweep?.sweepType === "BULLISH_SWEEP" || (indicators.candleMicrostructure?.wickDirection === "BOTTOM_REJECTION");
+      const isBearSweep = indicators.sessionSweep?.sweepType === "BEARISH_SWEEP" || (indicators.candleMicrostructure?.wickDirection === "TOP_REJECTION");
+
+      if (isBullSweep) {
+        unifiedSignal = "BUY";
+        confidencePct = 92;
+        primaryEngine = "Post-News Turtle Soup Hunter";
+        executionAdvice = "เข้า BUY ดักจังหวะสถาบันกวาดสภาพคล่องฝั่งลบเสร็จสิ้น (SSL Swept) ตั้ง SL ใต้ปลายไส้ข่าว";
+      } else if (isBearSweep) {
+        unifiedSignal = "SELL";
+        confidencePct = 92;
+        primaryEngine = "Post-News Turtle Soup Hunter";
+        executionAdvice = "เข้า SELL ดักจังหวะสถาบันกวาดสภาพคล่องฝั่งบวกเสร็จสิ้น (BSL Swept) ตั้ง SL เหนือปลายไส้ข่าว";
+      } else {
+        unifiedSignal = "HOLD_WAIT";
+        confidencePct = 65;
+        primaryEngine = "Post-News Liquidity Monitor";
+        executionAdvice = "รอกราฟหลังข่าวเฉลยทิศทางและสร้างแท่งเทียน Rejection ชัดเจน";
+      }
     } else {
       unifiedSignal = "HOLD_WAIT";
       confidencePct = 65;
       primaryEngine = "Squeeze Breakout Sentry";
       executionAdvice = "จับตาแท่งเทียนแท่งแรกที่หลุดกรอบ Squeeze พร้อมวอลุ่มหนุน";
+    }
+
+    // ─── VETO CHECK 5: INSTITUTIONAL DEALING RANGE INVARIANTS (SAFETY LOCK 13) ───
+    // Smart Money NEVER enters market Buy in Premium (> 55%) or market Sell in Discount (< 45%)
+    const premDisc = indicators.premiumDiscount;
+    if (premDisc && premDisc.tradeAllowed !== false) {
+      if (unifiedSignal === "BUY" && (premDisc.zone === "EXTREME_PREMIUM" || (premDisc.percentile > 55 && premDisc.zone === "PREMIUM"))) {
+        vetoTriggered = true;
+        vetoReason = `⛔ สถาบันไม่ซื้อในโซนพรีเมียม (Safety Lock 13): ราคาอยู่ที่ระดับ ${premDisc.percentile}% (PREMIUM) สูงกว่า 50% Equilibrium ($${premDisc.equilibrium}) บังคับตั้ง BUY LIMIT ดักย่อที่โซน Discount หรือ OTE เท่านั้น`;
+        unifiedSignal = "HOLD_WAIT";
+        confidencePct = Math.min(confidencePct, 50);
+        executionAdvice = vetoReason;
+      } else if (unifiedSignal === "SELL" && (premDisc.zone === "DEEP_DISCOUNT" || (premDisc.percentile < 45 && premDisc.zone === "DISCOUNT"))) {
+        vetoTriggered = true;
+        vetoReason = `⛔ สถาบันไม่ขายในโซนดิสเคานต์ (Safety Lock 13): ราคาอยู่ที่ระดับ ${premDisc.percentile}% (DISCOUNT) ต่ำกว่า 50% Equilibrium ($${premDisc.equilibrium}) บังคับตั้ง SELL LIMIT ดักเด้งที่โซน Premium หรือ Order Block เท่านั้น`;
+        unifiedSignal = "HOLD_WAIT";
+        confidencePct = Math.min(confidencePct, 50);
+        executionAdvice = vetoReason;
+      }
     }
   }
 

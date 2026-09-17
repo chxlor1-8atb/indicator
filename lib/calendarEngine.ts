@@ -18,7 +18,7 @@ export interface EconomicCalendarEvent {
 }
 
 export interface CalendarSafetyStatus {
-  state: "SAFE_TRADING_WINDOW" | "APPROACHING_RED_FOLDER" | "RED_FOLDER_FREEZE" | "POST_NEWS_VOLATILITY";
+  state: "SAFE_TRADING_WINDOW" | "APPROACHING_RED_FOLDER" | "RED_FOLDER_FREEZE" | "POST_NEWS_VOLATILITY" | "POST_NEWS_SNIPER_ACTIVE";
   badgeText: string;
   badgeColor: string;
   nextHighImpactEvent: EconomicCalendarEvent | null;
@@ -30,6 +30,19 @@ export interface CalendarSafetyStatus {
   spreadSafetyMultiplier?: number;
   positionSizeReductionPct?: number;
   isLiveFeed?: boolean;
+  newsSweepInfo?: {
+    sweptSide: "BSL" | "SSL" | "BOTH";
+    sweepHigh: number;
+    sweepLow: number;
+    isTurtleSoupConfirmed: boolean;
+    newsFvgLevel?: number;
+  };
+  economicSurprise?: {
+    actual: string;
+    forecast: string;
+    deviationSigma: number;
+    surpriseSentiment: "HAWKISH" | "DOVISH" | "NEUTRAL";
+  };
 }
 
 interface ForexFactoryRawItem {
@@ -407,6 +420,44 @@ export function getNewsSafetyShieldStatus(symbol: string, customDate?: Date): Ca
       spreadSafetyMultiplier: 2.0,
       positionSizeReductionPct: 100,
       isLiveFeed: isLive,
+    };
+  }
+
+  // 2.1 Post-News Sniper Active: 15 to 45 minutes after Red Folder event (The Prime Institutional Execution Window)
+  if (nextRedEvent && minDiffMinutes < -15 && minDiffMinutes >= -45) {
+    const minsAgo = Math.abs(minDiffMinutes);
+    
+    // Parse economic surprise if actual data is populated
+    let economicSurprise: CalendarSafetyStatus["economicSurprise"] | undefined;
+    if (nextRedEvent.actual && nextRedEvent.actual !== "-" && nextRedEvent.forecast && nextRedEvent.forecast !== "-") {
+      const actNum = parseFloat(nextRedEvent.actual.replace(/[^0-9.-]/g, ""));
+      const fctNum = parseFloat(nextRedEvent.forecast.replace(/[^0-9.-]/g, ""));
+      if (!isNaN(actNum) && !isNaN(fctNum)) {
+        const diff = actNum - fctNum;
+        const surpriseSentiment = diff > 0 ? "HAWKISH" : diff < 0 ? "DOVISH" : "NEUTRAL";
+        economicSurprise = {
+          actual: nextRedEvent.actual,
+          forecast: nextRedEvent.forecast,
+          deviationSigma: Number((diff / (Math.abs(fctNum) || 1)).toFixed(2)),
+          surpriseSentiment,
+        };
+      }
+    }
+
+    return {
+      state: "POST_NEWS_SNIPER_ACTIVE",
+      badgeText: `🎯 POST-NEWS SNIPER (หลังข่าว ${minsAgo} นาที)`,
+      badgeColor: "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 animate-pulse",
+      nextHighImpactEvent: nextRedEvent,
+      minutesToNextEvent: minDiffMinutes,
+      tradeAllowed: true,
+      freezeReason: `พ้นช่วงสะบัดรุนแรง 15 นาทีแรกแล้ว สเปรดเริ่มหดตัวกลับสู่ปกติ เข้าสู่หน้าต่างทองคำ Post-News Sniper: ดักจังหวะ Retest News FVG หรือ Breaker Block`,
+      strategyPlaybook: "🎯 กลยุทธ์ Sniper สถาบัน: ดักวาง Pending Limit ณ ระดับ Breaker Block หรือ News FVG พร้อมวาง SL หลบหลังยอดไส้ข่าว ปลอดภัยจาก Stop Hunt",
+      relevantEvents,
+      spreadSafetyMultiplier: 1.2,
+      positionSizeReductionPct: 0,
+      isLiveFeed: isLive,
+      economicSurprise,
     };
   }
 

@@ -1,10 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMarketCandles, AVAILABLE_ASSETS, simulateInstitutionalBacktest } from "@/lib/marketService";
 import { calculateEMA, calculateRSI } from "@/lib/indicators";
-import { saveBacktestResults, clearBacktestResults, BacktestTrade } from "@/lib/db";
+import { saveBacktestResults, clearBacktestResults, getSystemWinRateSummary, BacktestTrade } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+/**
+ * GET: Fast, instant win-rate and closed-candle ledger query directly from Neon DB
+ * Returns overall win-rate, per-symbol stats, and recent closed candle transitions with zero external API calls.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const symbol = searchParams.get("symbol") || undefined;
+    const summary = await getSystemWinRateSummary(symbol);
+    return NextResponse.json(summary);
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : "Failed to fetch system win rate summary";
+    return NextResponse.json({ success: false, error: errMsg }, { status: 500 });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

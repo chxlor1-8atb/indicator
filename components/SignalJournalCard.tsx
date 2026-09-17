@@ -82,9 +82,11 @@ export default function SignalJournalCard() {
     let targetAssets = AVAILABLE_ASSETS;
     if (category === "forex") {
       targetAssets = AVAILABLE_ASSETS.filter((a) => a.category === "forex");
+    } else if (category === "crypto") {
+      targetAssets = AVAILABLE_ASSETS.filter((a) => a.category === "crypto");
     } else if (category === "core") {
       targetAssets = AVAILABLE_ASSETS.filter((a) =>
-        ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "USOIL"].includes(a.symbol)
+        ["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "BTCUSDT", "USOIL"].includes(a.symbol)
       );
     }
 
@@ -1091,6 +1093,9 @@ export default function SignalJournalCard() {
                       <span className="font-mono">{sym}</span>
                       {asset?.category === "commodities" && (
                         <span className="text-[8px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300">GOLD</span>
+                      )}
+                      {asset?.category === "crypto" && (
+                        <span className="text-[8px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300">CRYPTO</span>
                       )}
                       <span
                         className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${

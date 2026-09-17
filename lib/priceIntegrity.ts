@@ -35,6 +35,18 @@ const ASSET_SANITY_BOUNDS: Record<string, { min: number; max: number }> = {
   USDCAD: { min: 0.9, max: 1.7 },
   USDCHF: { min: 0.7, max: 1.4 },
   NZDUSD: { min: 0.4, max: 1.0 },
+  BTCUSDT: { min: 10000, max: 350000 },
+  ETHUSDT: { min: 500, max: 25000 },
+  SOLUSDT: { min: 10, max: 2000 },
+  BNBUSDT: { min: 50, max: 3500 },
+  XRPUSDT: { min: 0.05, max: 25 },
+  DOGEUSDT: { min: 0.01, max: 10 },
+  SUIUSDT: { min: 0.1, max: 50 },
+  ADAUSDT: { min: 0.05, max: 20 },
+  AVAXUSDT: { min: 2, max: 500 },
+  LINKUSDT: { min: 1, max: 250 },
+  NEARUSDT: { min: 0.5, max: 100 },
+  PEPEUSDT: { min: 0.0000001, max: 0.01 },
 };
 
 /**
@@ -190,4 +202,61 @@ export function validateOrderConfluence(
   }
 
   return { isValid: true, effectiveRR, distancePips: slDist };
+}
+
+/**
+ * Standard spread baseline per asset in pips
+ */
+const BASELINE_SPREAD_PIPS: Record<string, number> = {
+  XAUUSD: 2.5,
+  GOLD: 2.5,
+  EURUSD: 1.2,
+  GBPUSD: 1.5,
+  USDJPY: 1.2,
+  GBPJPY: 2.2,
+  AUDUSD: 1.4,
+  USDCAD: 1.5,
+  USOIL: 3.5,
+  XAGUSD: 2.8,
+};
+
+export interface SpreadSafetyResult {
+  isSafe: boolean;
+  spreadPips: number;
+  maxAllowedSpread: number;
+  spreadBlowoutMultiplier: number;
+  warning?: string;
+}
+
+/**
+ * Validates whether the live spread is within an acceptable threshold or if an extreme
+ * post-news or off-hours spread blowout has occurred that would guarantee severe slippage.
+ */
+export function validateSpreadSafety(
+  symbol: string,
+  currentSpreadPips: number,
+  isPostNews = false
+): SpreadSafetyResult {
+  const sym = symbol.toUpperCase();
+  const baseline = BASELINE_SPREAD_PIPS[sym] ?? 2.0;
+  const maxMultiplier = isPostNews ? 2.5 : 2.0;
+  const maxAllowedSpread = Number((baseline * maxMultiplier).toFixed(1));
+  const blowoutMultiplier = Number((currentSpreadPips / baseline).toFixed(2));
+
+  if (currentSpreadPips > maxAllowedSpread) {
+    return {
+      isSafe: false,
+      spreadPips: currentSpreadPips,
+      maxAllowedSpread,
+      spreadBlowoutMultiplier: blowoutMultiplier,
+      warning: `สเปรดถ่างรุนแรง (${currentSpreadPips} pips > เกณฑ์ปลอดภัย ${maxAllowedSpread} pips | ${blowoutMultiplier}x ปกติ): ระงับการส่งคำสั่งอัตโนมัติ ป้องกัน Slippage`,
+    };
+  }
+
+  return {
+    isSafe: true,
+    spreadPips: currentSpreadPips,
+    maxAllowedSpread,
+    spreadBlowoutMultiplier: blowoutMultiplier,
+  };
 }

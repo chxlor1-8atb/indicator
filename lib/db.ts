@@ -284,6 +284,60 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
       )
     `);
 
+    // 6. Table for Closed Candles Archive (Continuous Closed-Candle Ledger)
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS closed_candles_archive (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL,
+        candle_time BIGINT NOT NULL,
+        open NUMERIC(14, 5) NOT NULL,
+        high NUMERIC(14, 5) NOT NULL,
+        low NUMERIC(14, 5) NOT NULL,
+        close NUMERIC(14, 5) NOT NULL,
+        volume NUMERIC(16, 4) DEFAULT 0,
+        prev_close NUMERIC(14, 5),
+        next_open NUMERIC(14, 5),
+        gap_pips NUMERIC(10, 2) DEFAULT 0,
+        range_pips NUMERIC(10, 2) DEFAULT 0,
+        body_pips NUMERIC(10, 2) DEFAULT 0,
+        change_pct NUMERIC(6, 3) DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        CONSTRAINT uq_cca_sym_tf_time UNIQUE (symbol, timeframe, candle_time)
+      )
+    `);
+
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_cca_sym_tf_time ON closed_candles_archive (symbol, timeframe, candle_time DESC)
+    `);
+
+    // 7. Table for Real-time System Performance & Win-Rate Summary
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS system_performance_summary (
+        id SERIAL PRIMARY KEY,
+        symbol VARCHAR(20) NOT NULL,
+        timeframe VARCHAR(10) NOT NULL,
+        total_trades INT DEFAULT 0,
+        wins INT DEFAULT 0,
+        losses INT DEFAULT 0,
+        breakeven INT DEFAULT 0,
+        win_rate_pct NUMERIC(5, 2) DEFAULT 0,
+        profit_factor NUMERIC(6, 2) DEFAULT 0,
+        net_pips NUMERIC(12, 2) DEFAULT 0,
+        last_closed_candle_time BIGINT,
+        last_closed_price NUMERIC(14, 5),
+        prev_closed_price NUMERIC(14, 5),
+        current_open_price NUMERIC(14, 5),
+        gap_pips NUMERIC(10, 2) DEFAULT 0,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        CONSTRAINT uq_sps_sym_tf UNIQUE (symbol, timeframe)
+      )
+    `);
+
+    await sql.query(`
+      CREATE INDEX IF NOT EXISTS idx_sps_sym_tf ON system_performance_summary (symbol, timeframe)
+    `);
+
     return { success: true, message: "Neon database initialized successfully." };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -339,6 +393,71 @@ export async function initBacktestTable(): Promise<void> {
   } catch (err) {
     console.error("Error creating backtest_results table:", err);
   }
+}
+
+let archiveTablesInitPromise: Promise<void> | null = null;
+export async function initClosedCandlesArchiveTable(): Promise<void> {
+  if (!sql) return;
+  if (!archiveTablesInitPromise) {
+    archiveTablesInitPromise = (async () => {
+      try {
+        await sql.query(`
+          CREATE TABLE IF NOT EXISTS closed_candles_archive (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            candle_time BIGINT NOT NULL,
+            open NUMERIC(14, 5) NOT NULL,
+            high NUMERIC(14, 5) NOT NULL,
+            low NUMERIC(14, 5) NOT NULL,
+            close NUMERIC(14, 5) NOT NULL,
+            volume NUMERIC(16, 4) DEFAULT 0,
+            prev_close NUMERIC(14, 5),
+            next_open NUMERIC(14, 5),
+            gap_pips NUMERIC(10, 2) DEFAULT 0,
+            range_pips NUMERIC(10, 2) DEFAULT 0,
+            body_pips NUMERIC(10, 2) DEFAULT 0,
+            change_pct NUMERIC(6, 3) DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            CONSTRAINT uq_cca_sym_tf_time UNIQUE (symbol, timeframe, candle_time)
+          )
+        `);
+
+        await sql.query(`
+          CREATE INDEX IF NOT EXISTS idx_cca_sym_tf_time ON closed_candles_archive (symbol, timeframe, candle_time DESC)
+        `);
+
+        await sql.query(`
+          CREATE TABLE IF NOT EXISTS system_performance_summary (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(10) NOT NULL,
+            total_trades INT DEFAULT 0,
+            wins INT DEFAULT 0,
+            losses INT DEFAULT 0,
+            breakeven INT DEFAULT 0,
+            win_rate_pct NUMERIC(5, 2) DEFAULT 0,
+            profit_factor NUMERIC(6, 2) DEFAULT 0,
+            net_pips NUMERIC(12, 2) DEFAULT 0,
+            last_closed_candle_time BIGINT,
+            last_closed_price NUMERIC(14, 5),
+            prev_closed_price NUMERIC(14, 5),
+            current_open_price NUMERIC(14, 5),
+            gap_pips NUMERIC(10, 2) DEFAULT 0,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            CONSTRAINT uq_sps_sym_tf UNIQUE (symbol, timeframe)
+          )
+        `);
+
+        await sql.query(`
+          CREATE INDEX IF NOT EXISTS idx_sps_sym_tf ON system_performance_summary (symbol, timeframe)
+        `);
+      } catch (err) {
+        console.error("Error creating closed candle archive tables:", err);
+      }
+    })();
+  }
+  return archiveTablesInitPromise;
 }
 
 export interface SaveAiSignalResult {
@@ -1542,5 +1661,442 @@ export async function getEquityCurveAndAnalytics(filterSymbol?: string): Promise
   } catch (err) {
     console.error("Error computing equity curve and analytics:", err);
     return emptyAnalytics;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Continuous Closed-Candle Ledger & Real-time System Win-Rate Summary
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ClosedCandleRecord {
+  symbol: string;
+  timeframe: string;
+  candleTime: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  prevClose: number | null;
+  nextOpen: number | null;
+  gapPips: number;
+  rangePips: number;
+  bodyPips: number;
+  changePct: number;
+  createdAt: string;
+}
+
+export interface SystemPerformanceRecord {
+  symbol: string;
+  timeframe: string;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  breakeven: number;
+  winRatePct: number;
+  profitFactor: number;
+  netPips: number;
+  lastClosedPrice: number;
+  prevClosedPrice: number;
+  currentOpenPrice: number;
+  gapPips: number;
+  updatedAt: string;
+}
+
+export interface SystemWinRateSummary {
+  success: boolean;
+  timestamp: number;
+  filterSymbol?: string;
+  overall: {
+    totalTrades: number;
+    wins: number;
+    losses: number;
+    breakeven: number;
+    winRatePct: number;
+    profitFactor: number;
+    netPips: number;
+    liveTrades: number;
+    backtestTrades: number;
+  };
+  perSymbol: PerSymbolStat[];
+  recentClosedCandles: ClosedCandleRecord[];
+  summaryTable: SystemPerformanceRecord[];
+}
+
+const lastArchivedCandleTime = new Map<string, number>();
+
+/**
+ * Records a closed candle transition (prev_close, close, next_open, gap_pips) into Neon DB.
+ * Runs non-blocking to capture continuous candle completion telemetry incrementally.
+ */
+export async function recordClosedCandleTransition(
+  symbol: string,
+  timeframe: string,
+  candles: Candle[]
+): Promise<{ saved: boolean; closedCandleTime?: number; gapPips?: number }> {
+  if (!sql || !candles || candles.length < 3) return { saved: false };
+
+  const sym = symbol.toUpperCase();
+  const tf = timeframe.toLowerCase();
+  const closedCandle = candles[candles.length - 2];
+  const prevCandle = candles[candles.length - 3];
+  const currentCandle = candles[candles.length - 1];
+
+  if (!closedCandle || !prevCandle || !currentCandle) return { saved: false };
+
+  const candleTime = Math.floor(closedCandle.time);
+  const archiveKey = `${sym}_${tf}`;
+
+  // If already archived this exact closed candle timestamp, skip redundant query
+  if (lastArchivedCandleTime.get(archiveKey) === candleTime) {
+    return { saved: false, closedCandleTime: candleTime };
+  }
+
+  try {
+    await initClosedCandlesArchiveTable();
+
+    const prevClose = prevCandle.close;
+    const close = closedCandle.close;
+    const nextOpen = currentCandle.open;
+    const pipMultiplier = getAssetPipMultiplier(sym);
+
+    const gapPips = Number(((nextOpen - close) * pipMultiplier).toFixed(2));
+    const rangePips = Number(((closedCandle.high - closedCandle.low) * pipMultiplier).toFixed(2));
+    const bodyPips = Number((Math.abs(closedCandle.close - closedCandle.open) * pipMultiplier).toFixed(2));
+    const changePct = prevClose > 0 ? Number((((close - prevClose) / prevClose) * 100).toFixed(3)) : 0;
+
+    // 1. Insert or update closed candle transition in closed_candles_archive
+    await resilientQuery(
+      `
+      INSERT INTO closed_candles_archive (
+        symbol, timeframe, candle_time, open, high, low, close, volume,
+        prev_close, next_open, gap_pips, range_pips, body_pips, change_pct
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14
+      )
+      ON CONFLICT (symbol, timeframe, candle_time)
+      DO UPDATE SET
+        next_open = EXCLUDED.next_open,
+        gap_pips = EXCLUDED.gap_pips,
+        volume = EXCLUDED.volume;
+      `,
+      [
+        sym,
+        tf,
+        candleTime,
+        closedCandle.open,
+        closedCandle.high,
+        closedCandle.low,
+        closedCandle.close,
+        closedCandle.volume || 0,
+        prevClose,
+        nextOpen,
+        gapPips,
+        rangePips,
+        bodyPips,
+        changePct,
+      ]
+    );
+
+    // 2. Update real-time system performance & win-rate summary ledger
+    await resilientQuery(
+      `
+      WITH stats AS (
+        SELECT
+          COUNT(*)::int as total_trades,
+          COUNT(CASE WHEN result IN ('WIN','HIT_TP1','HIT_TP2') THEN 1 END)::int as wins,
+          COUNT(CASE WHEN result IN ('LOSS','HIT_SL') THEN 1 END)::int as losses,
+          COUNT(CASE WHEN result = 'BE' THEN 1 END)::int as breakeven,
+          COALESCE(SUM(pnl_pips), 0)::numeric as net_pips
+        FROM (
+          SELECT status as result, pnl_pips FROM ai_signals WHERE symbol = $1 AND status != 'ACTIVE'
+          UNION ALL
+          SELECT result, pnl_pips FROM backtest_results WHERE symbol = $1
+        ) combined
+      )
+      INSERT INTO system_performance_summary (
+        symbol, timeframe, total_trades, wins, losses, breakeven, win_rate_pct, profit_factor, net_pips,
+        last_closed_candle_time, last_closed_price, prev_closed_price, current_open_price, gap_pips, updated_at
+      )
+      SELECT
+        $1, $2,
+        COALESCE(stats.total_trades, 0),
+        COALESCE(stats.wins, 0),
+        COALESCE(stats.losses, 0),
+        COALESCE(stats.breakeven, 0),
+        CASE WHEN (COALESCE(stats.wins, 0) + COALESCE(stats.losses, 0)) > 0
+          THEN ROUND((COALESCE(stats.wins, 0)::numeric / (COALESCE(stats.wins, 0) + COALESCE(stats.losses, 0)) * 100), 2)
+          ELSE 0
+        END,
+        CASE WHEN COALESCE(stats.losses, 0) > 0
+          THEN ROUND((COALESCE(stats.wins, 0)::numeric * 1.5 / COALESCE(stats.losses, 0)), 2)
+          WHEN COALESCE(stats.wins, 0) > 0 THEN 99.0
+          ELSE 0
+        END,
+        COALESCE(stats.net_pips, 0),
+        $3, $4, $5, $6, $7, NOW()
+      FROM stats
+      ON CONFLICT (symbol, timeframe)
+      DO UPDATE SET
+        total_trades = EXCLUDED.total_trades,
+        wins = EXCLUDED.wins,
+        losses = EXCLUDED.losses,
+        breakeven = EXCLUDED.breakeven,
+        win_rate_pct = EXCLUDED.win_rate_pct,
+        profit_factor = EXCLUDED.profit_factor,
+        net_pips = EXCLUDED.net_pips,
+        last_closed_candle_time = EXCLUDED.last_closed_candle_time,
+        last_closed_price = EXCLUDED.last_closed_price,
+        prev_closed_price = EXCLUDED.prev_closed_price,
+        current_open_price = EXCLUDED.current_open_price,
+        gap_pips = EXCLUDED.gap_pips,
+        updated_at = NOW();
+      `,
+      [sym, tf, candleTime, close, prevClose, nextOpen, gapPips]
+    );
+
+    lastArchivedCandleTime.set(archiveKey, candleTime);
+    return { saved: true, closedCandleTime: candleTime, gapPips };
+  } catch (err) {
+    console.warn(`[ClosedCandlesArchive] Error recording transition for ${sym}:`, err);
+    return { saved: false };
+  }
+}
+
+/**
+ * Archives a historical batch of closed candles into closed_candles_archive.
+ */
+export async function archiveClosedCandlesBatch(
+  symbol: string,
+  timeframe: string,
+  candles: Candle[],
+  limit = 50
+): Promise<number> {
+  if (!sql || !candles || candles.length < 3) return 0;
+  try {
+    await initClosedCandlesArchiveTable();
+    const sym = symbol.toUpperCase();
+    const tf = timeframe.toLowerCase();
+    const pipMultiplier = getAssetPipMultiplier(sym);
+
+    // Take candles excluding the last forming candle
+    const closedList = candles.slice(Math.max(0, candles.length - limit - 1), candles.length - 1);
+    if (closedList.length < 2) return 0;
+
+    const valueClauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    for (let i = 1; i < closedList.length; i++) {
+      const prev = closedList[i - 1];
+      const cur = closedList[i];
+      const nextCandle = i + 1 < candles.length ? candles[i + 1] : null;
+      const nextOpen = nextCandle ? nextCandle.open : cur.close;
+      const gapPips = Number(((nextOpen - cur.close) * pipMultiplier).toFixed(2));
+      const rangePips = Number(((cur.high - cur.low) * pipMultiplier).toFixed(2));
+      const bodyPips = Number((Math.abs(cur.close - cur.open) * pipMultiplier).toFixed(2));
+      const changePct = prev.close > 0 ? Number((((cur.close - prev.close) / prev.close) * 100).toFixed(3)) : 0;
+
+      valueClauses.push(
+        `($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++})`
+      );
+      params.push(
+        sym,
+        tf,
+        Math.floor(cur.time),
+        cur.open,
+        cur.high,
+        cur.low,
+        cur.close,
+        cur.volume || 0,
+        prev.close,
+        nextOpen,
+        gapPips,
+        rangePips,
+        bodyPips,
+        changePct
+      );
+    }
+
+    if (valueClauses.length === 0) return 0;
+
+    const query = `
+      INSERT INTO closed_candles_archive (
+        symbol, timeframe, candle_time, open, high, low, close, volume,
+        prev_close, next_open, gap_pips, range_pips, body_pips, change_pct
+      ) VALUES ${valueClauses.join(", ")}
+      ON CONFLICT (symbol, timeframe, candle_time) DO NOTHING;
+    `;
+    await resilientQuery(query, params);
+    return valueClauses.length;
+  } catch (err) {
+    console.warn(`[ClosedCandlesArchive] Bulk archive failed for ${symbol}:`, err);
+    return 0;
+  }
+}
+
+/**
+ * Returns instantaneous system win-rate summary and recent closed candle transitions
+ * queried directly from Neon DB in milliseconds without triggering heavy real-time backtests.
+ */
+export async function getSystemWinRateSummary(filterSymbol?: string): Promise<SystemWinRateSummary> {
+  const sym = filterSymbol ? filterSymbol.toUpperCase() : undefined;
+
+  try {
+    await initClosedCandlesArchiveTable();
+    await initBacktestTable();
+
+    // 1. Get per-symbol win rate from combined live + backtest
+    const perSymbolAll = await getPerSymbolWinRate();
+    const perSymbol = sym ? perSymbolAll.filter((s) => s.symbol === sym) : perSymbolAll;
+
+    // 2. Aggregate totals
+    const totalTrades = perSymbol.reduce((acc, s) => acc + s.totalTrades, 0);
+    const wins = perSymbol.reduce((acc, s) => acc + s.wins, 0);
+    const losses = perSymbol.reduce((acc, s) => acc + s.losses, 0);
+    const breakeven = perSymbol.reduce((acc, s) => acc + s.breakeven, 0);
+    const netPips = Number(perSymbol.reduce((acc, s) => acc + s.netPips, 0).toFixed(1));
+    const liveTrades = perSymbol.reduce((acc, s) => acc + s.liveTrades, 0);
+    const backtestTrades = perSymbol.reduce((acc, s) => acc + s.backtestTrades, 0);
+
+    const resolved = wins + losses;
+    const winRatePct = resolved > 0 ? Number(((wins / resolved) * 100).toFixed(1)) : 0;
+    const profitFactor = losses > 0 ? Number(((wins * 1.5) / losses).toFixed(2)) : wins > 0 ? 99 : 0;
+
+    // 3. Fetch recent closed candles with transition telemetry from closed_candles_archive
+    let recentClosedCandles: ClosedCandleRecord[] = [];
+    if (sql) {
+      const query = sym
+        ? `SELECT symbol, timeframe, candle_time, open, high, low, close, prev_close, next_open, gap_pips, range_pips, body_pips, change_pct, created_at
+           FROM closed_candles_archive
+           WHERE symbol = $1
+           ORDER BY candle_time DESC
+           LIMIT 20`
+        : `SELECT symbol, timeframe, candle_time, open, high, low, close, prev_close, next_open, gap_pips, range_pips, body_pips, change_pct, created_at
+           FROM closed_candles_archive
+           ORDER BY candle_time DESC
+           LIMIT 20`;
+      const params = sym ? [sym] : [];
+      const rows = (await resilientQuery(query, params)) as unknown as Array<{
+        symbol: string;
+        timeframe: string;
+        candle_time: string | number;
+        open: string | number;
+        high: string | number;
+        low: string | number;
+        close: string | number;
+        prev_close: string | number | null;
+        next_open: string | number | null;
+        gap_pips: string | number;
+        range_pips: string | number;
+        body_pips: string | number;
+        change_pct: string | number;
+        created_at: string;
+      }>;
+
+      if (rows && rows.length > 0) {
+        recentClosedCandles = rows.map((r) => ({
+          symbol: r.symbol,
+          timeframe: r.timeframe,
+          candleTime: Number(r.candle_time),
+          open: Number(r.open),
+          high: Number(r.high),
+          low: Number(r.low),
+          close: Number(r.close),
+          prevClose: r.prev_close !== null ? Number(r.prev_close) : null,
+          nextOpen: r.next_open !== null ? Number(r.next_open) : null,
+          gapPips: Number(r.gap_pips || 0),
+          rangePips: Number(r.range_pips || 0),
+          bodyPips: Number(r.body_pips || 0),
+          changePct: Number(r.change_pct || 0),
+          createdAt: String(r.created_at),
+        }));
+      }
+    }
+
+    // 4. Fetch summary table from system_performance_summary
+    let summaryTable: SystemPerformanceRecord[] = [];
+    if (sql) {
+      const summaryQuery = sym
+        ? `SELECT symbol, timeframe, total_trades, wins, losses, breakeven, win_rate_pct, profit_factor, net_pips, last_closed_price, prev_closed_price, current_open_price, gap_pips, updated_at
+           FROM system_performance_summary WHERE symbol = $1 ORDER BY symbol`
+        : `SELECT symbol, timeframe, total_trades, wins, losses, breakeven, win_rate_pct, profit_factor, net_pips, last_closed_price, prev_closed_price, current_open_price, gap_pips, updated_at
+           FROM system_performance_summary ORDER BY symbol`;
+      const sRows = (await resilientQuery(summaryQuery, sym ? [sym] : [])) as unknown as Array<{
+        symbol: string;
+        timeframe: string;
+        total_trades: string | number;
+        wins: string | number;
+        losses: string | number;
+        breakeven: string | number;
+        win_rate_pct: string | number;
+        profit_factor: string | number;
+        net_pips: string | number;
+        last_closed_price: string | number;
+        prev_closed_price: string | number;
+        current_open_price: string | number;
+        gap_pips: string | number;
+        updated_at: string;
+      }>;
+      if (sRows && sRows.length > 0) {
+        summaryTable = sRows.map((sr) => ({
+          symbol: sr.symbol,
+          timeframe: sr.timeframe,
+          totalTrades: Number(sr.total_trades || 0),
+          wins: Number(sr.wins || 0),
+          losses: Number(sr.losses || 0),
+          breakeven: Number(sr.breakeven || 0),
+          winRatePct: Number(sr.win_rate_pct || 0),
+          profitFactor: Number(sr.profit_factor || 0),
+          netPips: Number(sr.net_pips || 0),
+          lastClosedPrice: Number(sr.last_closed_price || 0),
+          prevClosedPrice: Number(sr.prev_closed_price || 0),
+          currentOpenPrice: Number(sr.current_open_price || 0),
+          gapPips: Number(sr.gap_pips || 0),
+          updatedAt: String(sr.updated_at),
+        }));
+      }
+    }
+
+    return {
+      success: true,
+      timestamp: Date.now(),
+      filterSymbol: sym,
+      overall: {
+        totalTrades,
+        wins,
+        losses,
+        breakeven,
+        winRatePct,
+        profitFactor,
+        netPips,
+        liveTrades,
+        backtestTrades,
+      },
+      perSymbol,
+      recentClosedCandles,
+      summaryTable,
+    };
+  } catch (err) {
+    console.error("Error generating system win rate summary:", err);
+    return {
+      success: false,
+      timestamp: Date.now(),
+      filterSymbol: sym,
+      overall: {
+        totalTrades: 0,
+        wins: 0,
+        losses: 0,
+        breakeven: 0,
+        winRatePct: 0,
+        profitFactor: 0,
+        netPips: 0,
+        liveTrades: 0,
+        backtestTrades: 0,
+      },
+      perSymbol: [],
+      recentClosedCandles: [],
+      summaryTable: [],
+    };
   }
 }

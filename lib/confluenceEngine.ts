@@ -79,6 +79,13 @@ export function evaluateMasterConfluence(
       if (mtf.isHTFConflict) p1Score -= 9;
       else if (mtf.htfTrend === "BEARISH") p1Score -= 7;
     }
+    const mtfConf = indicators.mtfConfluence;
+    if (mtfConf) {
+      if (mtfConf.alignmentStatus === "STRONG_BULLISH_CONFLUENCE") p1Score += 5;
+      else if (mtfConf.alignmentStatus === "MODERATE_BULLISH_CONFLUENCE") p1Score += 3;
+      else if (mtfConf.alignmentStatus === "STRONG_BEARISH_CONFLUENCE") p1Score -= 8;
+      else if (mtfConf.alignmentStatus === "MODERATE_BEARISH_CONFLUENCE") p1Score -= 5;
+    }
   } else if (bias === "BEARISH") {
     if (stDirection === "DOWN") p1Score += 7;
     if (currentPrice < lastEMA200) p1Score += 5;
@@ -93,6 +100,13 @@ export function evaluateMasterConfluence(
       else if (mtf.htfTrend === "BEARISH") p1Score += 4;
       if (mtf.isHTFConflict) p1Score -= 9;
       else if (mtf.htfTrend === "BULLISH") p1Score -= 7;
+    }
+    const mtfConf = indicators.mtfConfluence;
+    if (mtfConf) {
+      if (mtfConf.alignmentStatus === "STRONG_BEARISH_CONFLUENCE") p1Score += 5;
+      else if (mtfConf.alignmentStatus === "MODERATE_BEARISH_CONFLUENCE") p1Score += 3;
+      else if (mtfConf.alignmentStatus === "STRONG_BULLISH_CONFLUENCE") p1Score -= 8;
+      else if (mtfConf.alignmentStatus === "MODERATE_BULLISH_CONFLUENCE") p1Score -= 5;
     }
   } else {
     p1Score += 8;

@@ -409,6 +409,7 @@ export interface CandleMicrostructureInfo {
   bodyDominance: number; // percentage e.g. 32%
   isPinBar: boolean;
   isFullBodyThrust: boolean;
+  wickDirection?: "BOTTOM_REJECTION" | "TOP_REJECTION" | "NONE";
   description: string;
 }
 
@@ -884,7 +885,7 @@ export interface EconomicCalendarEvent {
 }
 
 export interface CalendarSafetyStatus {
-  state: "SAFE_TRADING_WINDOW" | "APPROACHING_RED_FOLDER" | "RED_FOLDER_FREEZE" | "POST_NEWS_VOLATILITY";
+  state: "SAFE_TRADING_WINDOW" | "APPROACHING_RED_FOLDER" | "RED_FOLDER_FREEZE" | "POST_NEWS_VOLATILITY" | "POST_NEWS_SNIPER_ACTIVE";
   badgeText: string;
   badgeColor: string;
   nextHighImpactEvent: EconomicCalendarEvent | null;
@@ -896,6 +897,19 @@ export interface CalendarSafetyStatus {
   spreadSafetyMultiplier?: number;
   positionSizeReductionPct?: number;
   isLiveFeed?: boolean;
+  newsSweepInfo?: {
+    sweptSide: "BSL" | "SSL" | "BOTH";
+    sweepHigh: number;
+    sweepLow: number;
+    isTurtleSoupConfirmed: boolean;
+    newsFvgLevel?: number;
+  };
+  economicSurprise?: {
+    actual: string;
+    forecast: string;
+    deviationSigma: number;
+    surpriseSentiment: "HAWKISH" | "DOVISH" | "NEUTRAL";
+  };
 }
 
 export interface IndicatorData {
@@ -1267,6 +1281,9 @@ export interface AnalysisResult {
     mtOrderLabel?: string;
     mtStopLimitPrice?: number;
     mtOrderAdvice?: string;
+    dealingRangeZone?: "EXTREME_PREMIUM" | "PREMIUM" | "EQUILIBRIUM" | "DISCOUNT" | "DEEP_DISCOUNT";
+    dealingRangePercentile?: number;
+    isPostNewsSniper?: boolean;
     pendingPrice: number;
     entryZone: { min: number; max: number };
     stopLoss: number;
@@ -1441,11 +1458,12 @@ export type StrategyPresetType =
   | "QUANT_TREND_SURFER"
   | "SQUEEZE_BREAKOUT"
   | "MEAN_REVERSION_SCALPER"
-  | "HARMONIC_REVERSAL";
+  | "HARMONIC_REVERSAL"
+  | "POST_NEWS_SNIPER";
 
 export interface OrchestratorDecisionInfo {
   selectedPreset: StrategyPresetType;
-  effectivePreset: "SMC_PRICE_ACTION" | "QUANT_TREND_SURFER" | "SQUEEZE_BREAKOUT" | "MEAN_REVERSION_SCALPER" | "HARMONIC_REVERSAL";
+  effectivePreset: "SMC_PRICE_ACTION" | "QUANT_TREND_SURFER" | "SQUEEZE_BREAKOUT" | "MEAN_REVERSION_SCALPER" | "HARMONIC_REVERSAL" | "POST_NEWS_SNIPER";
   regimeState: string;
   activeIndicators: string[];
   mutedIndicators: string[];
@@ -2207,6 +2225,8 @@ export interface AssetScannerSummary {
   orderType: string;
   regime: string;
   isNewsFrozen: boolean;
+  dealingRangeZone?: "EXTREME_PREMIUM" | "PREMIUM" | "EQUILIBRIUM" | "DISCOUNT" | "DEEP_DISCOUNT";
+  mtfConfluenceSummary?: { score: number; alignment: string; htfTrend: string };
   pendingPrice?: number;
   slPrice?: number;
   tpPrice?: number;
@@ -2316,3 +2336,23 @@ export interface SniperMicroSLInfo {
   isSmallAccountFriendly: boolean;
   microCapitalRationale: string;
 }
+
+export interface BacktestTrade {
+  type: "BUY" | "SELL";
+  entryPrice: number;
+  exitPrice: number;
+  sl?: number;
+  tp1?: number;
+  tp2?: number;
+  result: "WIN" | "LOSS" | "BE";
+  pnlR: number;
+  pnlPips: number;
+  entryTime: number;
+  exitTime: number;
+}
+
+export type {
+  ClosedCandleRecord,
+  SystemPerformanceRecord,
+  SystemWinRateSummary,
+} from "./db";

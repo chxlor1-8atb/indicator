@@ -314,7 +314,8 @@ export default function DashboardPage() {
               const trade = JSON.parse(event.data);
               const livePrice = parseFloat(trade.p);
               if (livePrice && !isNaN(livePrice)) {
-                _pendingPrice = Number(livePrice.toFixed(2));
+                const dec = livePrice < 0.001 ? 6 : livePrice < 1 ? 4 : livePrice < 20 ? 3 : 2;
+                _pendingPrice = Number(livePrice.toFixed(dec));
                 // Schedule flush on next animation frame (cancel any pending one)
                 if (_rafId !== null) cancelAnimationFrame(_rafId);
                 _rafId = requestAnimationFrame(_flushTick);

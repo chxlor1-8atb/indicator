@@ -428,10 +428,17 @@ graph TD
 3. **ตารางข้อมูลในระบบ:**
    - `ai_signals`: บันทึกสัญญาณเทรด, ทิศทาง, ราคาเข้า, SL, TP1, TP2, สถานะ (`ACTIVE`, `HIT_TP1`, `HIT_TP2`, `HIT_SL`, `CANCELLED`), และ PnL pips
    - `market_candles`: แท่งเทียนสำหรับ Rolling FIFO Buffer สำรองข้อมูลราคา
+   - `closed_candles_archive`: คลังเก็บบันทึกประวัติแท่งเทียนที่จบแล้วแบบสะสม (Continuous Closed-Candle Ledger) บันทึก Telemetry การเปลี่ยนแท่งเทียน: ราคาแท่งก่อนหน้า (`prev_close`), ราคาปิดแท่งปัจจุบัน (`close`), ราคาเปิดแท่งใหม่ (`next_open`), Gap ระหว่างแท่ง (`gap_pips`), ขนาดแท่ง (`range_pips`, `body_pips`) และเปอร์เซ็นต์เปลี่ยนแปลง (`change_pct`)
+   - `system_performance_summary`: ตารางสรุปสถิติวินเรท (Win-Rate %), Profit Factor, Net Pips และสถานะราคาล่าสุดของแต่ละสินทรัพย์แบบ Indexed เพื่อให้ตอบคำถาม "วินเรทระบบเท่าไหร่" ได้ทันทีในหลัก Milliseconds
+   - `backtest_results`: บันทึกประวัติผลการจำลองการเทรดย้อนหลัง
    - `telegram_subscribers`: รายชื่อ Chat ID ของผู้รับการแจ้งเตือน พร้อมตัวกรองคู่เงินที่ต้องการรับ (`alert_symbol`)
    - `signal_feedback_lessons`: บันทึกบทเรียนการเทรดที่ปิดแล้ว สำหรับระบบ Self-Learning ปรับค่าน้ำหนักในอนาคต
 4. **ระบบแคชผู้รับการแจ้งเตือน (`getTelegramSubscribers`):**
    - มี In-memory Cache ภายในตัว 5 นาที ลดการยิง Query ซ้ำๆ ไปยัง Postgres จากทุกๆ Request ให้เหลือ 0 เมื่อแคชยังทำงานอยู่
+5. **ฟังก์ชัน Incremental Ledger สำคัญ:**
+   - `recordClosedCandleTransition(symbol, timeframe, candles)`: ตรวจจับและบันทึกแท่งเทียนที่จบแล้วพร้อมคำนวณ Gap (pips) และอัปเดตสรุปผลวินเรทลง Neon DB แบบ Background Non-Blocking
+   - `archiveClosedCandlesBatch(symbol, timeframe, candles, limit)`: จัดเก็บชุดแท่งเทียนที่จบแล้วย้อนหลังเป็นกลุ่มพร้อม Telemetry
+   - `getSystemWinRateSummary(filterSymbol?)`: คืนค่าสถิติวินเรทระบบรวม, แยกรายคู่เงิน, และ 20 แท่งเทียนล่าสุดในเสี้ยววินาที โดยไม่ต้องคำนวณย้อนหลังใหม่ทั้งหมดหรือยิง API ภายนอก
 
 ---
 
@@ -547,6 +554,7 @@ graph TD
 | **ปรับแต่ง AI/ML Meta-Labeling & Feature Vector** | `lib/mlEngine.ts`<br/>`lib/featureEngineering.ts` | `runMachineLearningInference()`, `extractFeatureVector24D()` |
 | **ปรับแต่ง Strict HTF Confluence Guard (H4/D1)** | `lib/confluenceEngine.ts`<br/>`lib/geminiService.ts` | `evaluateMasterConfluence()`, `htfAlignment` |
 | **ปรับตั้งค่า Dynamic Spread Buffer & News Risk Reduction** | `lib/calendarEngine.ts`<br/>`lib/riskEngine.ts` | `getNewsSafetyShieldStatus()`, `spreadSafetyMultiplier` |
+| **ตรวจสอบวินเรทระบบ / ประวัติแท่งเทียนที่จบแล้ว (Closed Candle Ledger)** | `lib/db.ts`<br/>`app/api/backtest/route.ts`<br/>`scripts/get-system-winrate.ts` | `recordClosedCandleTransition()`, `getSystemWinRateSummary()`, `npm run winrate` |
 
 ---
 
@@ -566,17 +574,24 @@ npm run dev
 # 4. รันแดมอนสแกนตลาดอัตโนมัติและส่งสัญญาณ Telegram (Autonomous Daemon)
 npm run bot
 
-# 5. รันสคริปต์ทดสอบระบบ Confluence, Micro Risk, และ In-Memory Cache
+# 5. ดึงสถิติวินเรทระบบและประวัติแท่งเทียนที่จบแล้วจาก Neon DB ทันที (Instant Win-Rate & Transition Ledger)
+npm run winrate
+# หรือระบุสินทรัพย์: npx tsx scripts/get-system-winrate.ts XAUUSD
+
+# 6. รันสคริปต์ทดสอบระบบ Confluence, Micro Risk, และ In-Memory Cache
 npx tsx scripts/verify-v2-enhancements.ts
 
-# 6. รันการทดสอบ Indicator Optimizations (Dynamic Precision, BVC, Zero-Division, Latency)
+# 7. รันการทดสอบ Indicator Optimizations (Dynamic Precision, BVC, Zero-Division, Latency)
 npx tsx scripts/test-indicator-optimizations.ts
 
-# 7. รันการทดสอบระบบ Anti-Clash Strategy Orchestrator
+# 8. รันการทดสอบระบบ Anti-Clash Strategy Orchestrator
 npx tsx scripts/test-anti-clash-orchestrator.ts
 
-# 8. รันการทดสอบ Quantitative Data Pipeline
+# 9. รันการทดสอบ Quantitative Data Pipeline
 npx tsx scripts/test-quant-pipeline.ts
+
+# 10. รันการทดสอบ Incremental Backtest & Closed Candle Ledger
+npx tsx scripts/test-incremental-backtest.ts
 ```
 
 ### ข้อควรจำทางสถาปัตยกรรมสำหรับ AI Coding Agents:

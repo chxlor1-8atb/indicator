@@ -20,6 +20,7 @@ interface AssetSelectorProps {
 
 const CATEGORIES: { id: "all" | AssetCategory; label: string }[] = [
   { id: "all", label: "All Assets" },
+  { id: "crypto", label: "Crypto Hot (12 Pairs)" },
   { id: "forex", label: "Forex (39 Pairs)" },
   { id: "commodities", label: "Gold & Commodities (MT5)" },
 ];
