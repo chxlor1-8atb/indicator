@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { AnalysisResult } from "@/lib/types";
 import {
   Smartphone,
@@ -16,6 +16,7 @@ import {
   AlertOctagon,
   Layers,
   Lock,
+  Target,
 } from "lucide-react";
 
 interface HeroExecutionHUDProps {
@@ -96,11 +97,24 @@ export default function HeroExecutionHUD({
     triggerStatusIcon = <Clock className="w-5 h-5 text-slate-400 shrink-0" />;
   }
 
+  // ─── Sniper Micro-SL Mode ($10+ Capital Protection) ───
+  const [isSniperMode, setIsSniperMode] = useState<boolean>(true);
+  const sniper = ts.sniperMicroSL || analysis.sniperMicroSL;
+
+  const displayEntryPrice = isSniperMode && sniper ? sniper.entryLimit : entryPrice;
+  const displaySL = isSniperMode && sniper ? sniper.stopLoss : ts.stopLoss;
+  const displaySLPips = isSniperMode && sniper ? sniper.slPips : (ts.slPips || 50);
+  const displayTP1 = isSniperMode && sniper ? sniper.tp1Price : ts.takeProfit1;
+  const displayTP1Pips = isSniperMode && sniper ? sniper.tp1Pips : (ts.tp1Pips || 50);
+  const displayTP2 = isSniperMode && sniper ? sniper.tp2Price : ts.takeProfit2;
+  const displayTP2Pips = isSniperMode && sniper ? sniper.tp2Pips : (ts.tp2Pips || 100);
+  const displayRR = isSniperMode && sniper ? sniper.riskRewardRatio : (ts.riskRewardRatio || "1:2.0");
+
   // Lot Calculator Variables
   const balance = Math.max(1, Number(customBalance) || 10);
-  const slPipsVal = Math.max(10, ts.slPips || 50);
-  const tp1PipsVal = Math.max(10, ts.tp1Pips || 50);
-  const tp2PipsVal = Math.max(10, ts.tp2Pips || 100);
+  const slPipsVal = Math.max(5, displaySLPips);
+  const tp1PipsVal = Math.max(5, displayTP1Pips);
+  const tp2PipsVal = Math.max(10, displayTP2Pips);
 
   const isCrypto = sym.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(c => sym.startsWith(c));
   const isJPY = sym.includes("JPY");
@@ -108,16 +122,16 @@ export default function HeroExecutionHUD({
 
   const stdCalculatedLot = Math.max(0.01, Number(((balance * (customRiskPct / 100)) / (slPipsVal * (pipDollarPer001 * 10))).toFixed(2)));
   const stdLot = balance < 100 ? 0.01 : stdCalculatedLot;
-  const stdLossUSD = Number((stdLot * slPipsVal * pipDollarPer001).toFixed(2));
-  const stdTp1USD = Number((stdLot * tp1PipsVal * pipDollarPer001).toFixed(2));
-  const stdTp2USD = Number((stdLot * tp2PipsVal * pipDollarPer001).toFixed(2));
+  const stdLossUSD = Number((stdLot * slPipsVal * (pipDollarPer001 * 10)).toFixed(2));
+  const stdTp1USD = Number((stdLot * tp1PipsVal * (pipDollarPer001 * 10)).toFixed(2));
+  const stdTp2USD = Number((stdLot * tp2PipsVal * (pipDollarPer001 * 10)).toFixed(2));
   const stdRiskPctActual = ((stdLossUSD / balance) * 100).toFixed(1);
 
   const centBalanceUSC = balance * 100;
   const centLot = Math.max(0.01, Number(((centBalanceUSC * (customRiskPct / 100)) / (slPipsVal * (pipDollarPer001 * 10))).toFixed(2)));
-  const centLossUSD = Number((centLot * slPipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
-  const centTp1USD = Number((centLot * tp1PipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
-  const centTp2USD = Number((centLot * tp2PipsVal * (pipDollarPer001 * 0.01)).toFixed(2));
+  const centLossUSD = Number((centLot * slPipsVal * (pipDollarPer001 * 0.1)).toFixed(2));
+  const centTp1USD = Number((centLot * tp1PipsVal * (pipDollarPer001 * 0.1)).toFixed(2));
+  const centTp2USD = Number((centLot * tp2PipsVal * (pipDollarPer001 * 0.1)).toFixed(2));
 
   const isCent = accountType === "CENT";
   const activeLot = isCent ? centLot : stdLot;
@@ -272,10 +286,49 @@ export default function HeroExecutionHUD({
           </div>
         )}
 
+        {/* Sniper Micro-SL Mode Toggle Bar */}
+        {sniper && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-gradient-to-r from-amber-950/40 via-surface-100 to-slate-900 border border-amber-500/40 shadow-sm">
+            <div className="flex items-center gap-2.5">
+              <div className={`p-1.5 rounded-lg ${isSniperMode ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" : "bg-slate-800 text-slate-400"}`}>
+                <Target className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>🎯 โหมด Sniper Micro-SL (สำหรับทุน $10 - $50)</span>
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                    SL {sniper.slPips} pips • R:R {sniper.riskRewardRatio}
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                    ทุน $10 เสี่ยง -${sniper.dollarRiskOn001Lot} บน 0.01 lot
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5">
+                  {isSniperMode
+                    ? `จุดเข้า 50% CE/OB Limit (${sniper.entryLimit}) • SL สั้น ${sniper.slPips} pips (${sniper.invalidationType}) • เป้า TP1 (+${sniper.tp1Pips}p) / TP2 (+${sniper.tp2Pips}p)`
+                    : "คลิกเพื่อเปิดใช้งานโหมด Sniper เพื่อบีบ SL ให้สั้นและคำนวณความเสี่ยงสำหรับพอร์ต $10"}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsSniperMode(!isSniperMode)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all self-start sm:self-center shrink-0 ${
+                isSniperMode
+                  ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 hover:bg-amber-400"
+                  : "bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700"
+              }`}
+            >
+              {isSniperMode ? "🎯 ใช้งาน Sniper อยู่" : "🛡️ สลับเป็น Sniper"}
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
           {/* 1. Price */}
           <div
-            onClick={() => onCopy(`${ts.pendingPrice || ts.entryZone.min}`, "price")}
+            onClick={() => onCopy(`${displayEntryPrice}`, "price")}
             className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
               isExecutionLocked
                 ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
@@ -284,7 +337,7 @@ export default function HeroExecutionHUD({
           >
             <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
               <span className={`font-bold ${isExecutionLocked ? "text-slate-400" : "text-slate-200"}`}>
-                {isExecutionLocked ? "1. ราคาอ้างอิง (เฝ้าระวัง)" : "1. ราคาตั้งเปิด (Price)"}
+                {isSniperMode && sniper ? "1. ราคาดักเข้า (Sniper Limit)" : isExecutionLocked ? "1. ราคาอ้างอิง (เฝ้าระวัง)" : "1. ราคาตั้งเปิด (Price)"}
               </span>
               {copiedKey === "price" ? (
                 <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
@@ -297,10 +350,12 @@ export default function HeroExecutionHUD({
             <span className={`text-base sm:text-xl font-mono font-black block tracking-tight ${
               isExecutionLocked ? "text-amber-400/70" : "text-amber-300"
             }`}>
-              {ts.pendingPrice || ts.entryZone.min}
+              {displayEntryPrice}
             </span>
             <span className="text-[10px] text-slate-400 font-sans block truncate mt-0.5">
-              {isExecutionLocked
+              {isSniperMode && sniper
+                ? "Limit ดักที่ 50% CE / Mean Threshold"
+                : isExecutionLocked
                 ? "🔒 ระงับคำสั่ง (เฝ้าระวัง)"
                 : ts.oteZone ? `โซน OTE (${ts.entryZone.min} - ${ts.entryZone.max})` : "แตะเพื่อคัดลอกค่านี้"}
             </span>
@@ -308,7 +363,7 @@ export default function HeroExecutionHUD({
 
           {/* 2. Stop Loss */}
           <div
-            onClick={() => onCopy(`${ts.stopLoss}`, "sl")}
+            onClick={() => onCopy(`${displaySL}`, "sl")}
             className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
               isExecutionLocked
                 ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
@@ -317,7 +372,7 @@ export default function HeroExecutionHUD({
           >
             <div className="flex items-center justify-between text-[11px] text-rose-400 mb-1">
               <span className={`font-bold ${isExecutionLocked ? "text-slate-400" : "text-rose-300"}`}>
-                {isExecutionLocked ? "2. SL อ้างอิง" : "2. จุดยอมแพ้ (Stop Loss)"}
+                {isSniperMode && sniper ? "2. Sniper Micro-SL" : isExecutionLocked ? "2. SL อ้างอิง" : "2. จุดยอมแพ้ (Stop Loss)"}
               </span>
               {copiedKey === "sl" ? (
                 <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-0.5">
@@ -330,16 +385,16 @@ export default function HeroExecutionHUD({
             <span className={`text-base sm:text-xl font-mono font-black block tracking-tight ${
               isExecutionLocked ? "text-rose-400/70" : "text-rose-400"
             }`}>
-              {ts.stopLoss}
+              {displaySL}
             </span>
             <span className="text-[10px] text-rose-300/70 font-mono block truncate mt-0.5">
-              {ts.slPips ? `-${ts.slPips} pips` : "ซ่อนหลัง Swing"} {ts.structuralSL ? "• Liquidity Shield" : ""}
+              -{displaySLPips} pips {isSniperMode && sniper ? `• ${sniper.invalidationType}` : (ts.structuralSL ? "• Liquidity Shield" : "")}
             </span>
           </div>
 
           {/* 3. Take Profit 1 */}
           <div
-            onClick={() => onCopy(`${ts.takeProfit1}`, "tp1")}
+            onClick={() => onCopy(`${displayTP1}`, "tp1")}
             className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
               isExecutionLocked
                 ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
@@ -361,16 +416,16 @@ export default function HeroExecutionHUD({
             <span className={`text-base sm:text-xl font-mono font-black block tracking-tight ${
               isExecutionLocked ? "text-emerald-400/70" : "text-emerald-300"
             }`}>
-              {ts.takeProfit1}
+              {displayTP1}
             </span>
             <span className="text-[10px] text-emerald-300/70 font-mono block truncate mt-0.5">
-              +{ts.tp1Pips || 0} pips (ถึง TP1 เลื่อน SL บังทุน)
+              +{displayTP1Pips} pips (ถึง TP1 เลื่อน SL บังทุน)
             </span>
           </div>
 
           {/* 4. Take Profit 2 */}
           <div
-            onClick={() => onCopy(`${ts.takeProfit2}`, "tp2")}
+            onClick={() => onCopy(`${displayTP2}`, "tp2")}
             className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
               isExecutionLocked
                 ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
@@ -392,10 +447,10 @@ export default function HeroExecutionHUD({
             <span className={`text-base sm:text-xl font-mono font-black block tracking-tight ${
               isExecutionLocked ? "text-emerald-400/70" : "text-emerald-300"
             }`}>
-              {ts.takeProfit2}
+              {displayTP2}
             </span>
             <span className="text-[10px] text-emerald-300/70 font-mono block truncate mt-0.5">
-              +{ts.tp2Pips || 0} pips (รันเทรนด์โครงสร้างใหญ่)
+              +{displayTP2Pips} pips (รันเทรนด์โครงสร้างใหญ่)
             </span>
           </div>
         </div>
@@ -634,6 +689,31 @@ export default function HeroExecutionHUD({
             </span>
           </div>
         </div>
+
+        {/* Micro-Capital Guidance for $10-$50 Accounts */}
+        {balance <= 50 && (
+          <div className="mt-2.5 p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-inner">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div>
+                <span className="font-bold text-white">
+                  🛡️ Micro-Capital Shield ($10 USD Friendly):
+                </span>{" "}
+                <span className="text-slate-300">
+                  {isCent
+                    ? `บัญชี Cent (1,000 USC) เทรด 0.01 lot เสี่ยงเพียง -$${activeLossUSD} USD (1.2%) ปลอดภัยสูงสุด`
+                    : `ทุน $${balance} เทรด 0.01 lot เสี่ยงไม้ละ -$${activeLossUSD} USD (${activeRiskPct}%) รองรับการเทรดผิดพลาดได้ ${Math.floor(balance / Math.max(0.1, activeLossUSD))} ไม้`}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 self-end sm:self-center font-mono shrink-0 text-[11px]">
+              <span className="text-slate-400">เป้ากำไร:</span>
+              <strong className="text-emerald-400 font-bold">
+                TP1 +${activeTp1USD} / TP2 +${activeTp2USD}
+              </strong>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ─── 6. INVALIDATION RULE CALLOUT ─── */}

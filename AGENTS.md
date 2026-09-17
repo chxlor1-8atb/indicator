@@ -113,6 +113,7 @@ Indicator/
 ├── scripts/                             # แดมอนและสคริปต์ทดสอบ
 │   ├── bot-daemon.mjs                  # Background Worker รันสแกนตลาดและส่ง Telegram ต่อเนื่อง (npm run bot)
 │   ├── verify-v2-enhancements.ts       # สคริปต์รันเทสระบบ Confluence, Risk, Micro Sizing และ Cache
+│   ├── test-indicator-optimizations.ts # ทดสอบ Indicator Optimization (Dynamic Precision, BVC, Zero-Division, Speed)
 │   ├── test-anti-clash-orchestrator.ts # ทดสอบตรรกะ Anti-Clash Orchestrator และการตัดสัญญาณรบกวน
 │   └── test-quant-pipeline.ts          # ทดสอบ Data Hygiene, Fractional Diff และ Volume Profile
 │
@@ -568,10 +569,13 @@ npm run bot
 # 5. รันสคริปต์ทดสอบระบบ Confluence, Micro Risk, และ In-Memory Cache
 npx tsx scripts/verify-v2-enhancements.ts
 
-# 6. รันการทดสอบระบบ Anti-Clash Strategy Orchestrator
+# 6. รันการทดสอบ Indicator Optimizations (Dynamic Precision, BVC, Zero-Division, Latency)
+npx tsx scripts/test-indicator-optimizations.ts
+
+# 7. รันการทดสอบระบบ Anti-Clash Strategy Orchestrator
 npx tsx scripts/test-anti-clash-orchestrator.ts
 
-# 7. รันการทดสอบ Quantitative Data Pipeline
+# 8. รันการทดสอบ Quantitative Data Pipeline
 npx tsx scripts/test-quant-pipeline.ts
 ```
 

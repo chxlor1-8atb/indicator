@@ -125,6 +125,7 @@ import {
   FootprintData,
   TimeframeIndicators,
   MTFConfluenceInfo,
+  SniperMicroSLInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -266,11 +267,16 @@ export function calculateSuperTrend(
   candles: Candle[],
   period = 10,
   multiplier = 3.0,
-  precalculatedATR?: (number | null)[]
+  precalculatedATR?: (number | null)[],
+  precision?: number
 ): (SuperTrendPoint | null)[] {
   const len = candles.length;
   const result: (SuperTrendPoint | null)[] = new Array(len).fill(null);
   if (len < period) return result;
+
+  const effectivePrecision = precision !== undefined
+    ? precision
+    : (candles.length > 0 && candles[candles.length - 1].close < 10 ? 4 : 2);
 
   const atrValues = precalculatedATR || calculateATR(candles, period);
 
@@ -289,7 +295,7 @@ export function calculateSuperTrend(
     if (i === 0) {
       prevUpper = basicUpper;
       prevLower = basicLower;
-      result[i] = { value: basicLower, direction: "UP" };
+      result[i] = { value: Number(basicLower.toFixed(effectivePrecision)), direction: "UP" };
       continue;
     }
 
@@ -307,7 +313,7 @@ export function calculateSuperTrend(
     }
 
     result[i] = {
-      value: Number((direction === "UP" ? finalLower : finalUpper).toFixed(2)),
+      value: Number((direction === "UP" ? finalLower : finalUpper).toFixed(effectivePrecision)),
       direction,
     };
 
@@ -322,11 +328,16 @@ export function calculateSuperTrend(
 export function calculateBollingerBands(
   candles: Candle[],
   period = 20,
-  stdDev = 2.0
+  stdDev = 2.0,
+  precision?: number
 ): (BollingerBandPoint | null)[] {
   const len = candles.length;
   const result: (BollingerBandPoint | null)[] = new Array(len).fill(null);
   if (len < period) return result;
+
+  const effectivePrecision = precision !== undefined
+    ? precision
+    : (candles.length > 0 && candles[candles.length - 1].close < 10 ? 4 : 2);
 
   let sum = 0;
   let sumSq = 0;
@@ -354,9 +365,9 @@ export function calculateBollingerBands(
     const bandwidth = middle !== 0 ? Number((((upper - lower) / middle) * 100).toFixed(2)) : 0;
 
     result[i] = {
-      upper: Number(upper.toFixed(2)),
-      middle: Number(middle.toFixed(2)),
-      lower: Number(lower.toFixed(2)),
+      upper: Number(upper.toFixed(effectivePrecision)),
+      middle: Number(middle.toFixed(effectivePrecision)),
+      lower: Number(lower.toFixed(effectivePrecision)),
       bandwidth,
     };
   }
@@ -802,9 +813,28 @@ export function calculateIntraBarMomentum(candle: Candle, livePrice: number): In
 export function filterOutlierWicks(candles: Candle[], maxWickMultiplier = 3.5): Candle[] {
   if (!candles || candles.length < 15) return candles;
 
-  const ranges = candles.map((c) => c.high - c.low);
-  const avgRange = ranges.slice(-30).reduce((a, b) => a + b, 0) / Math.min(30, ranges.length);
+  const len = candles.length;
+  const sampleCount = Math.min(30, len);
+  let rangeSum = 0;
+  for (let i = len - sampleCount; i < len; i++) {
+    rangeSum += (candles[i].high - candles[i].low);
+  }
+  const avgRange = rangeSum / sampleCount;
   const maxAllowedWick = avgRange * maxWickMultiplier;
+
+  // Fast check: if no candle needs clipping, return original array without re-allocation
+  let hasOutliers = false;
+  for (let i = 0; i < len; i++) {
+    const c = candles[i];
+    const bodyTop = Math.max(c.open, c.close);
+    const bodyBottom = Math.min(c.open, c.close);
+    if ((c.high - bodyTop) > maxAllowedWick || (bodyBottom - c.low) > maxAllowedWick) {
+      hasOutliers = true;
+      break;
+    }
+  }
+
+  if (!hasOutliers) return candles;
 
   return candles.map((c) => {
     const bodyTop = Math.max(c.open, c.close);
@@ -1011,6 +1041,262 @@ export function calculateStructuralStopLoss(
       swingRefPrice: Number(swingHigh.toFixed(precision)),
       liquidityBuffer,
       protectionType: "SWING_HIGH_BUFFER",
+    };
+  }
+}
+
+/**
+ * [แผน 54] Sniper Precision Limit Entry Calculator
+ * Finds high-consequence institutional entry limits:
+ * - 50% Consequent Encroachment (CE) of active FVG
+ * - 50% Mean Threshold of active Order Block
+ * - OTE 70.5% Golden Pocket Sweet Spot
+ * - High Volume Node (HVN) / POC Shelf
+ */
+export function calculateSniperPrecisionEntry(
+  currentPrice: number,
+  action: "BUY" | "SELL",
+  orderBlocks?: OrderBlockValidatorInfo,
+  fvgMitigation?: FVGMitigationInfo,
+  oteZone?: OTEZoneInfo,
+  volumeProfile?: VolumeProfileInfo,
+  precision = 2
+): {
+  recommendedLimit: number;
+  entryType: "FVG_50_CE" | "OB_MEAN_THRESHOLD" | "OTE_705_SWEETSPOT" | "POC_SHELF" | "DISCOUNT_SNIPER";
+  entryRationale: string;
+} {
+  const isBuy = action === "BUY";
+
+  // 1. FVG Consequent Encroachment (50% CE)
+  if (fvgMitigation && fvgMitigation.activeFVGs && fvgMitigation.activeFVGs.length > 0) {
+    const validFvg = fvgMitigation.activeFVGs.find((f) =>
+      isBuy ? f.type === "BULLISH_FVG" && f.consequentEncroachment < currentPrice : f.type === "BEARISH_FVG" && f.consequentEncroachment > currentPrice
+    );
+    if (validFvg) {
+      return {
+        recommendedLimit: Number(validFvg.consequentEncroachment.toFixed(precision)),
+        entryType: "FVG_50_CE",
+        entryRationale: `Limit ดักที่ 50% Consequent Encroachment ของ ${validFvg.type} (${validFvg.consequentEncroachment.toFixed(precision)})`,
+      };
+    }
+  }
+
+  // 2. Order Block Mean Threshold (50% of OB range)
+  if (orderBlocks && orderBlocks.activeBlocks && orderBlocks.activeBlocks.length > 0) {
+    const validOB = orderBlocks.activeBlocks.find((b) =>
+      isBuy ? b.type === "BULLISH_OB" && b.priceMax <= currentPrice : b.type === "BEARISH_OB" && b.priceMin >= currentPrice
+    );
+    if (validOB) {
+      const meanThreshold = (validOB.priceMin + validOB.priceMax) / 2;
+      return {
+        recommendedLimit: Number(meanThreshold.toFixed(precision)),
+        entryType: "OB_MEAN_THRESHOLD",
+        entryRationale: `Limit ดักที่ 50% Mean Threshold ของ ${validOB.type} (${meanThreshold.toFixed(precision)})`,
+      };
+    }
+  }
+
+  // 3. OTE 70.5% Sweet Spot
+  if (oteZone && oteZone.sweetSpot && (isBuy ? oteZone.sweetSpot < currentPrice : oteZone.sweetSpot > currentPrice)) {
+    return {
+      recommendedLimit: Number(oteZone.sweetSpot.toFixed(precision)),
+      entryType: "OTE_705_SWEETSPOT",
+      entryRationale: `Limit ดักที่ Fibonacci OTE 70.5% Golden Pocket (${oteZone.sweetSpot.toFixed(precision)})`,
+    };
+  }
+
+  // 4. Volume Profile POC Shelf
+  if (volumeProfile && volumeProfile.poc > 0 && (isBuy ? volumeProfile.poc < currentPrice : volumeProfile.poc > currentPrice)) {
+    return {
+      recommendedLimit: Number(volumeProfile.poc.toFixed(precision)),
+      entryType: "POC_SHELF",
+      entryRationale: `Limit ดักที่ Volume Profile POC Supply/Demand Shelf (${volumeProfile.poc.toFixed(precision)})`,
+    };
+  }
+
+  return {
+    recommendedLimit: currentPrice,
+    entryType: "DISCOUNT_SNIPER",
+    entryRationale: `เข้าที่ราคาปัจจุบันหรือจุดย่อตัวที่ดีที่สุด (${currentPrice.toFixed(precision)})`,
+  };
+}
+
+/**
+ * [แผน 55] Fractal Micro-Invalidation Stop Loss Calculator (Sniper Micro-SL)
+ * Tightens Stop Loss specifically for small capital ($10-$50 USD accounts):
+ * - Micro-invalidation behind nearest Order Block Wick or FVG boundary
+ * - Replaces wide 25-candle swing with tight 3-5 candle structural micro-pivot
+ * - Tight spread buffer (1.0-1.5 pips) instead of bloated 0.5-1.2x ATR
+ * - Results in 10-16 pips SL on Gold (XAUUSD) and 6-10 pips on Forex!
+ */
+export function calculateSniperMicroSL(
+  candles: Candle[],
+  action: "BUY" | "SELL",
+  entryPrice: number,
+  orderBlocks?: OrderBlockValidatorInfo,
+  fvgMitigation?: FVGMitigationInfo,
+  oteZone?: OTEZoneInfo,
+  atrValue?: number,
+  precision = 2,
+  symbol = "XAUUSD"
+): SniperMicroSLInfo {
+  const sym = symbol.toUpperCase();
+  const isGold = sym.includes("XAU") || sym === "GOLD";
+  const isJPY = sym.includes("JPY");
+  const isCrypto = sym.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(c => sym.startsWith(c));
+  const isForex = !isGold && !isJPY && !isCrypto;
+
+  const pipMultiplier = isForex ? 10000 : (isJPY || isGold ? 100 : 1);
+  const pipDollarPer001 = isCrypto ? 0.01 : isJPY ? 0.07 : 0.10; // Value of 1 pip for 0.01 lot
+  const safeAtr = atrValue || entryPrice * 0.005;
+
+  // Minimum and Maximum SL pip constraints for Sniper Mode to guarantee $10 survivability:
+  // For Gold: min 8 pips, max 16 pips (on 0.01 lot = $0.80 - $1.60 risk)
+  // For Forex: min 5 pips, max 12 pips (on 0.01 lot = $0.50 - $1.20 risk)
+  // For Crypto: min 0.3%, max 0.8%
+  const minSlPips = isGold ? 8 : isForex ? 5 : isJPY ? 8 : 10;
+  const maxSlPips = isGold ? 16 : isForex ? 12 : isJPY ? 15 : 25;
+
+  // Tight spread buffer (1.2 pips)
+  const spreadBufferPrice = (1.2 / pipMultiplier);
+
+  // Micro-sample: only look at last 3 to 6 candles for immediate invalidation
+  const microSample = candles.slice(-Math.min(candles.length, 6));
+  let microLow = Infinity;
+  let microHigh = -Infinity;
+  for (const c of microSample) {
+    if (c.low < microLow) microLow = c.low;
+    if (c.high > microHigh) microHigh = c.high;
+  }
+
+  let stopLoss = entryPrice;
+  let invalidationType: SniperMicroSLInfo["invalidationType"] = "MICRO_PIVOT";
+  let microRationale = "";
+
+  if (action === "BUY") {
+    // 1. Check Active Bullish Order Block Low
+    const activeOB = orderBlocks?.activeBlocks?.find(b => b.type === "BULLISH_OB" && b.priceMin < entryPrice);
+    // 2. Check Active FVG Lower Bound
+    const activeFVG = fvgMitigation?.activeFVGs?.find(f => f.type === "BULLISH_FVG" && f.bottom < entryPrice);
+    // 3. Check OTE 78.6% Fib
+    const oteLow = oteZone?.oteMin && oteZone.oteMin < entryPrice ? oteZone.oteMin : null;
+
+    if (activeOB && (entryPrice - activeOB.priceMin) * pipMultiplier <= maxSlPips * 1.5) {
+      stopLoss = Number((activeOB.priceMin - spreadBufferPrice).toFixed(precision));
+      invalidationType = "ORDER_BLOCK_WICK";
+      microRationale = `SL วางชิดใต้ฐาน Bullish Order Block (${activeOB.priceMin.toFixed(precision)}) + เผื่อสเปรด 1.2 pips`;
+    } else if (activeFVG && (entryPrice - activeFVG.bottom) * pipMultiplier <= maxSlPips * 1.5) {
+      stopLoss = Number((activeFVG.bottom - spreadBufferPrice).toFixed(precision));
+      invalidationType = "FVG_BOUNDARY";
+      microRationale = `SL วางชิดใต้ขอบล่าง Fair Value Gap (${activeFVG.bottom.toFixed(precision)})`;
+    } else if (oteLow && (entryPrice - oteLow) * pipMultiplier <= maxSlPips * 1.5) {
+      stopLoss = Number((oteLow - spreadBufferPrice).toFixed(precision));
+      invalidationType = "OTE_786_FIB";
+      microRationale = `SL วางใต้ระดับ Fibonacci OTE 78.6% (${oteLow.toFixed(precision)})`;
+    } else {
+      stopLoss = Number((microLow - spreadBufferPrice).toFixed(precision));
+      invalidationType = "MICRO_PIVOT";
+      microRationale = `SL วางใต้จุดต่ำสุดของแท่งเทียน Micro-Pivot ล่าสุด (${microLow.toFixed(precision)})`;
+    }
+
+    // Guard: Clamp SL between minSlPips and maxSlPips
+    let slDist = Math.max(1e-5, entryPrice - stopLoss);
+    let slPips = Math.round(slDist * pipMultiplier);
+
+    if (slPips < minSlPips) {
+      slPips = minSlPips;
+      stopLoss = Number((entryPrice - (minSlPips / pipMultiplier)).toFixed(precision));
+    } else if (slPips > maxSlPips) {
+      slPips = maxSlPips;
+      stopLoss = Number((entryPrice - (maxSlPips / pipMultiplier)).toFixed(precision));
+      microRationale += ` (บีบ SL เข้ากรอบความปลอดภัยสูงสุด ${maxSlPips} pips สำหรับพอร์ต $10)`;
+    }
+
+    // High R:R Take Profits: TP1 = 2.0R, TP2 = 4.0R (Sniper multiplier)
+    const riskPrice = entryPrice - stopLoss;
+    const tp1Price = Number((entryPrice + riskPrice * 2.0).toFixed(precision));
+    const tp2Price = Number((entryPrice + riskPrice * 4.0).toFixed(precision));
+    const tp1Pips = Math.round((tp1Price - entryPrice) * pipMultiplier);
+    const tp2Pips = Math.round((tp2Price - entryPrice) * pipMultiplier);
+
+    const dollarRiskOn001Lot = Number((0.01 * slPips * (pipDollarPer001 * 10)).toFixed(2));
+    const isSmallAccountFriendly = dollarRiskOn001Lot <= 1.80;
+
+    return {
+      enabled: true,
+      stopLoss,
+      slPips,
+      invalidationType,
+      entryLimit: entryPrice,
+      tp1Price,
+      tp2Price,
+      tp1Pips,
+      tp2Pips,
+      riskRewardRatio: `1:${(tp2Pips / Math.max(1, slPips)).toFixed(1)}`,
+      dollarRiskOn001Lot,
+      isSmallAccountFriendly,
+      microCapitalRationale: microRationale,
+    };
+  } else {
+    // Action === "SELL"
+    const activeOB = orderBlocks?.activeBlocks?.find(b => b.type === "BEARISH_OB" && b.priceMax > entryPrice);
+    const activeFVG = fvgMitigation?.activeFVGs?.find(f => f.type === "BEARISH_FVG" && f.top > entryPrice);
+    const oteHigh = oteZone?.oteMax && oteZone.oteMax > entryPrice ? oteZone.oteMax : null;
+
+    if (activeOB && (activeOB.priceMax - entryPrice) * pipMultiplier <= maxSlPips * 1.5) {
+      stopLoss = Number((activeOB.priceMax + spreadBufferPrice).toFixed(precision));
+      invalidationType = "ORDER_BLOCK_WICK";
+      microRationale = `SL วางชิดเหนือยอด Bearish Order Block (${activeOB.priceMax.toFixed(precision)}) + เผื่อสเปรด 1.2 pips`;
+    } else if (activeFVG && (activeFVG.top - entryPrice) * pipMultiplier <= maxSlPips * 1.5) {
+      stopLoss = Number((activeFVG.top + spreadBufferPrice).toFixed(precision));
+      invalidationType = "FVG_BOUNDARY";
+      microRationale = `SL วางชิดเหนือขอบบน Fair Value Gap (${activeFVG.top.toFixed(precision)})`;
+    } else if (oteHigh && (oteHigh - entryPrice) * pipMultiplier <= maxSlPips * 1.5) {
+      stopLoss = Number((oteHigh + spreadBufferPrice).toFixed(precision));
+      invalidationType = "OTE_786_FIB";
+      microRationale = `SL วางเหนือระดับ Fibonacci OTE 78.6% (${oteHigh.toFixed(precision)})`;
+    } else {
+      stopLoss = Number((microHigh + spreadBufferPrice).toFixed(precision));
+      invalidationType = "MICRO_PIVOT";
+      microRationale = `SL วางเหนือจุดสูงสุดของแท่งเทียน Micro-Pivot ล่าสุด (${microHigh.toFixed(precision)})`;
+    }
+
+    let slDist = Math.max(1e-5, stopLoss - entryPrice);
+    let slPips = Math.round(slDist * pipMultiplier);
+
+    if (slPips < minSlPips) {
+      slPips = minSlPips;
+      stopLoss = Number((entryPrice + (minSlPips / pipMultiplier)).toFixed(precision));
+    } else if (slPips > maxSlPips) {
+      slPips = maxSlPips;
+      stopLoss = Number((entryPrice + (maxSlPips / pipMultiplier)).toFixed(precision));
+      microRationale += ` (บีบ SL เข้ากรอบความปลอดภัยสูงสุด ${maxSlPips} pips สำหรับพอร์ต $10)`;
+    }
+
+    const riskPrice = stopLoss - entryPrice;
+    const tp1Price = Number((entryPrice - riskPrice * 2.0).toFixed(precision));
+    const tp2Price = Number((entryPrice - riskPrice * 4.0).toFixed(precision));
+    const tp1Pips = Math.round((entryPrice - tp1Price) * pipMultiplier);
+    const tp2Pips = Math.round((entryPrice - tp2Price) * pipMultiplier);
+
+    const dollarRiskOn001Lot = Number((0.01 * slPips * (pipDollarPer001 * 10)).toFixed(2));
+    const isSmallAccountFriendly = dollarRiskOn001Lot <= 1.80;
+
+    return {
+      enabled: true,
+      stopLoss,
+      slPips,
+      invalidationType,
+      entryLimit: entryPrice,
+      tp1Price,
+      tp2Price,
+      tp1Pips,
+      tp2Pips,
+      riskRewardRatio: `1:${(tp2Pips / Math.max(1, slPips)).toFixed(1)}`,
+      dollarRiskOn001Lot,
+      isSmallAccountFriendly,
+      microCapitalRationale: microRationale,
     };
   }
 }
@@ -3169,10 +3455,14 @@ export function calculateMTFStructureMatrix(
   }
 
   const evaluateSlice = (slice: Candle[], tfName: "15m" | "1h" | "4h" | "1D"): TimeframeStructureDetail => {
-    const highs = slice.map((c) => c.high);
-    const lows = slice.map((c) => c.low);
-    const swingHigh = Number(Math.max(...highs).toFixed(precision));
-    const swingLow = Number(Math.min(...lows).toFixed(precision));
+    let maxHigh = -Infinity;
+    let minLow = Infinity;
+    for (let i = 0; i < slice.length; i++) {
+      if (slice[i].high > maxHigh) maxHigh = slice[i].high;
+      if (slice[i].low < minLow) minLow = slice[i].low;
+    }
+    const swingHigh = Number(maxHigh.toFixed(precision));
+    const swingLow = Number(minLow.toFixed(precision));
     const firstClose = slice[0].close;
     const lastClose = slice[slice.length - 1].close;
 
@@ -4159,11 +4449,10 @@ export function calculateHurstExponent(candles: Candle[]): HurstExponentInfo {
     };
   }
 
-  const closes = candles.map((c) => c.close);
   const returns: number[] = [];
-  for (let i = 1; i < closes.length; i++) {
-    const prev = closes[i - 1] > 0 ? closes[i - 1] : 1;
-    returns.push(Math.log(closes[i] / prev));
+  for (let i = 1; i < candles.length; i++) {
+    const prev = candles[i - 1].close > 0 ? candles[i - 1].close : 1;
+    returns.push(Math.log(Math.max(1e-8, candles[i].close) / prev));
   }
 
   const lags = [8, 16, 32];
@@ -4175,19 +4464,28 @@ export function calculateHurstExponent(candles: Candle[]): HurstExponentInfo {
 
     let totalRS = 0;
     for (let s = 0; s < numSubsets; s++) {
-      const subset = returns.slice(s * lag, (s + 1) * lag);
-      const mean = subset.reduce((a, b) => a + b, 0) / lag;
+      const offset = s * lag;
+      let sum = 0;
+      for (let j = 0; j < lag; j++) {
+        sum += returns[offset + j];
+      }
+      const mean = sum / lag;
 
-      const dev: number[] = [];
       let cum = 0;
-      for (const val of subset) {
-        cum += val - mean;
-        dev.push(cum);
+      let maxCum = -Infinity;
+      let minCum = Infinity;
+      let sumSqDev = 0;
+
+      for (let j = 0; j < lag; j++) {
+        const diff = returns[offset + j] - mean;
+        cum += diff;
+        if (cum > maxCum) maxCum = cum;
+        if (cum < minCum) minCum = cum;
+        sumSqDev += diff * diff;
       }
 
-      const range = Math.max(...dev) - Math.min(...dev);
-      const variance = subset.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / lag;
-      const stdDev = Math.sqrt(Math.max(1e-8, variance));
+      const range = maxCum - minCum;
+      const stdDev = Math.sqrt(Math.max(1e-8, sumSqDev / lag));
 
       totalRS += range / stdDev;
     }
@@ -8212,6 +8510,7 @@ export function calculateClusteredSupportResistance(
     type: "SUPPORT" | "RESISTANCE";
     touchCount: number;
     avgPrice: number;
+    priceSum: number;
   }
 
   const clusters: Cluster[] = [];
@@ -8222,7 +8521,8 @@ export function calculateClusteredSupportResistance(
       if (Math.abs(pt.price - cl.avgPrice) <= clusterRadius) {
         cl.prices.push(pt.price);
         cl.touchCount++;
-        cl.avgPrice = Number((cl.prices.reduce((a, b) => a + b, 0) / cl.prices.length).toFixed(precision));
+        cl.priceSum += pt.price;
+        cl.avgPrice = Number((cl.priceSum / cl.touchCount).toFixed(precision));
         matched = true;
         break;
       }
@@ -8233,6 +8533,7 @@ export function calculateClusteredSupportResistance(
         type: pt.price >= currentPrice ? "RESISTANCE" : "SUPPORT",
         touchCount: 1,
         avgPrice: Number(pt.price.toFixed(precision)),
+        priceSum: pt.price,
       });
     }
   }
@@ -8482,8 +8783,8 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const ema50 = calculateEMA(candles, 50);
   const ema200 = calculateEMA(candles, 200);
   const macd = calculateMACD(candles, 12, 26, 9);
-  const superTrend = calculateSuperTrend(cleanCandles, 10, 3.0, atr10);
-  const bollingerBands = calculateBollingerBands(cleanCandles, 20, 2.0);
+  const superTrend = calculateSuperTrend(cleanCandles, 10, 3.0, atr10, precision);
+  const bollingerBands = calculateBollingerBands(cleanCandles, 20, 2.0, precision);
   const stochRSI = calculateStochRSI(cleanCandles, 14, 14, 3, 3, rsi14);
   const adx = calculateADX(cleanCandles, 14);
   const obv = calculateOBV(candles);
@@ -8863,7 +9164,7 @@ export function calculateSRBasedTPSL(
   const isGold = sym.includes("XAU") || sym === "GOLD";
   
   // Pip multiplier สำหรับการคำนวณ pips
-  const pipMultiplier = isForex ? 10000 : (isJPY || isGold ? 100 : 1);
+  const pipMultiplier = isForex ? 10000 : isJPY ? 100 : isGold ? 10 : 1;
   
   // Fallback ATR ถ้าไม่ได้รับค่ามา
   const safeATR = atrValue || currentPrice * 0.005;
@@ -9679,46 +9980,54 @@ export function calculateAdvancedVolumeProfile(
   const sample = candles.slice(-Math.min(lookback, candles.length));
   const currentPrice = candles[candles.length - 1].close;
   
-  // Calculate VWAP (simplified)
+  // Calculate VWAP & Range in a single pass without extra map/allocation
   let cumulativeTPV = 0;
   let cumulativeVolume = 0;
-  
+  let high = -Infinity;
+  let low = Infinity;
+
   for (const candle of sample) {
     const typicalPrice = (candle.high + candle.low + candle.close) / 3;
     cumulativeTPV += typicalPrice * candle.volume;
     cumulativeVolume += candle.volume;
+    if (candle.high > high) high = candle.high;
+    if (candle.low < low) low = candle.low;
   }
-  
+
   const vwap = cumulativeVolume > 0 ? cumulativeTPV / cumulativeVolume : currentPrice;
-  
-  // Simplified std dev calculation
-  const high = Math.max(...sample.map(c => c.high));
-  const low = Math.min(...sample.map(c => c.low));
-  const stdDev = (high - low) / 4; // Simple approximation
-  
-  // Group candles by price levels (reduced from 50 to 20 for performance)
-  const priceStep = (high - low) / 20;
+  const rawSpan = Math.max(0, high - low);
+  const stdDev = rawSpan / 4;
+
+  // Zero-division guard: ensure priceStep is never 0 even in flat market
+  const minTick = Math.pow(10, -precision);
+  const priceStep = Math.max(rawSpan / 20, minTick);
   const volumeByPrice = new Map<number, { buyVolume: number; sellVolume: number; totalVolume: number }>();
-  
+
   for (const candle of sample) {
-    // Simplified: assign entire candle volume to its midpoint
     const midPrice = (candle.high + candle.low) / 2;
     const priceLevel = Number((Math.floor((midPrice - low) / priceStep) * priceStep + low).toFixed(precision));
-    
+
     if (!volumeByPrice.has(priceLevel)) {
       volumeByPrice.set(priceLevel, { buyVolume: 0, sellVolume: 0, totalVolume: 0 });
     }
-    
+
     const data = volumeByPrice.get(priceLevel)!;
-    const isBullish = candle.close > candle.open;
-    
-    if (isBullish) {
-      data.buyVolume += candle.volume * 0.7;
-      data.sellVolume += candle.volume * 0.3;
+
+    // Bulk Volume Classification (BVC): CLV-adjusted buying vs selling volume
+    const candleSpan = candle.high - candle.low;
+    let buyRatio = 0.5;
+    if (candleSpan > 0) {
+      const clv = ((candle.close - candle.low) - (candle.high - candle.close)) / candleSpan;
+      buyRatio = Math.max(0.05, Math.min(0.95, (clv + 1) / 2));
     } else {
-      data.buyVolume += candle.volume * 0.3;
-      data.sellVolume += candle.volume * 0.7;
+      buyRatio = candle.close >= candle.open ? 0.6 : 0.4;
     }
+
+    const buyVol = candle.volume * buyRatio;
+    const sellVol = candle.volume - buyVol;
+
+    data.buyVolume += buyVol;
+    data.sellVolume += sellVol;
     data.totalVolume += candle.volume;
   }
   
@@ -9890,9 +10199,17 @@ export function calculateFootprintAnalysis(
   const volumes = sample.map(c => c.volume);
   const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
   
-  // Simplified footprint data (only last 10 candles)
+  // Simplified footprint data (only last 10 candles) with CLV-based BVC
   const footprintCandles: FootprintData[] = sample.slice(-10).map(candle => {
-    const buyVolume = candle.close > candle.open ? candle.volume * 0.7 : candle.volume * 0.3;
+    const candleSpan = candle.high - candle.low;
+    let buyRatio = 0.5;
+    if (candleSpan > 0) {
+      const clv = ((candle.close - candle.low) - (candle.high - candle.close)) / candleSpan;
+      buyRatio = Math.max(0.05, Math.min(0.95, (clv + 1) / 2));
+    } else {
+      buyRatio = candle.close >= candle.open ? 0.6 : 0.4;
+    }
+    const buyVolume = candle.volume * buyRatio;
     const sellVolume = candle.volume - buyVolume;
     const delta = buyVolume - sellVolume;
     const imbalance = candle.volume > 0 ? (delta / candle.volume) * 100 : 0;

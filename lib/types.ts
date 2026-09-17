@@ -1134,6 +1134,7 @@ export interface AnalysisResult {
     recommendation: "EXECUTE_HIGH_CONVICTION" | "EXECUTE_STANDARD" | "SKIP_LOW_PROBABILITY";
     metaFilterReason: string;
   };
+  sniperMicroSL?: SniperMicroSLInfo;
   tdSequential?: TDSequentialInfo;
   spreadImpact?: SpreadImpactInfo;
   trailingStop?: TrailingStopInfo;
@@ -1335,6 +1336,7 @@ export interface AnalysisResult {
       recommendation: "EXECUTE_HIGH_CONVICTION" | "EXECUTE_STANDARD" | "SKIP_LOW_PROBABILITY";
       metaFilterReason: string;
     };
+    sniperMicroSL?: SniperMicroSLInfo;
     mtfValidation?: {
       isValid: boolean;
       confidence: string;
@@ -2297,4 +2299,20 @@ export interface ClassicTrioInfo {
   winRateBonus: number;
   signalBias: "BULLISH" | "BEARISH" | "NEUTRAL";
   summary: string;
+}
+
+export interface SniperMicroSLInfo {
+  enabled: boolean;
+  stopLoss: number;
+  slPips: number;
+  invalidationType: "ORDER_BLOCK_WICK" | "FVG_BOUNDARY" | "OTE_786_FIB" | "MICRO_PIVOT";
+  entryLimit: number;
+  tp1Price: number;
+  tp2Price: number;
+  tp1Pips: number;
+  tp2Pips: number;
+  riskRewardRatio: string;
+  dollarRiskOn001Lot: number;
+  isSmallAccountFriendly: boolean;
+  microCapitalRationale: string;
 }

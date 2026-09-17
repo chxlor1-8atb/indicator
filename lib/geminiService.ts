@@ -103,6 +103,7 @@ import {
   ClusteredSRInfo,
   AutoFibonacciInfo,
   FiveCorePillarsEvaluation,
+  SniperMicroSLInfo,
 } from "./types";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
@@ -215,6 +216,8 @@ import {
   validateBreakoutWithMTF,
   calculateDynamicRiskReward,
   calculateMTFConfluence,
+  calculateSniperPrecisionEntry,
+  calculateSniperMicroSL,
 } from "./indicators";
 import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
@@ -1795,6 +1798,36 @@ export function generateRuleBasedAnalysis(
     volatility
   );
 
+  // ─── [แผน 54 & 55] SNIPER PRECISION LIMIT & MICRO-SL ENGINE ($10 CAPITAL MATRIX) ───
+  let sniperMicroSL: SniperMicroSLInfo | undefined = undefined;
+  if (tradeAction === "BUY" || tradeAction === "SELL") {
+    const precisionLimit = calculateSniperPrecisionEntry(
+      currentPrice,
+      tradeAction,
+      orderBlocks,
+      fvgMitigation,
+      oteZone,
+      volumeProfile,
+      precision
+    );
+    const sniperEntryPrice = precisionLimit.recommendedLimit;
+    sniperMicroSL = calculateSniperMicroSL(
+      candles,
+      tradeAction,
+      sniperEntryPrice,
+      orderBlocks,
+      fvgMitigation,
+      oteZone,
+      currentATR,
+      precision,
+      symbol
+    );
+
+    if (sniperMicroSL && mtOrderAdvice) {
+      mtOrderAdvice += ` • 🎯 Sniper Micro-SL: ${sniperMicroSL.slPips} pips (ทุน $10 เสี่ยง -$${sniperMicroSL.dollarRiskOn001Lot} บน 0.01 lot)`;
+    }
+  }
+
   return {
     symbol,
     timeframe,
@@ -1812,6 +1845,7 @@ export function generateRuleBasedAnalysis(
     regimeInfo,
     sessionStatus,
     calendarSafety,
+    sniperMicroSL,
     oteZone,
     volumeDelta,
     breakevenAdvice,
@@ -2108,6 +2142,7 @@ export function generateRuleBasedAnalysis(
       },
       mlPrediction,
       metaLabeling,
+      sniperMicroSL,
       dynamicRiskReward: {
         adjustedRR: dynamicRiskReward.adjustedRR,
         positionSizeMultiplier: dynamicRiskReward.positionSizeMultiplier,
@@ -2681,6 +2716,7 @@ Respond ONLY with valid JSON matching this schema:
     parsed.timeframeMatrix = ruleAnalysis.timeframeMatrix;
     parsed.mlPrediction = ruleAnalysis.mlPrediction;
     parsed.metaLabeling = ruleAnalysis.metaLabeling;
+    parsed.sniperMicroSL = ruleAnalysis.sniperMicroSL;
 
     if (ruleAnalysis.timeframeMatrix.htfGuardStatus?.isGuarded || (ruleAnalysis.metaLabeling && !ruleAnalysis.metaLabeling.isApproved)) {
       parsed.signal = "WAIT";
@@ -2715,6 +2751,7 @@ Respond ONLY with valid JSON matching this schema:
       parsed.tradeSetup.correlationShield = ruleAnalysis.tradeSetup.correlationShield;
       parsed.tradeSetup.fvgMitigation = ruleAnalysis.tradeSetup.fvgMitigation;
       parsed.tradeSetup.marketStructureShift = ruleAnalysis.tradeSetup.marketStructureShift;
+      parsed.tradeSetup.sniperMicroSL = ruleAnalysis.tradeSetup.sniperMicroSL;
       parsed.tradeSetup.premiumDiscount = ruleAnalysis.tradeSetup.premiumDiscount;
       parsed.tradeSetup.keyLevelTargets = ruleAnalysis.tradeSetup.keyLevelTargets;
       parsed.tradeSetup.orderFlowVelocity = ruleAnalysis.tradeSetup.orderFlowVelocity;

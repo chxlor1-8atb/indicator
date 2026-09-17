@@ -24,6 +24,10 @@ export interface DynamicPositionSizeResult {
   volatilityScaleRatio: number;
   drawdownThrottle: number;
   rationale: string;
+  isSmallAccount?: boolean;
+  centAccountLots?: number;
+  centAccountRiskUSD?: number;
+  smallAccountGuidance?: string;
 }
 
 export interface AdaptiveTrailingStopResult {
@@ -114,7 +118,25 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
 
   if (calculatedLotSize < 0.01) calculatedLotSize = 0.01;
 
-  const rationale = `Risk Profile: ${riskProfile} (${baseRiskPct}% base -> ${effectiveRiskPct}% eff) | Vol Ratio: ${volatilityScaleRatio}x | Drawdown Dampener: ${drawdownThrottle}x`;
+  const isSmallAccount = accountBalance <= 50;
+  const centAccountLots = isSmallAccount
+    ? Math.max(0.01, Number(((accountBalance * 100 * (effectiveRiskPct / 100)) / (Math.max(1, slPips) * pipValuePerStandardLot)).toFixed(2)))
+    : undefined;
+  const centAccountRiskUSD = isSmallAccount && centAccountLots
+    ? Number((centAccountLots * slPips * (pipValuePerStandardLot * 0.001)).toFixed(2))
+    : undefined;
+
+  let smallAccountGuidance: string | undefined;
+  if (isSmallAccount) {
+    const std001Loss = Number((0.01 * slPips * (pipValuePerStandardLot * 0.1)).toFixed(2));
+    if (slPips <= 16) {
+      smallAccountGuidance = `🎯 Sniper Micro-SL (${slPips} pips): ทุน $${accountBalance} เทรด 0.01 lot ได้จริง เสี่ยงเพียง -$${std001Loss} USD หรือเลือกใช้ Cent Account เพื่อคุมความเสี่ยงระดับ 1.5%`;
+    } else {
+      smallAccountGuidance = `⚠️ ระยะ SL ปัจจุบัน (${slPips} pips) เสี่ยง -$${std001Loss} USD แนะนำเปิดโหมด Sniper Micro-SL หรือใช้ Cent Account เพื่อรักษาความปลอดภัยของพอร์ต $${accountBalance}`;
+    }
+  }
+
+  const rationale = `Risk Profile: ${riskProfile} (${baseRiskPct}% base -> ${effectiveRiskPct}% eff) | Vol Ratio: ${volatilityScaleRatio}x | Drawdown Dampener: ${drawdownThrottle}x${isSmallAccount ? ` | Micro-Capital Active ($${accountBalance})` : ""}`;
 
   return {
     calculatedLotSize,
@@ -124,6 +146,10 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
     volatilityScaleRatio,
     drawdownThrottle,
     rationale,
+    isSmallAccount,
+    centAccountLots,
+    centAccountRiskUSD,
+    smallAccountGuidance,
   };
 }
 
