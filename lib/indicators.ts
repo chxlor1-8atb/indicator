@@ -1147,7 +1147,7 @@ export function calculateSniperMicroSL(
   const isCrypto = sym.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(c => sym.startsWith(c));
   const isForex = !isGold && !isJPY && !isCrypto;
 
-  const pipMultiplier = isForex ? 10000 : (isJPY || isGold ? 100 : 1);
+  const pipMultiplier = isGold ? 10 : isJPY ? 100 : isForex ? 10000 : 1;
   const pipDollarPer001 = isCrypto ? 0.01 : isJPY ? 0.07 : 0.10; // Value of 1 pip for 0.01 lot
   const safeAtr = atrValue || entryPrice * 0.005;
 
