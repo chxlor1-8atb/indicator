@@ -259,9 +259,9 @@ export async function fetchMassiveCandles(symbol: string, interval = "1h", apiKe
   return [];
 }
 
-export async function fetchCryptoCandles(symbol: string, interval = "1h", limit = 200): Promise<Candle[]> {
+export async function fetchCryptoCandles(symbol: string, interval = "1h", limit = 1000): Promise<Candle[]> {
   const bSymbol = symbol.endsWith("USDT") ? symbol : `${symbol}USDT`;
-  const cappedLimit = Math.min(limit, 200);
+  const cappedLimit = Math.min(limit, 1000);
 
   // 1. Primary: Bybit Spot Public API (Fastest, ~100ms, zero geoblocking on Vercel/AWS)
   try {
@@ -625,7 +625,7 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
   // paid/proxied price source and keeping Vercel out of the tick path.
   if (symbol.toUpperCase() === "XAUUSD" || symbol.toUpperCase() === "GOLD") {
     try {
-      const candles = await fetchCryptoCandles("PAXGUSDT", interval, 500);
+      const candles = await fetchCryptoCandles("PAXGUSDT", interval, 1000);
       if (candles.length >= 20) {
         return cacheAndPersist(symbol, interval, candles);
       }
@@ -634,10 +634,10 @@ export async function getMarketCandles(symbol: string, interval = "1h"): Promise
     }
   }
 
-  // 2. If Crypto, use Binance API (Real-time & Fast 500 candles)
+  // 2. If Crypto, use Binance API (Real-time & Fast 1000 candles)
   if (asset?.category === "crypto" || symbol.endsWith("USDT")) {
     try {
-      const candles = await binanceBreaker.execute(() => fetchCryptoCandles(symbol, interval, 500));
+      const candles = await binanceBreaker.execute(() => fetchCryptoCandles(symbol, interval, 1000));
       if (candles.length >= 20) {
         return cacheAndPersist(symbol, interval, candles);
       }

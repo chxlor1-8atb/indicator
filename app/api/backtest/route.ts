@@ -58,12 +58,12 @@ export async function POST(request: NextRequest) {
         symbols.map(async (symbol) => {
           try {
             const candles = await getMarketCandles(symbol, timeframe);
-            const candles500 = candles.slice(-500);
-            if (candles500.length < 35) {
+            const candlesTested = candles.slice(-1000);
+            if (candlesTested.length < 35) {
               return { symbol, saved: 0, trades: 0, error: "Insufficient candles (<35)" };
             }
 
-            const trades = simulateInstitutionalBacktest(symbol, candles500);
+            const trades = simulateInstitutionalBacktest(symbol, candlesTested);
             if (trades.length > 0) {
               const saveRes = await saveBacktestResults(symbol, timeframe, trades);
               return { symbol, saved: saveRes.saved, trades: trades.length };
@@ -123,12 +123,12 @@ export async function POST(request: NextRequest) {
           chunk.map(async (asset) => {
             try {
               const candles = await getMarketCandles(asset.symbol, "1h");
-              const candles500 = candles.slice(-500);
-              if (candles500.length < 35) {
+              const candlesTested = candles.slice(-1000);
+              if (candlesTested.length < 35) {
                 return { symbol: asset.symbol, saved: 0, trades: 0, error: "Insufficient candles" };
               }
 
-              const trades = simulateInstitutionalBacktest(asset.symbol, candles500);
+              const trades = simulateInstitutionalBacktest(asset.symbol, candlesTested);
               if (trades.length > 0) {
                 const saveRes = await saveBacktestResults(asset.symbol, "1h", trades);
                 return { symbol: asset.symbol, saved: saveRes.saved, trades: trades.length };
@@ -166,8 +166,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Insufficient historical data" }, { status: 400 });
     }
 
-    const candles500 = candles.slice(-500);
-    const trades = simulateInstitutionalBacktest(symbol, candles500);
+    const maxCandles = body.limit ? Number(body.limit) : 1000;
+    const candlesToTest = candles.slice(-maxCandles);
+    const trades = simulateInstitutionalBacktest(symbol, candlesToTest);
 
     const wins = trades.filter((t) => t.result === "WIN").length;
     const beTrades = trades.filter((t) => t.result === "BE").length;
@@ -185,7 +186,7 @@ export async function POST(request: NextRequest) {
       success: true,
       symbol,
       timeframe,
-      candleCount: candles500.length,
+      candleCount: candlesToTest.length,
       metrics: {
         totalTrades,
         wins,
