@@ -475,13 +475,13 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<SaveAiSign
   if (!sql) return { saved: false, reason: "No database connection" };
   const { symbol, timeframe, signal, tradeSetup, masterConfluence, setupGrade } = analysis;
 
-  // Store all actionable trades (Grade B, B+, A, A+ with Confluence >= 52)
+  // Store only high-quality actionable trades (Grade A, A+, and high Grade B with Confluence >= 65)
   if (
     signal === "WAIT" ||
     tradeSetup.orderType === "WAIT_NO_ORDER" ||
-    (masterConfluence && masterConfluence.totalScore < 52)
+    (masterConfluence && masterConfluence.totalScore < 65)
   ) {
-    return { saved: false, reason: "Signal skipped: Non-actionable or below confluence threshold (< 52)" };
+    return { saved: false, reason: "Signal skipped: Non-actionable or below confluence threshold (< 65)" };
   }
 
   try {

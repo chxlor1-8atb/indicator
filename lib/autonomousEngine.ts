@@ -220,13 +220,13 @@ export async function evaluateAssetAutonomous(
   const fivePillars = analysis.fiveCorePillars;
   const isPillarsReady = fivePillars ? fivePillars.passedPillarsCount >= 2 : true;
   const isConfluenceEligible =
-    setupGrade === "A+" ||
-    setupGrade === "A" ||
-    setupGrade === "B" ||
-    totalScore >= config.minConfluenceThreshold;
+    (setupGrade === "A+" ||
+      setupGrade === "A" ||
+      (setupGrade === "B" && totalScore >= 68)) &&
+    totalScore >= Math.max(65, config.minConfluenceThreshold);
 
   // ─── Filter Out Low-Quality Choppy Pairs (Protects Overall Win-Rate > 75-80%) ───
-  const isChoppyPair = sym === "EURGBP" || (analysis.regimeInfo?.adxValue && analysis.regimeInfo.adxValue < 18);
+  const isChoppyPair = sym === "EURGBP" || (analysis.regimeInfo?.adxValue != null && analysis.regimeInfo.adxValue < 20);
   if (isChoppyPair && setupGrade !== "A+" && setupGrade !== "A") {
     return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
   }

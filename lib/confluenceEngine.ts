@@ -136,7 +136,13 @@ export function evaluateMasterConfluence(
     if (lastRSI >= 42 && lastRSI <= 66) p2Score += 7;
     else if (lastRSI > 66 && lastRSI <= 70) p2Score += 3;
     else if (lastRSI > 70) p2Score -= 4; // Overbought peak exhaustion penalty
-    else if (lastRSI < 38) p2Score -= 4; // Counter-momentum penalty
+    else if (lastRSI >= 30 && lastRSI < 42) {
+      // Healthy pullback dip in bull trend
+      if (isRsiBullHook) p2Score += 6; // Hooking up out of dip -> high probability bounce!
+      else p2Score += 2;
+    } else if (lastRSI < 30) {
+      p2Score -= 3; // Extreme collapse
+    }
     if (isRsiBullHook) p2Score += 3;
     if (lastStoch.k >= lastStoch.d) p2Score += 6;
     if (intraBar && intraBar.bias === "STRONG_BUYERS") p2Score += 4; // [แผน 5] Intra-bar live buyers
@@ -144,7 +150,13 @@ export function evaluateMasterConfluence(
     if (lastRSI >= 34 && lastRSI <= 58) p2Score += 7;
     else if (lastRSI >= 30 && lastRSI < 34) p2Score += 3;
     else if (lastRSI < 30) p2Score -= 4; // Oversold bottom exhaustion penalty
-    else if (lastRSI > 62) p2Score -= 4; // Counter-momentum penalty
+    else if (lastRSI > 58 && lastRSI <= 70) {
+      // Healthy rally pullback in bear trend
+      if (isRsiBearHook) p2Score += 6; // Hooking down out of rally -> high probability rejection!
+      else p2Score += 2;
+    } else if (lastRSI > 70) {
+      p2Score -= 3; // Extreme upside counter-momentum
+    }
     if (isRsiBearHook) p2Score += 3;
     if (lastStoch.k <= lastStoch.d) p2Score += 6;
     if (intraBar && intraBar.bias === "STRONG_SELLERS") p2Score += 4; // [แผน 5] Intra-bar live sellers

@@ -41,6 +41,8 @@ export interface FVGItem {
   top: number;
   bottom: number;
   candleIndex: number;
+  consequentEncroachment?: number;
+  mitigated?: boolean;
 }
 
 export interface HeikinAshiPoint {
@@ -353,6 +355,8 @@ export interface OrderBlockItem {
   isMitigated: boolean;
   isBreaker: boolean;
   formedIndex: number;
+  entryPrice?: number;
+  displacementRatio?: number;
 }
 
 export interface OrderBlockValidatorInfo {

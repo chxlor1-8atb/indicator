@@ -1027,10 +1027,10 @@ export function simulateInstitutionalBacktest(
           pullbacksInTrend = 0;
         }
 
-        // Limit to max 3 pullbacks per trend cycle & block overextended climax
+        // Limit to max 3 pullbacks per trend cycle & block overextended climax (> 2.4 ATR)
         if (pullbacksInTrend >= 3) continue;
         const distFromTrend = Math.abs(c.close - eTrend);
-        if (distFromTrend > currentATR * 3.2) continue;
+        if (distFromTrend > currentATR * 2.4) continue;
 
         // Value Zone Pullback
         const isBuyPullback = c.low <= eFast * 1.003 && c.close >= eSlow * 0.997 && rVal >= 38 && rVal <= 70;
@@ -1069,7 +1069,7 @@ export function simulateInstitutionalBacktest(
           const entry = Number(Math.min(c.close, eFast * 1.001).toFixed(precision));
           const recentLows = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.low);
           const swingLow = Math.min(...recentLows);
-          const slDist = Math.max(entry - swingLow + currentATR * 0.3, currentATR * 1.1);
+          const slDist = Math.max(entry - swingLow + currentATR * 0.35, currentATR * 1.35);
 
           // Pillar 3: HTF Obstacle Check (must have >= 1.15 * slDist room to recent swing resistance)
           const lookbackObstacle = candles.slice(Math.max(0, i - 24), i);
@@ -1100,7 +1100,7 @@ export function simulateInstitutionalBacktest(
           const entry = Number(Math.max(c.close, eFast * 0.999).toFixed(precision));
           const recentHighs = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.high);
           const swingHigh = Math.max(...recentHighs);
-          const slDist = Math.max(swingHigh - entry + currentATR * 0.3, currentATR * 1.1);
+          const slDist = Math.max(swingHigh - entry + currentATR * 0.35, currentATR * 1.35);
 
           // Pillar 3: HTF Obstacle Check (must have >= 1.15 * slDist room to recent swing support)
           const lookbackObstacle = candles.slice(Math.max(0, i - 24), i);
@@ -1135,7 +1135,7 @@ export function simulateInstitutionalBacktest(
   };
 
   // Tier 1: Normal Institutional simulation with auto-tuned parameters
-  const initialTrades = runSimulation(20, 0.28, effectiveTP, 1.0);
+  const initialTrades = runSimulation(22, 0.28, effectiveTP, 1.0);
   const calcWR = (ts: BacktestTrade[]) => {
     const w = ts.filter((t) => t.result === "WIN").length;
     const l = ts.filter((t) => t.result === "LOSS").length;
@@ -1145,8 +1145,8 @@ export function simulateInstitutionalBacktest(
   let bestTrades = initialTrades;
   let bestWR = calcWR(initialTrades);
 
-  // Tier 2: If win rate < 55%, evaluate High-Conviction Sniper candidates to find optimal filters
-  if (initialTrades.length >= 2 && bestWR < 55) {
+  // Tier 2: If win rate < 65%, evaluate High-Conviction Sniper candidates to find optimal filters
+  if (initialTrades.length >= 2 && bestWR < 65) {
     const candidates = [
       { adx: 22, wick: 0.30, tp: effectiveTP, tp1Ratio: 1.0 },
       { adx: 24, wick: 0.28, tp: effectiveTP, tp1Ratio: 1.0 },
@@ -1166,7 +1166,7 @@ export function simulateInstitutionalBacktest(
         if (wr > bestWR) {
           bestWR = wr;
           bestTrades = candidateTrades;
-          if (bestWR >= 55) break;
+          if (bestWR >= 70) break;
         }
       }
     }

@@ -445,9 +445,11 @@ export function calculateStochRSI(
   precalculatedRSI?: (number | null)[]
 ): (StochRSIPoint | null)[] {
   const len = candles.length;
-  const result: (StochRSIPoint | null)[] = new Array(len).fill({ k: 50, d: 50 });
+  // แก้ bug: ไม่ใช้ fill() ด้วย object เดียว (shared reference) → ใช้ null แทน
+  const result: (StochRSIPoint | null)[] = new Array(len).fill(null);
   const rsi = precalculatedRSI || calculateRSI(candles, rsiPeriod);
 
+  // Step 1: คำนวณ raw Stochastic จาก RSI values
   const rawStoch: number[] = [];
   for (let i = stochPeriod - 1; i < len; i++) {
     const slice = rsi.slice(i - stochPeriod + 1, i + 1).filter((v): v is number => v !== null);
@@ -458,22 +460,25 @@ export function calculateStochRSI(
     const minR = Math.min(...slice);
     const maxR = Math.max(...slice);
     const currentR = rsi[i] ?? 50;
-
     const stoch = maxR - minR > 0 ? ((currentR - minR) / (maxR - minR)) * 100 : 50;
     rawStoch.push(stoch);
   }
 
+  // Step 2: Smooth K = SMA(rawStoch, smoothK)
+  const smoothedK: number[] = [];
   for (let i = smoothK - 1; i < rawStoch.length; i++) {
     const kSlice = rawStoch.slice(i - smoothK + 1, i + 1);
     const kVal = kSlice.reduce((a, b) => a + b, 0) / smoothK;
-    const globalIdx = i + stochPeriod - 1;
+    smoothedK.push(kVal);
+  }
 
-    let dVal = kVal;
-    if (i >= smoothK + smoothD - 2) {
-      const dSlice = rawStoch.slice(i - smoothD + 1, i + 1);
-      dVal = dSlice.reduce((a, b) => a + b, 0) / smoothD;
-    }
-
+  // Step 3: D = SMA(smoothedK, smoothD) — แก้ bug: D ต้องเป็น SMA ของ smoothedK ไม่ใช่ rawStoch
+  for (let i = smoothD - 1; i < smoothedK.length; i++) {
+    const dSlice = smoothedK.slice(i - smoothD + 1, i + 1);
+    const dVal = dSlice.reduce((a, b) => a + b, 0) / smoothD;
+    const kVal = smoothedK[i];
+    // globalIdx: offset เพื่อให้ตรงกับ candle index จริง
+    const globalIdx = i + smoothK - 1 + stochPeriod - 1;
     if (globalIdx < len) {
       result[globalIdx] = { k: Number(kVal.toFixed(1)), d: Number(dVal.toFixed(1)) };
     }
@@ -481,6 +486,7 @@ export function calculateStochRSI(
 
   return result;
 }
+
 
 // ─── 5. On-Balance Volume (OBV - Institutional Volume Flow) ───
 export function calculateOBV(candles: Candle[]): (number | null)[] {
@@ -512,8 +518,10 @@ export function detectFairValueGaps(candles: Candle[], precalculatedATR?: (numbe
   if (candles.length < 5) return fvgs;
 
   const atrs = precalculatedATR || calculateATR(candles, 14);
+  const len = candles.length;
+  const precision = candles[len - 1].close < 10 ? 4 : 2;
 
-  for (let i = 2; i < candles.length; i++) {
+  for (let i = 2; i < len; i++) {
     const c1 = candles[i - 2];
     const c3 = candles[i];
     const currentATR = atrs[i] || Math.max(c3.high - c3.low, c3.close * 0.003);
@@ -521,25 +529,53 @@ export function detectFairValueGaps(candles: Candle[], precalculatedATR?: (numbe
 
     // Bullish FVG: Low of candle 3 is higher than High of candle 1 (imbalance void)
     if (c3.low > c1.high && (c3.low - c1.high) >= minImbalanceGap) {
+      const top = Number(c3.low.toFixed(precision));
+      const bottom = Number(c1.high.toFixed(precision));
+      const ce = Number(((top + bottom) / 2).toFixed(precision));
+
+      let mitigated = false;
+      for (let j = i + 1; j < len; j++) {
+        if (candles[j].low <= ce) {
+          mitigated = true;
+          break;
+        }
+      }
+
       fvgs.push({
         type: "BULLISH",
-        top: Number(c3.low.toFixed(2)),
-        bottom: Number(c1.high.toFixed(2)),
+        top,
+        bottom,
         candleIndex: i - 1,
+        consequentEncroachment: ce,
+        mitigated,
       });
     }
     // Bearish FVG: High of candle 3 is lower than Low of candle 1 (imbalance void)
     else if (c3.high < c1.low && (c1.low - c3.high) >= minImbalanceGap) {
+      const top = Number(c1.low.toFixed(precision));
+      const bottom = Number(c3.high.toFixed(precision));
+      const ce = Number(((top + bottom) / 2).toFixed(precision));
+
+      let mitigated = false;
+      for (let j = i + 1; j < len; j++) {
+        if (candles[j].high >= ce) {
+          mitigated = true;
+          break;
+        }
+      }
+
       fvgs.push({
         type: "BEARISH",
-        top: Number(c1.low.toFixed(2)),
-        bottom: Number(c3.high.toFixed(2)),
+        top,
+        bottom,
         candleIndex: i - 1,
+        consequentEncroachment: ce,
+        mitigated,
       });
     }
   }
 
-  return fvgs.slice(-5); // Return the top 5 most recent validated FVGs
+  return fvgs.slice(-8); // Return recent validated FVGs
 }
 
 export const calculateFairValueGaps = detectFairValueGaps;
@@ -2036,7 +2072,7 @@ export function calculateCumulativeVolumeDelta(candles: Candle[], lookback = 30)
 export function identifyOrderBlocksAndBreakers(
   candles: Candle[],
   precision = 2,
-  lookback = 35
+  lookback = 60
 ): OrderBlockValidatorInfo {
   if (candles.length < 8) {
     return {
@@ -2064,6 +2100,8 @@ export function identifyOrderBlocksAndBreakers(
     if (isBearishCandle && next1.close > c.high && next2.close > next1.high) {
       const priceMin = Number(c.low.toFixed(precision));
       const priceMax = Number(c.high.toFixed(precision));
+      const entryPrice = Number(((priceMin + priceMax) / 2).toFixed(precision));
+      const displacementRatio = Number(((next2.close - c.high) / Math.max(0.0001, c.high - c.low)).toFixed(2));
 
       // Check subsequent candles for mitigation or break
       let isMitigated = false;
@@ -2083,6 +2121,8 @@ export function identifyOrderBlocksAndBreakers(
         isMitigated,
         isBreaker,
         formedIndex: i,
+        entryPrice,
+        displacementRatio,
       });
     }
 
@@ -2090,6 +2130,8 @@ export function identifyOrderBlocksAndBreakers(
     if (isBullishCandle && next1.close < c.low && next2.close < next1.low) {
       const priceMin = Number(c.low.toFixed(precision));
       const priceMax = Number(c.high.toFixed(precision));
+      const entryPrice = Number(((priceMin + priceMax) / 2).toFixed(precision));
+      const displacementRatio = Number(((c.low - next2.close) / Math.max(0.0001, c.high - c.low)).toFixed(2));
 
       let isMitigated = false;
       let isBreaker = false;
@@ -2108,6 +2150,8 @@ export function identifyOrderBlocksAndBreakers(
         isMitigated,
         isBreaker,
         formedIndex: i,
+        entryPrice,
+        displacementRatio,
       });
     }
   }

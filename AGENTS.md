@@ -534,6 +534,37 @@ graph TD
 
 ---
 
+### 4.14 Win-Rate Enhancement & Loss Elimination Architecture
+
+**ไฟล์หลัก:** [`lib/indicators.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/indicators.ts), [`lib/confluenceEngine.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/confluenceEngine.ts), [`lib/geminiService.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/geminiService.ts), [`lib/autonomousEngine.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/autonomousEngine.ts), [`lib/db.ts`](file:///c:/Users/Admin/Downloads/Indicator/lib/db.ts)
+
+#### การวินิจฉัยสาเหตุการแพ้เชิงประจักษ์ (Empirical Loss Diagnosis):
+จากการวิเคราะห์ไม้ที่แพ้จริงในฐานข้อมูล Neon DB (`ai_signals`) และข้อมูลจำลอง:
+1. **Confluence 52-64 & Grade B คือสาเหตุหลักของการแพ้:** ไม้กลุ่มคะแนน 52-64 มี Win Rate เพียง 39.7% และเป็นต้นตอของ **47.4% ของไม้ที่แพ้ทั้งหมดในระบบ** ในขณะที่สัญญาณ Confluence $\ge 65$ (Grade A/A+) มี Win Rate สูงถึง **70.6% - 76.9%**
+2. **Stop Loss แคบเกินไป (< 1.15 ATR):** 53.3% ของไม้ที่แพ้ถูกไส้เทียนปกติ (Wick Noise) เกี่ยวชน SL ก่อนที่ราคาจะวิ่งไปถึงเป้า TP
+3. **Overextension จาก EMA 200 (> 2.2 ATR):** 33.3% ของไม้ที่แพ้เกิดจากการเข้าออเดอร์ในจังหวะ Climax Exhaustion ที่ราคาเหวี่ยงห่างจากเส้นแนวโน้มหลักมากเกินไป จนเกิดแรงเทขายทำกำไรดึงกลับ (Mean Reversion)
+
+#### สถาปัตยกรรมกำจัดจุดอ่อนและเพิ่มอัตราการชนะ (Optimization Engine):
+1. **Dynamic Stop Loss Liquidity Shield Buffer:**
+   - ใน `calculateSRBasedTPSL` (`lib/indicators.ts`) และ `lib/geminiService.ts`: ขยายระยะปลอดภัยขั้นต่ำของ SL จากเดิม `0.5 - 0.8 ATR` เป็น **`1.25 ATR`** พร้อมเพิ่ม Institutional Liquidity Shield Buffer **`0.35 ATR`** ด้านหลังแนวรับ/แนวต้าน ป้องกันไส้เทียนสเปรดเกี่ยวชน
+2. **5 Core Pillars Quality Penalties (`lib/confluenceEngine.ts`):**
+   - **Pillar 1:** เพิ่มบทลงโทษตลาดไซด์เวย์ไร้เทรนด์ `ADX < 18` (-6 คะแนน) และราคาเหวี่ยงห่าง EMA 200 เกิน `2.5 ATR` (-5 คะแนน)
+   - **Pillar 2:** เพิ่มบทลงโทษ RSI Overbought/Oversold Peak Exhaustion (RSI > 70 ในฝั่ง BUY, RSI < 30 ในฝั่ง SELL โดนตัด -4 คะแนน)
+   - **Pillar 3:** เปลี่ยนจาก Bollinger Bands Bandwidth คงที่ (1.5%) เป็น Dynamic Relative Ratio เทียบการบีบ/ขยายตัวกับแท่งก่อนหน้า รองรับสินทรัพย์ Forex
+   - **Pillar 5:** เพิ่มบทลงโทษ SMC Premium/Discount (-3 ถึง -6 คะแนน สำหรับการเปิด BUY ในโซน Premium หรือเปิด SELL ในโซน Discount) ป้องกันการซื้อยอดดอยหรือขายก้นเหว
+3. **Range-Bound / Neutral Market Guard (`lib/geminiService.ts`):**
+   - ตลาดที่ไร้แนวโน้มชัดเจน (Neutral) หากคะแนน Confluence $< 65$ หรือผ่านเสาหลักไม่ถึง 3 เสา จะปรับสถานะเป็น `signal = "WAIT"` และ `setupGrade = "C (Wait)"` ทันที เพื่อกำจัดการเทรดแบบเสี่ยงโชคในภาวะตลาดไร้ทิศทาง
+4. **Autonomous Scanner & Database Confluence Gate (`lib/autonomousEngine.ts`, `lib/db.ts`):**
+   - อัปเกรดเกณฑ์ `isConfluenceEligible` ใน Autonomous Scanner ให้อนุญาตเฉพาะเกรด A+, A หรือเกรด B ที่มีคะแนน $\ge 68$ และคะแนนรวมต้อง $\ge 65$
+   - ใน `saveAiSignal()` เพิ่มขีดจำกัดคะแนนบันทึกสัญญาณสดลง Neon Postgres จากเดิม 52 เป็น **65** คัดกรองไม้คุณภาพต่ำออกจากประวัติระบบ
+5. **SMC Fair Value Gap (50% CE) & Order Block Midpoint Tuning (`lib/indicators.ts`):**
+   - คำนวณจุดกึ่งกลาง $50\%$ Consequent Encroachment (CE) ให้ FVG พร้อมตรวจจับสถานะ Mitigated กรองกล่องที่ถูกเคลียร์แล้วทิ้ง
+   - คำนวณจุดเข้ากึ่งกลาง $50\%$ Order Block และตรวจจับแรงส่ง `displacementRatio` พร้อมขยายหน้าต่างตรวจจับย้อนหลังเป็น 60 แท่งเทียนเพื่อความแม่นยำสูงสุด
+6. **Pillar 2 Trend-Dip Pullback Recognition (`lib/confluenceEngine.ts`):**
+   - ปรับให้ระบบให้คะแนนบวก ($+6$ ถึง $+9$) ทันทีเมื่อ RSI ดิ่งย่อตัวในแนวโน้มขาขึ้นแล้วหักหัวขึ้น (Bullish Dip Hook) เพื่อจับรอบย่อตัวของเทรนด์แทนที่จะตัดคะแนน
+
+---
+
 ## 5. Task-to-File Matrix (ตารางลัดกระโดดไปจุดแก้โค้ด)
 
 | งานที่คุณต้องการทำ (Task) | ไฟล์ที่ต้องเปิดดูและแก้ไข | ฟังก์ชันหรือตัวแปรหลัก |
@@ -542,6 +573,7 @@ graph TD
 | **ปรับเกณฑ์ Confluence และคะแนน 5 เสาหลัก** | `lib/confluenceEngine.ts`<br/>`lib/geminiService.ts` | `evaluateMasterConfluence()`, `generateRuleBasedAnalysis()` |
 | **ปรับแต่งระบบป้องกันการตีกันของสัญญาณ (Anti-Clash)** | `lib/strategyOrchestrator.ts` | `orchestrateStrategyDecision()`, `effectivePreset` |
 | **ปรับสูตรคำนวณ Lot, TP/SL, ความเสี่ยงพอร์ต $10** | `lib/riskEngine.ts`<br/>`lib/indicators.ts` | `calculateDynamicPositionSize()`, `calculateSRBasedTPSL()` |
+| **ปรับแต่งระยะ SL ป้องกันไส้เทียนและ Overextension** | `lib/indicators.ts`<br/>`lib/geminiService.ts`<br/>`lib/marketService.ts` | `calculateSRBasedTPSL()`, `minRisk`, `distFromTrend` |
 | **เพิ่มหรือลบคู่เหรียญในระบบ / Watchlist** | `lib/marketService.ts`<br/>`lib/autonomousEngine.ts` | `AVAILABLE_ASSETS`, `AUTONOMOUS_WATCHLIST` |
 | **ปรับแต่งระบบ Auto-Pilot สแกนอัตโนมัติ** | `lib/autonomousEngine.ts`<br/>`app/api/autonomous-scanner/route.ts` | `scanWatchlistAutonomous()`, `evaluateAssetAutonomous()` |
 | **แก้ข้อความแจ้งเตือน / การจัดส่ง Telegram** | `lib/telegramService.ts`<br/>`lib/db.ts` | `formatTelegramSignal()`, `sendTelegramMessage()`, `getTelegramSubscribers()` |

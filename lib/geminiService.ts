@@ -872,17 +872,23 @@ export function generateRuleBasedAnalysis(
     if (classicTrio.isAligned && classicTrio.signalBias === "BEARISH") confidence = Math.min(99, confidence + 5);
     if (isOrbBearBreak) confidence = Math.min(98, confidence + 3);
   } else {
-    // ⚖️ ตลาดไซด์เวย์ไร้เทรนด์ชัดเจน (Neutral / Range-Bound): ใช้ 5 เสาหลัก และตำแหน่ง Pivot ตัดสิน
-    if (bullPillars > bearPillars || (bullPillars === bearPillars && currentPrice >= pivotPoints.pivot)) {
-      const isStrong = bullPillars >= 3 || masterConfluence.totalScore >= 68;
-      signal = isStrong ? "STRONG_BUY" : "BUY";
-      setupGrade = "B";
-      confidence = Math.max(52, confidence);
+    // ⚖️ ตลาดไซด์เวย์ไร้เทรนด์ชัดเจน (Neutral / Range-Bound): บังคับใช้เกณฑ์ Institutional Confluence ขั้นสูง
+    const isStrongBull = (bullPillars >= 3 || masterConfluence.totalScore >= 68) && masterConfluence.totalScore >= 65;
+    const isStrongBear = (bearPillars >= 3 || masterConfluence.totalScore >= 68) && masterConfluence.totalScore >= 65;
+
+    if (isStrongBull && (bullPillars > bearPillars || (bullPillars === bearPillars && currentPrice >= pivotPoints.pivot))) {
+      signal = masterConfluence.totalScore >= 75 ? "STRONG_BUY" : "BUY";
+      setupGrade = masterConfluence.totalScore >= 75 ? "A" : "B";
+      confidence = Math.max(60, confidence);
+    } else if (isStrongBear && (bearPillars > bullPillars || (bullPillars === bearPillars && currentPrice < pivotPoints.pivot))) {
+      signal = masterConfluence.totalScore >= 75 ? "STRONG_SELL" : "SELL";
+      setupGrade = masterConfluence.totalScore >= 75 ? "A" : "B";
+      confidence = Math.max(60, confidence);
     } else {
-      const isStrong = bearPillars >= 3 || masterConfluence.totalScore >= 68;
-      signal = isStrong ? "STRONG_SELL" : "SELL";
-      setupGrade = "B";
-      confidence = Math.max(52, confidence);
+      // ตลาดไซด์เวย์ไร้เทรนด์และขาด Confluence สนับสนุนชัดเจน -> พักรอโอกาสสถาบันที่ได้เปรียบ (WAIT / Grade C)
+      signal = "WAIT";
+      setupGrade = "C (Wait)";
+      confidence = Math.min(confidence, 45);
     }
   }
 
@@ -1134,7 +1140,7 @@ export function generateRuleBasedAnalysis(
       takeProfit2 = harmonics.bestPattern.targetTP2;
     }
     // ─── HARD INVARIANT GUARANTEE FOR BUY: stopLoss < pendingPrice < takeProfit1 < takeProfit2 ───
-    const minRisk = Math.max(currentATR * 0.8, pendingPrice * 0.003);
+    const minRisk = Math.max(currentATR * 1.25, pendingPrice * 0.0035);
     if (stopLoss >= pendingPrice) {
       stopLoss = Number((pendingPrice - minRisk).toFixed(precision));
     }
@@ -1146,6 +1152,32 @@ export function generateRuleBasedAnalysis(
       takeProfit2 = Number((takeProfit1 + Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision));
     }
     riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, actualRisk)).toFixed(1)}`;
+
+    // ─── [Dual-Tranche Entry] Micro-Portfolio ($10) SL-Minimizer ───────────────────────────────
+    // แบ่งไม้ 2 ระดับตาม Fibonacci Retracement เพื่อให้ได้จุดเข้าซื้อที่ดีที่สุดและ SL สั้นที่สุด
+    // Tranche 1: เข้า 50% ที่ Fib 61.8% (OTE Sweet Spot) — ยืนยัน momentum ก่อน
+    // Tranche 2: เข้าเพิ่ม 50% ที่ Fib 78.6% (Deep Demand) — ถ้าราคาย่อตัวลึกกว่า
+    // ทั้งสองไม้ใช้ SL เดียวกันที่ต่ำกว่า swing low
+    if (oteZone.oteMin && oteZone.oteMax && oteZone.oteMax > oteZone.oteMin) {
+      const fibRange = oteZone.oteMax - oteZone.oteMin;
+      const tranche1Entry = Number((oteZone.oteMax - fibRange * 0.618).toFixed(precision));  // Fib 61.8%
+      const tranche2Entry = Number((oteZone.oteMax - fibRange * 0.786).toFixed(precision));  // Fib 78.6%
+      // ใช้ SL ร่วม: ต่ำกว่า oteMin + ATR buffer
+      const sharedSL = Number((Math.min(oteZone.oteMin, stopLoss) - currentATR * 0.15).toFixed(precision));
+      // SL distance จาก Tranche2 (worst case entry)
+      const slDist2 = tranche2Entry - sharedSL;
+      // TP ต้องได้อย่างน้อย RR 1.5 จาก Tranche2
+      const tp_tranche = Number((tranche2Entry + slDist2 * 1.5).toFixed(precision));
+      if (tranche1Entry > sharedSL && tranche2Entry > sharedSL && tranche1Entry > tranche2Entry) {
+        entryZone = { min: tranche2Entry, max: tranche1Entry };
+        // อัปเดต pendingPrice เป็น Tranche1 ถ้ายังไม่ได้เข้า zone
+        if (pendingPrice > tranche1Entry || pendingPrice < tranche2Entry) {
+          pendingPrice = tranche1Entry;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
     
@@ -1298,7 +1330,7 @@ export function generateRuleBasedAnalysis(
       takeProfit2 = harmonics.bestPattern.targetTP2;
     }
     // ─── HARD INVARIANT GUARANTEE FOR SELL: stopLoss > pendingPrice > takeProfit1 > takeProfit2 ───
-    const minRisk = Math.max(currentATR * 0.8, pendingPrice * 0.003);
+    const minRisk = Math.max(currentATR * 1.25, pendingPrice * 0.0035);
     if (stopLoss <= pendingPrice) {
       stopLoss = Number((pendingPrice + minRisk).toFixed(precision));
     }
@@ -1696,7 +1728,7 @@ export function generateRuleBasedAnalysis(
     }
 
     // Post-OrderType Final Invariant Calibration for BUY: stopLoss < pendingPrice < takeProfit1 < takeProfit2
-    const minRisk = Math.max(currentATR * 0.8, pendingPrice * 0.003);
+    const minRisk = Math.max(currentATR * 1.25, pendingPrice * 0.0035);
     if (stopLoss >= pendingPrice) {
       stopLoss = Number((pendingPrice - minRisk).toFixed(precision));
     }
@@ -1754,7 +1786,7 @@ export function generateRuleBasedAnalysis(
     }
 
     // Post-OrderType Final Invariant Calibration for SELL: stopLoss > pendingPrice > takeProfit1 > takeProfit2
-    const minRisk = Math.max(currentATR * 0.8, pendingPrice * 0.003);
+    const minRisk = Math.max(currentATR * 1.25, pendingPrice * 0.0035);
     if (stopLoss <= pendingPrice) {
       stopLoss = Number((pendingPrice + minRisk).toFixed(precision));
     }
@@ -1766,6 +1798,25 @@ export function generateRuleBasedAnalysis(
       takeProfit2 = Number((takeProfit1 - Math.max(finalRisk * 1.2, currentATR * 1.0)).toFixed(precision));
     }
     riskRewardRatio = `1:${((pendingPrice - takeProfit2) / Math.max(0.0001, finalRisk)).toFixed(1)}`;
+
+    // ─── [Dual-Tranche Entry] Micro-Portfolio ($10) SL-Minimizer (SELL side) ──────────────────
+    // Tranche 1: เข้า SELL 50% ที่ Fib 61.8% จาก OTE Supply Zone — ยืนยัน momentum ลงก่อน
+    // Tranche 2: เข้าเพิ่ม 50% ที่ Fib 78.6% ถ้าราคาเด้งสูงขึ้น (Deep Supply)
+    // SL ร่วม: สูงกว่า oteMax + ATR buffer เพื่อป้องกัน Stop Hunt
+    if (oteZone.oteMin && oteZone.oteMax && oteZone.oteMax > oteZone.oteMin) {
+      const fibRange = oteZone.oteMax - oteZone.oteMin;
+      const tranche1Entry = Number((oteZone.oteMin + fibRange * 0.618).toFixed(precision));  // Fib 61.8% from bottom
+      const tranche2Entry = Number((oteZone.oteMin + fibRange * 0.786).toFixed(precision));  // Fib 78.6% from bottom
+      const sharedSL = Number((Math.max(oteZone.oteMax, stopLoss) + currentATR * 0.15).toFixed(precision));
+      const slDist2 = sharedSL - tranche2Entry;
+      if (tranche1Entry < sharedSL && tranche2Entry < sharedSL && tranche2Entry > tranche1Entry) {
+        entryZone = { min: tranche1Entry, max: tranche2Entry };
+        if (pendingPrice < tranche1Entry || pendingPrice > tranche2Entry) {
+          pendingPrice = tranche1Entry;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
   }
 
   // [แผน 47] Multi-Scenario Trade Planning
