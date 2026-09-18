@@ -49,13 +49,14 @@ export default function DashboardPage() {
 
   const [isLoadingMarket, setIsLoadingMarket] = useState<boolean>(true);
   const [isLoadingNews, setIsLoadingNews] = useState<boolean>(true);
-  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(true);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [isSendingTelegram, setIsSendingTelegram] = useState<boolean>(false);
   const [telegramStatus, setTelegramStatus] = useState<{ success: boolean; message: string } | null>(null);
 
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
   const marketDataInFlightRef = useRef<boolean>(false);
+  const analysisInFlightRef = useRef<boolean>(false);
 
   // ─── Data Freshness & Last Updated Timestamps (ข้อ 7) ───
   const [marketLastUpdated, setMarketLastUpdated] = useState<number | null>(null);
@@ -124,6 +125,8 @@ export default function DashboardPage() {
 
   // Run AI Confluence Analysis (Automated Backtest & 3-Tier Hierarchy included)
   const runAnalysis = useCallback(async () => {
+    if (analysisInFlightRef.current) return;
+    analysisInFlightRef.current = true;
     setIsAnalyzing(true);
     setTelegramStatus(null);
     try {
@@ -150,6 +153,7 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("AI Analysis failed:", err);
     } finally {
+      analysisInFlightRef.current = false;
       setIsAnalyzing(false);
     }
   }, [selectedAsset, selectedTimeframe]);
@@ -200,6 +204,7 @@ export default function DashboardPage() {
   useEffect(() => {
     loadMarketData(selectedAsset, selectedTimeframe);
     loadNews(selectedAsset);
+    runAnalysis();
 
     let isMounted = true;
     let tickerInterval: NodeJS.Timeout | null = null;
@@ -445,7 +450,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface-300">
+    <div className="min-h-screen flex flex-col bg-[#07090E] text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200">
       {/* Top Navigation */}
       <Header
         onRefreshAll={handleRefreshAll}
@@ -455,25 +460,25 @@ export default function DashboardPage() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 py-3 sm:py-4 lg:py-6 space-y-3 sm:space-y-4 pb-24 md:pb-8">
-        {/* AI Autonomous Auto-Pilot Live HUD Banner (Compact PWA Bar) */}
-        <div className="w-full bg-surface-100/90 border border-indigo-500/25 rounded-2xl p-3 sm:p-3.5 shadow-lg shadow-black/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
+      <main className="flex-1 w-full max-w-full min-w-0 overflow-x-hidden px-3 sm:px-6 lg:px-8 py-3 sm:py-4 lg:py-6 space-y-3 sm:space-y-4 pb-24 md:pb-8">
+        {/* AI Autonomous Auto-Pilot Live HUD Banner (Compact Institutional Telemetry Bar) */}
+        <div className="w-full bg-[#0B0F17]/90 border border-slate-800/80 hover:border-cyan-500/30 transition-all rounded-2xl p-3 sm:p-3.5 shadow-xl shadow-black/30 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div
               className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
                 isAutoPilot
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-md shadow-emerald-500/10"
-                  : "bg-slate-800 border-slate-700 text-slate-400"
+                  ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400 shadow-md shadow-emerald-500/20"
+                  : "bg-slate-800/80 border-slate-700 text-slate-400"
               }`}
             >
               <Bot className={`w-5 h-5 ${isAutoPilot ? "animate-pulse" : ""}`} />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1.5">
+                <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1.5 tracking-tight">
                   AI Autonomous Decision Pilot
                   {isAutoPilot && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 shadow-sm shadow-emerald-500/10">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                       LIVE SYNC
                     </span>
@@ -492,8 +497,8 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-2 sm:gap-2.5 self-end md:self-center shrink-0">
             {/* Telegram Signals Live Badge */}
-            <div className="px-2.5 py-1 rounded-xl bg-surface-50 border border-slate-800 flex items-center gap-1.5 text-xs font-mono">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <div className="px-2.5 py-1 rounded-xl bg-surface-50/80 border border-slate-800 flex items-center gap-1.5 text-xs font-mono shadow-sm">
+              <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400/20" />
               <span className="text-slate-400 hidden sm:inline">Telegram:</span>
               <span className="font-bold text-white text-[11px] sm:text-xs">Broadcast สด</span>
             </div>
@@ -501,10 +506,10 @@ export default function DashboardPage() {
             {/* Auto-Pilot Toggle Button */}
             <button
               onClick={handleToggleAutoPilot}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-sm active:scale-95 ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-sm active:scale-95 cursor-pointer ${
                 isAutoPilot
-                  ? "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/30 shadow-emerald-600/20"
-                  : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
+                  ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border-emerald-400/40 shadow-emerald-500/20"
+                  : "bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700"
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${isAutoPilot ? "bg-white animate-pulse" : "bg-slate-500"}`} />
@@ -514,15 +519,15 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ─── DESKTOP VIEW SELECTOR (แถบเมนูสลับหน้าจอสำหรับ Desktop/Tablet ส่วนมือถือจะใช้แถบด้านล่างอย่างเดียวเพื่อไม่ให้ซ้อนกัน) ─── */}
+        {/* ─── DESKTOP VIEW SELECTOR (แถบเมนูสลับหน้าจอสำหรับ Desktop/Tablet) ─── */}
         <div className="hidden md:flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5">
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-surface-100/95 border border-slate-800 shrink-0">
+          <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#0E131F]/90 border border-slate-800/80 backdrop-blur-md shrink-0 shadow-inner">
             <button
               onClick={() => setActiveTab("SIGNALS")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 activeTab === "SIGNALS"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
               }`}
             >
               <Target className="w-3.5 h-3.5" />
@@ -531,10 +536,10 @@ export default function DashboardPage() {
 
             <button
               onClick={() => setActiveTab("CHART")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 activeTab === "CHART"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5" />
@@ -543,10 +548,10 @@ export default function DashboardPage() {
 
             <button
               onClick={() => setActiveTab("RADAR")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 activeTab === "RADAR"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
               }`}
             >
               <Radio className="w-3.5 h-3.5" />
@@ -555,10 +560,10 @@ export default function DashboardPage() {
 
             <button
               onClick={() => setActiveTab("NEWS")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 activeTab === "NEWS"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
               }`}
             >
               <Newspaper className="w-3.5 h-3.5" />
@@ -567,10 +572,10 @@ export default function DashboardPage() {
 
             <button
               onClick={() => setActiveTab("JOURNAL")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 activeTab === "JOURNAL"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
@@ -579,10 +584,10 @@ export default function DashboardPage() {
 
             <button
               onClick={() => setActiveTab("ALL")}
-              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                 activeTab === "ALL"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
               }`}
             >
               <Layers className="w-3.5 h-3.5" />

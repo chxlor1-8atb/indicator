@@ -62,6 +62,11 @@ const CALENDAR_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
  * Fetches real-time Forex Factory calendar events from CDN and maps to GMT+7 Bangkok time.
  */
 export async function syncLiveEconomicCalendar(): Promise<EconomicCalendarEvent[]> {
+  // In the browser, do not fetch third-party JSON directly to avoid CORS violations.
+  if (typeof window !== "undefined") {
+    return _liveEventsCache;
+  }
+
   const now = Date.now();
   if (_liveEventsCache.length > 0 && now - _lastCalendarSyncTime < CALENDAR_CACHE_TTL_MS) {
     return _liveEventsCache;
@@ -126,8 +131,8 @@ export async function syncLiveEconomicCalendar(): Promise<EconomicCalendarEvent[
 
 export function getDailyEconomicCalendar(symbol: string, customDate?: Date): EconomicCalendarEvent[] {
   const now = customDate || new Date();
-  // Trigger background refresh if stale or empty (non-blocking)
-  if (_liveEventsCache.length === 0 || Date.now() - _lastCalendarSyncTime > CALENDAR_CACHE_TTL_MS) {
+  // Trigger background refresh on server if stale or empty (non-blocking)
+  if (typeof window === "undefined" && (_liveEventsCache.length === 0 || Date.now() - _lastCalendarSyncTime > CALENDAR_CACHE_TTL_MS)) {
     syncLiveEconomicCalendar().catch(() => {});
   }
   

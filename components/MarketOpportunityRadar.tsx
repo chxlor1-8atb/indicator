@@ -152,30 +152,30 @@ export default function MarketOpportunityRadar({
   };
 
   return (
-    <div className="w-full bg-surface-100 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3 transition-all">
+    <div className="w-full min-w-0 max-w-full overflow-hidden bg-[#0B0F17]/95 border border-slate-800/80 rounded-2xl p-3.5 sm:p-4 shadow-xl shadow-black/25 backdrop-blur-md space-y-3 transition-all">
       {/* Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center shadow-sm">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center shadow-sm shrink-0">
             <Compass className="w-4 h-4" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+              <h3 className="text-sm font-bold text-white flex items-center gap-1.5 tracking-tight">
                 <span>Live Market Opportunity Radar</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">
                   สแกนทั้งตลาดสด
                 </span>
               </h3>
 
               {actionableCount > 0 && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/35 animate-pulse shadow-sm shadow-amber-500/10">
                   <Flame className="w-3 h-3 text-amber-400" />
                   <span>{actionableCount} คู่เงินพร้อมเทรด 🔥</span>
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-slate-400 truncate max-w-xl">
               สแกนความสอดคล้อง (Confluence), โซนราคาเข้าเทรดสถาบัน (OTE) และตรวจจับข่าวกล่องแดง Real-time (ซิงค์ {lastSyncTime})
             </p>
           </div>
@@ -185,10 +185,10 @@ export default function MarketOpportunityRadar({
         <div className="flex items-center gap-2">
           {/* Quick Metrics Badges */}
           <div className="hidden md:flex items-center gap-1.5 text-[10.5px] font-mono">
-            <span className="px-2 py-0.5 rounded-lg bg-surface-50 border border-slate-800 text-emerald-400 font-semibold">
+            <span className="px-2 py-0.5 rounded-lg bg-[#0E131F] border border-slate-800 text-emerald-400 font-semibold shadow-sm">
               🟢 Buy: {bullishCount}
             </span>
-            <span className="px-2 py-0.5 rounded-lg bg-surface-50 border border-slate-800 text-rose-400 font-semibold">
+            <span className="px-2 py-0.5 rounded-lg bg-[#0E131F] border border-slate-800 text-rose-400 font-semibold shadow-sm">
               🔴 Sell: {bearishCount}
             </span>
             {frozenCount > 0 && (
@@ -201,7 +201,7 @@ export default function MarketOpportunityRadar({
           {/* Toggle Expand Button */}
           <button
             onClick={() => setIsExpanded((prev) => !prev)}
-            className="px-2.5 py-1.5 rounded-xl bg-surface-50 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-all text-xs flex items-center gap-1 cursor-pointer"
+            className="px-2.5 py-1.5 rounded-xl bg-[#0E131F] hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition-all text-xs flex items-center gap-1 cursor-pointer shadow-sm"
             title={isExpanded ? "ย่อตาราง" : "ขยายตาราง"}
           >
             <span className="text-[11px] font-medium">{isExpanded ? "ย่อหน้าต่าง" : "เปิดดูเรดาร์ทั้งตลาด"}</span>
@@ -212,11 +212,11 @@ export default function MarketOpportunityRadar({
 
       {/* Expandable Body */}
       {isExpanded && (
-        <div className="space-y-3 pt-1 border-t border-slate-800/80 animate-fadeIn">
+        <div className="space-y-3 pt-1 border-t border-slate-800/80 animate-fadeIn min-w-0 max-w-full">
           {/* Filter Bar & Search */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0 w-full">
             {/* Category Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none min-w-0 w-full">
               {[
                 { id: "ALL", label: `ทั้งหมด (${summaries.length})` },
                 { id: "ACTIONABLE", label: `🔥 พร้อมเทรด (${actionableCount})` },
@@ -229,8 +229,8 @@ export default function MarketOpportunityRadar({
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`px-2.5 py-1 rounded-lg text-[10.5px] font-semibold whitespace-nowrap transition-all border cursor-pointer ${
                     activeTab === tab.id
-                      ? "bg-indigo-600 text-white border-indigo-500 shadow-sm"
-                      : "bg-surface-50 text-slate-400 border-slate-800 hover:text-white"
+                      ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white border-cyan-400/30 shadow-md shadow-cyan-500/20"
+                      : "bg-[#0E131F] text-slate-400 border-slate-800 hover:text-white hover:border-slate-700"
                   }`}
                 >
                   {tab.label}
@@ -246,7 +246,7 @@ export default function MarketOpportunityRadar({
                 placeholder="ค้นหาคู่เงิน (เช่น XAU, EUR, BTC)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-7 pr-3 py-1 bg-surface-50 border border-slate-800 rounded-lg text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 w-full sm:w-56"
+                className="pl-7 pr-3 py-1 bg-[#0E131F] border border-slate-800 rounded-lg text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 w-full sm:w-56 transition-all"
               />
             </div>
           </div>
@@ -259,20 +259,22 @@ export default function MarketOpportunityRadar({
               <p className="text-[11px] text-slate-500">ลองเปลี่ยนตัวกรองเป็น &quot;ทั้งหมด&quot; หรือล้างคำค้นหา</p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-800 max-h-[380px] overflow-y-auto scrollbar-thin">
+            <>
+              {/* Desktop View: Full Data Table (hidden on mobile) */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-800 max-h-[380px] overflow-y-auto scrollbar-thin">
               <table className="w-full text-left text-[11px] font-mono whitespace-nowrap">
-                <thead className="sticky top-0 bg-surface-200/95 backdrop-blur-sm text-slate-400 border-b border-slate-800 z-10">
+                <thead className="sticky top-0 bg-[#0E131F]/95 backdrop-blur-sm text-slate-400 border-b border-slate-800 z-10">
                   <tr>
-                    <th className="px-3 py-2 font-semibold">คู่เงิน (Asset)</th>
-                    <th className="px-3 py-2 font-semibold">ราคาล่าสุด & 24h</th>
-                    <th className="px-3 py-2 font-semibold">Confluence Score</th>
-                    <th className="px-3 py-2 font-semibold">สัญญาณ AI</th>
-                    <th className="px-3 py-2 font-semibold">แผนการออกออเดอร์</th>
-                    <th className="px-3 py-2 font-semibold">สภาวะตลาด & ข่าว</th>
-                    <th className="px-3 py-2 text-right font-semibold">Action</th>
+                    <th className="px-3 py-2.5 font-semibold">คู่เงิน (Asset)</th>
+                    <th className="px-3 py-2.5 font-semibold">ราคาล่าสุด & 24h</th>
+                    <th className="px-3 py-2.5 font-semibold">Confluence Score</th>
+                    <th className="px-3 py-2.5 font-semibold">สัญญาณ AI</th>
+                    <th className="px-3 py-2.5 font-semibold">แผนการออกออเดอร์</th>
+                    <th className="px-3 py-2.5 font-semibold">สภาวะตลาด & ข่าว</th>
+                    <th className="px-3 py-2.5 text-right font-semibold">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 bg-surface-50/50">
+                <tbody className="divide-y divide-slate-800/60 bg-[#0B0F17]/40">
                   {filteredSummaries.map((item) => {
                     const isSelected = selectedAsset === item.symbol;
                     const isActionable = item.orderType !== "WAIT_NO_ORDER" && !item.isNewsFrozen;
@@ -283,8 +285,8 @@ export default function MarketOpportunityRadar({
                         onClick={() => onSelectAsset(item.symbol)}
                         className={`transition-colors cursor-pointer group ${
                           isSelected
-                            ? "bg-indigo-950/40 border-l-2 border-indigo-500"
-                            : "hover:bg-slate-800/50"
+                            ? "bg-indigo-950/40 border-l-2 border-cyan-400"
+                            : "hover:bg-slate-800/40"
                         }`}
                       >
                         {/* 1. Asset & Name */}
@@ -326,17 +328,17 @@ export default function MarketOpportunityRadar({
                             <span className="font-bold text-slate-200 text-[10.5px]">
                               {item.confluenceScore}%
                             </span>
-                            <span className="text-[9px] text-slate-400">
+                            <span className="text-[9px] text-slate-400 font-sans">
                               {item.confluenceScore >= 75 ? "Sniper" : item.confluenceScore >= 60 ? "Moderate" : "Low"}
                             </span>
                           </div>
-                          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div className="w-full h-1.5 bg-slate-800/80 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all ${
                                 item.confluenceScore >= 75
-                                  ? "bg-gradient-to-r from-emerald-500 to-cyan-400"
+                                  ? "bg-gradient-to-r from-emerald-500 to-cyan-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
                                   : item.confluenceScore >= 60
-                                  ? "bg-indigo-500"
+                                  ? "bg-gradient-to-r from-indigo-500 to-cyan-500"
                                   : "bg-slate-600"
                               }`}
                               style={{ width: `${item.confluenceScore}%` }}
@@ -394,10 +396,10 @@ export default function MarketOpportunityRadar({
                             }}
                             className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all inline-flex items-center gap-1 cursor-pointer ${
                               isSelected
-                                ? "bg-indigo-600 text-white shadow-sm"
+                                ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
                                 : isActionable
-                                ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm active:scale-95"
-                                : "bg-surface-100 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+                                ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-500/20 active:scale-95"
+                                : "bg-[#0E131F] hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
                             }`}
                           >
                             <span>{isSelected ? "กำลังดู" : "วิเคราะห์"}</span>
@@ -410,6 +412,77 @@ export default function MarketOpportunityRadar({
                 </tbody>
               </table>
             </div>
+
+              {/* Mobile View: Touch-Friendly Responsive Cards (hidden on desktop) */}
+              <div className="md:hidden space-y-2 max-h-[420px] overflow-y-auto pr-0.5 min-w-0 w-full">
+                {filteredSummaries.map((item) => {
+                  const isSelected = selectedAsset === item.symbol;
+                  const isActionable = item.orderType !== "WAIT_NO_ORDER" && !item.isNewsFrozen;
+
+                  return (
+                    <div
+                      key={`mob-${item.symbol}`}
+                      onClick={() => onSelectAsset(item.symbol)}
+                      className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-indigo-950/40 border-indigo-500 shadow-sm"
+                          : "bg-surface-50/70 border-slate-800 hover:border-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-white font-mono text-xs">{item.symbol}</span>
+                          {getGradeBadge(item.setupGrade)}
+                          {item.symbol.includes("XAU") && (
+                            <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[9px] font-bold">
+                              GOLD
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-slate-100 font-mono text-xs">
+                            ${formatPrice(item.price, item.symbol)}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold ml-1.5 font-mono ${
+                              item.change24h >= 0 ? "text-emerald-400" : "text-rose-400"
+                            }`}
+                          >
+                            {item.change24h >= 0 ? "+" : ""}
+                            {item.change24h.toFixed(2)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-800/80">
+                        <div className="flex items-center gap-2">
+                          {getSignalBadge(item.signal)}
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            Score: <strong className="text-slate-200">{item.confluenceScore}%</strong>
+                          </span>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectAsset(item.symbol);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all inline-flex items-center gap-1 ${
+                            isSelected
+                              ? "bg-indigo-600 text-white"
+                              : isActionable
+                              ? "bg-emerald-600 text-white"
+                              : "bg-surface-100 text-slate-300 border border-slate-700"
+                          }`}
+                        >
+                          <span>{isSelected ? "กำลังดู" : "วิเคราะห์"}</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}

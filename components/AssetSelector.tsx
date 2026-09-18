@@ -96,8 +96,8 @@ export default function AssetSelector({
   };
 
   return (
-    <div className="bg-surface-100 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm relative z-30 w-full">
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3.5 sm:gap-4">
+    <div className="bg-surface-100 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm relative z-30 w-full min-w-0 max-w-full">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3.5 sm:gap-4 min-w-0 w-full">
         {/* Left: Category tabs & Searchable Asset Selector */}
         <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
           {/* Categories */}

@@ -384,7 +384,7 @@ export default function SignalJournalCard() {
     return (
       <div className="space-y-3">
         {/* Chart Card */}
-        <div className="p-3 sm:p-4 rounded-xl bg-surface-50 border border-slate-800 space-y-2 relative">
+        <div className="p-3 sm:p-4 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 shadow-inner space-y-2 relative">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -571,20 +571,20 @@ export default function SignalJournalCard() {
   };
 
   return (
-    <div className="bg-surface-100 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3.5">
+    <div className="bg-[#0B0F17]/95 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xl shadow-black/25 backdrop-blur-md space-y-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <div className="p-1.5 rounded-xl bg-gradient-to-tr from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/30 shadow-sm">
             <Award className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2 flex-wrap tracking-tight">
               <span>AI Trade Journal & Real Win-Rate Tracker</span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
                 Neon Postgres
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm shadow-emerald-500/10">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                 <span>Live Realtime Sync</span>
               </span>
@@ -597,7 +597,7 @@ export default function SignalJournalCard() {
 
         <div className="flex items-center gap-2">
           {lastSyncedTime && (
-            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-50 border border-slate-800 text-[10.5px] font-mono text-slate-300">
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0E131F] border border-slate-800 text-[10.5px] font-mono text-slate-300">
               <Clock className="w-3 h-3 text-slate-400" />
               <span>ซิงค์ล่าสุด: {lastSyncedTime}</span>
             </span>
@@ -606,10 +606,10 @@ export default function SignalJournalCard() {
           <button
             onClick={() => fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined)}
             disabled={isLoading}
-            className="p-1.5 rounded-lg bg-surface-50 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all text-xs flex items-center gap-1"
+            className="p-1.5 rounded-xl bg-[#0E131F] hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition-all text-xs flex items-center gap-1 cursor-pointer shadow-sm"
             title="รีเฟรชข้อมูลล่าสุด"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-brand-blue" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-cyan-400" : ""}`} />
             <span className="hidden xs:inline text-[11px]">อัปเดต</span>
           </button>
         </div>
@@ -618,7 +618,7 @@ export default function SignalJournalCard() {
       {/* 4 Performance KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
         {/* 1. Win Rate */}
-        <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+        <div className="p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
           <span className="text-[10px] text-slate-400 block font-medium">Win Rate สะสม</span>
           <span className="text-base sm:text-lg font-mono font-black text-emerald-400 block">
             {stats.resolvedCount > 0 ? `${stats.winRatePct}%` : "0.0%"}
@@ -629,7 +629,7 @@ export default function SignalJournalCard() {
         </div>
 
         {/* 2. Total PnL Pips */}
-        <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+        <div className="p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
           <span className="text-[10px] text-slate-400 block font-medium">กำไรสุทธิสะสม</span>
           <span className={`text-base sm:text-lg font-mono font-black block ${stats.netPips >= 0 ? "text-emerald-300" : "text-rose-400"}`}>
             {stats.netPips >= 0 ? `+${stats.netPips}` : stats.netPips} <span className="text-xs font-sans text-slate-400 font-normal">pips</span>
@@ -640,7 +640,7 @@ export default function SignalJournalCard() {
         </div>
 
         {/* 3. Win / Loss Count */}
-        <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+        <div className="p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
           <span className="text-[10px] text-slate-400 block font-medium">สถิติ ชนะ / แพ้</span>
           <span className="text-base sm:text-lg font-mono font-black text-slate-100 block">
             <span className="text-emerald-400">{stats.winCount}</span>
@@ -653,7 +653,7 @@ export default function SignalJournalCard() {
         </div>
 
         {/* 4. Active Signals */}
-        <div className="p-2.5 rounded-xl bg-surface-50 border border-slate-800 space-y-0.5">
+        <div className="p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
           <span className="text-[10px] text-slate-400 block font-medium">ออเดอร์เปิดอยู่</span>
           <span className="text-base sm:text-lg font-mono font-black text-amber-300 block">
             {stats.activeCount}

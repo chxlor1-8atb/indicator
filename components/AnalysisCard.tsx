@@ -355,16 +355,16 @@ export default function AnalysisCard({
   const iq = analysis.institutionalQuant;
 
   return (
-    <div className="bg-surface-100 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-5">
+    <div className="bg-[#0B0F17]/95 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xl shadow-black/25 backdrop-blur-md space-y-4 sm:space-y-5">
       {/* 1. Header Signal & Actions Banner */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-xl bg-surface-50 border border-slate-800">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 backdrop-blur-sm shadow-inner">
         <div className="flex flex-wrap items-center gap-3">
-          <div className={`px-4 py-2 rounded-xl border text-sm font-black tracking-wide ${signalConfig.bg} ${signalConfig.glow}`}>
+          <div className={`px-4 py-2 rounded-xl border text-sm font-black tracking-wide ${signalConfig.bg} ${signalConfig.glow} shadow-sm`}>
             {signalConfig.label}
           </div>
 
           {/* Setup Grade */}
-          <div className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-bold ${getGradeBadge(analysis.setupGrade)}`}>
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold ${getGradeBadge(analysis.setupGrade)} shadow-sm`}>
             <Award className="w-3.5 h-3.5" />
             <span>Grade: {analysis.setupGrade || "A"} Setup</span>
           </div>
@@ -372,10 +372,10 @@ export default function AnalysisCard({
           {/* Analysis Timestamp */}
           {analysis.timestamp && (
             <div
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-100 border border-slate-700/80 text-xs font-mono text-slate-300"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B0F17] border border-slate-700/80 text-xs font-mono text-slate-300"
               title="เวลาที่ระบบรันการสังเคราะห์ AI ล่าสุด"
             >
-              <Clock className="w-3.5 h-3.5 text-indigo-400" />
+              <Clock className="w-3.5 h-3.5 text-cyan-400" />
               <span>
                 วิเคราะห์เมื่อ: {new Date(analysis.timestamp).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
@@ -388,15 +388,15 @@ export default function AnalysisCard({
               <span className="text-xs font-semibold text-slate-300">Master Confluence Score</span>
               <span className="text-xs font-mono font-bold text-white">{mc?.totalScore || analysis.confidence}%</span>
             </div>
-            <div className="w-36 h-2 bg-slate-800 rounded-full overflow-hidden mt-1">
+            <div className="w-36 h-2 bg-slate-800/80 rounded-full overflow-hidden mt-1 shadow-inner">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
                   (mc?.totalScore || analysis.confidence) >= 85
-                    ? "bg-emerald-400"
+                    ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
                     : (mc?.totalScore || analysis.confidence) >= 70
-                    ? "bg-teal-400"
+                    ? "bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.4)]"
                     : (mc?.totalScore || analysis.confidence) >= 55
-                    ? "bg-amber-400"
+                    ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]"
                     : "bg-rose-400"
                 }`}
                 style={{ width: `${mc?.totalScore || analysis.confidence}%` }}
@@ -409,7 +409,7 @@ export default function AnalysisCard({
         <div className="flex items-center gap-2">
           <button
             onClick={handleCopyFullPlan}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface-100 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0B0F17] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 transition-all active:scale-95 cursor-pointer shadow-sm"
             title="Copy trade setup to clipboard"
           >
             {copiedKey === "full_plan" ? (
@@ -428,7 +428,7 @@ export default function AnalysisCard({
           <button
             onClick={onSendTelegram}
             disabled={isSendingTelegram}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-xs font-bold text-white shadow-md shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-xs font-bold text-white shadow-md shadow-cyan-500/20 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
           >
             <Send className={`w-3.5 h-3.5 ${isSendingTelegram ? "animate-spin" : ""}`} />
             <span>{isSendingTelegram ? "Sending..." : "Send to Telegram Bot"}</span>

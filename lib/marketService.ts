@@ -818,6 +818,24 @@ export function simulateInstitutionalBacktest(
     const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
     const precision = isGold ? 2 : isCrypto ? 2 : sym.includes("JPY") ? 3 : 5;
 
+    // ─── Layer 3: HTF 4H Bias Gate (compute once before loop) ──────────────
+    const candles4H = resampleCandlesTo4H(candles);
+    let htfBias: "BULL" | "BEAR" | "NEUTRAL" = "NEUTRAL";
+    if (candles4H.length >= 55) {
+      const ema20_4H = calculateEMA(candles4H, 20);
+      const ema50_4H = calculateEMA(candles4H, 50);
+      const lastClose4H = candles4H[candles4H.length - 1].close;
+      const lastEma20_4H = ema20_4H[ema20_4H.length - 1] ?? lastClose4H;
+      const lastEma50_4H = ema50_4H[ema50_4H.length - 1] ?? lastClose4H;
+      if (lastClose4H > lastEma20_4H && lastEma20_4H > lastEma50_4H) htfBias = "BULL";
+      else if (lastClose4H < lastEma20_4H && lastEma20_4H < lastEma50_4H) htfBias = "BEAR";
+    }
+
+    // ─── Layer 5: Regime detection for Adaptive SL/TP multipliers ──────────
+    const lastADXVal = adx[adx.length - 1] ?? 25;
+    const isExplosive = lastADXVal >= 28;
+    const isSqueeze   = lastADXVal < 20;
+
     const trades: BacktestTrade[] = [];
     let active: {
       type: "BUY" | "SELL";
@@ -1011,6 +1029,10 @@ export function simulateInstitutionalBacktest(
         const isBullTrend = eFast > eSlow && c.close > eTrend && eSlow >= eSlow_prev3;
         const isBearTrend = eFast < eSlow && c.close < eTrend && eSlow <= eSlow_prev3;
 
+        // ─── Layer 3: HTF 4H Bias Gate — block counter-trend trades ─────────
+        if (isBullTrend && htfBias === "BEAR") continue; // ❌ 1H Bull vs 4H Bear
+        if (isBearTrend && htfBias === "BULL") continue; // ❌ 1H Bear vs 4H Bull
+
         // Pillar 2: Trend Age & Pullback Tracker
         if (isBullTrend) {
           if (trendDirection !== "BULL") {
@@ -1069,19 +1091,27 @@ export function simulateInstitutionalBacktest(
           const entry = Number(Math.min(c.close, eFast * 1.001).toFixed(precision));
           const recentLows = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.low);
           const swingLow = Math.min(...recentLows);
-          const slDist = Math.max(entry - swingLow + currentATR * 0.35, currentATR * 1.35);
 
-          // Pillar 3: HTF Obstacle Check (must have >= 1.15 * slDist room to recent swing resistance)
+          // ─── Layer 5: Adaptive ATR multiplier based on regime ────────────
+          const atrMultSL = isExplosive ? 0.45 : isSqueeze ? 0.20 : 0.35;
+          const slDist = Math.max(entry - swingLow + currentATR * atrMultSL, currentATR * 1.35);
+
+          // Pillar 3: HTF Obstacle Check
           const lookbackObstacle = candles.slice(Math.max(0, i - 24), i);
           const recentSwingHigh = Math.max(...lookbackObstacle.map((b) => b.high));
           if (recentSwingHigh > entry && (recentSwingHigh - entry) < slDist * 1.15) {
             continue; // Immediate resistance ceiling blocks trade
           }
 
-          const slPrice = Number((entry - slDist).toFixed(precision));
-          const tp08Price = Number((entry + slDist * 0.8).toFixed(precision));
-          const tp1Price = Number((entry + slDist * tp1Ratio).toFixed(precision));
-          const tp2Price = Number((entry + slDist * tpMultiplier).toFixed(precision));
+          // Layer 5: Adaptive TP multiplier (explosive = further TP)
+          const adaptiveTP = isExplosive ? tpMultiplier * 1.2 : tpMultiplier;
+          // Layer 5: BE trigger early in explosive trends
+          const beRatio = isExplosive ? 0.65 : 0.8;
+
+          const slPrice   = Number((entry - slDist).toFixed(precision));
+          const tp08Price = Number((entry + slDist * beRatio).toFixed(precision));
+          const tp1Price  = Number((entry + slDist * tp1Ratio).toFixed(precision));
+          const tp2Price  = Number((entry + slDist * adaptiveTP).toFixed(precision));
 
           pullbacksInTrend++;
           active = {
@@ -1100,19 +1130,26 @@ export function simulateInstitutionalBacktest(
           const entry = Number(Math.max(c.close, eFast * 0.999).toFixed(precision));
           const recentHighs = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.high);
           const swingHigh = Math.max(...recentHighs);
-          const slDist = Math.max(swingHigh - entry + currentATR * 0.35, currentATR * 1.35);
 
-          // Pillar 3: HTF Obstacle Check (must have >= 1.15 * slDist room to recent swing support)
+          // ─── Layer 5: Adaptive ATR multiplier based on regime ────────────
+          const atrMultSL = isExplosive ? 0.45 : isSqueeze ? 0.20 : 0.35;
+          const slDist = Math.max(swingHigh - entry + currentATR * atrMultSL, currentATR * 1.35);
+
+          // Pillar 3: HTF Obstacle Check
           const lookbackObstacle = candles.slice(Math.max(0, i - 24), i);
           const recentSwingLow = Math.min(...lookbackObstacle.map((b) => b.low));
           if (recentSwingLow < entry && (entry - recentSwingLow) < slDist * 1.15) {
             continue; // Immediate support floor blocks trade
           }
 
-          const slPrice = Number((entry + slDist).toFixed(precision));
-          const tp08Price = Number((entry - slDist * 0.8).toFixed(precision));
-          const tp1Price = Number((entry - slDist * tp1Ratio).toFixed(precision));
-          const tp2Price = Number((entry - slDist * tpMultiplier).toFixed(precision));
+          // Layer 5: Adaptive TP + early BE for explosive
+          const adaptiveTP = isExplosive ? tpMultiplier * 1.2 : tpMultiplier;
+          const beRatio = isExplosive ? 0.65 : 0.8;
+
+          const slPrice   = Number((entry + slDist).toFixed(precision));
+          const tp08Price = Number((entry - slDist * beRatio).toFixed(precision));
+          const tp1Price  = Number((entry - slDist * tp1Ratio).toFixed(precision));
+          const tp2Price  = Number((entry - slDist * adaptiveTP).toFixed(precision));
 
           pullbacksInTrend++;
           active = {

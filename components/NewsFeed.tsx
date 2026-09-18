@@ -81,15 +81,15 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
   };
 
   return (
-    <div className="bg-surface-100 border border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col h-full">
+    <div className="bg-[#0B0F17]/95 border border-slate-800/80 rounded-2xl p-4 shadow-xl shadow-black/25 backdrop-blur-md flex flex-col h-full">
       {/* Header with Mode Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-800/80">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+          <div className="p-1.5 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 text-cyan-400 border border-cyan-500/30 shadow-sm">
             {viewMode === "NEWS" ? <Newspaper className="w-4 h-4" /> : <Calendar className="w-4 h-4 text-amber-400" />}
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-white">
+            <h3 className="text-sm font-semibold text-white tracking-tight">
               {viewMode === "NEWS" ? "ข่าวสารเศรษฐกิจสด & ปฏิทินการเงิน" : "ปฏิทินเศรษฐกิจ 4 สี (Forex Factory)"}
             </h3>
             <p className="text-[11px] text-slate-400">
@@ -104,19 +104,19 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
         </div>
 
         {/* View Mode Toggle Buttons */}
-        <div className="flex items-center gap-1 bg-surface-50 p-1 rounded-lg border border-slate-800 text-xs">
+        <div className="flex items-center gap-1 bg-[#0E131F] p-1 rounded-xl border border-slate-800 text-xs shadow-inner">
           <button
             onClick={() => setViewMode("NEWS")}
-            className={`px-2.5 py-1 rounded font-medium transition-all ${
-              viewMode === "NEWS" ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+            className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+              viewMode === "NEWS" ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20 font-bold" : "text-slate-400 hover:text-slate-200"
             }`}
           >
             📰 ข่าวสารทันเหตุการณ์
           </button>
           <button
             onClick={() => setViewMode("CALENDAR")}
-            className={`px-2.5 py-1 rounded font-medium transition-all ${
-              viewMode === "CALENDAR" ? "bg-slate-800 text-amber-300 shadow-sm" : "text-slate-400 hover:text-slate-200"
+            className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+              viewMode === "CALENDAR" ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/20 font-bold" : "text-slate-400 hover:text-slate-200"
             }`}
           >
             📅 ปฏิทิน 4 กล่องข่าว
@@ -128,27 +128,27 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
       {viewMode === "NEWS" && (
         <div className="flex items-center justify-between pt-2.5 pb-1">
           <span className="text-[10px] text-slate-400 font-semibold">ตัวกรอง:</span>
-          <div className="flex items-center gap-1 bg-surface-50 p-0.5 rounded border border-slate-800 text-[10px]">
+          <div className="flex items-center gap-1 bg-[#0E131F] p-0.5 rounded-lg border border-slate-800 text-[10px]">
             <button
               onClick={() => setFilter("ALL")}
-              className={`px-2 py-0.5 rounded transition-all ${
-                filter === "ALL" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
+              className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                filter === "ALL" ? "bg-slate-800 text-white font-bold" : "text-slate-400 hover:text-slate-200"
               }`}
             >
               ทั้งหมด
             </button>
             <button
               onClick={() => setFilter("RELEVANT")}
-              className={`px-2 py-0.5 rounded transition-all ${
-                filter === "RELEVANT" ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
+              className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                filter === "RELEVANT" ? "bg-slate-800 text-cyan-300 font-bold border border-cyan-500/30" : "text-slate-400 hover:text-slate-200"
               }`}
             >
               #{selectedAsset}
             </button>
             <button
               onClick={() => setFilter("HIGH_IMPACT")}
-              className={`px-2 py-0.5 rounded transition-all ${
-                filter === "HIGH_IMPACT" ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-slate-200"
+              className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                filter === "HIGH_IMPACT" ? "bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30" : "text-slate-400 hover:text-slate-200"
               }`}
             >
               เฉพาะข่าวสำคัญมาก
@@ -225,14 +225,14 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
             </div>
 
             {/* Economic Calendar View */}
-            {calendarEvents.map((evt) => {
+            {calendarEvents.map((evt, idx) => {
               const isRed = evt.impact === "HIGH";
               const isOrange = evt.impact === "MEDIUM";
               const isYellow = evt.impact === "LOW";
 
               return (
                 <div
-                  key={evt.id}
+                  key={`${evt.id}-${idx}`}
                   className={`p-3 rounded-xl border transition-all ${
                     isRed
                       ? "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
@@ -307,9 +307,9 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
             ไม่พบหัวข้อข่าวสารสำหรับตัวกรองนี้
           </div>
         ) : (
-          filteredNews.map((item) => (
+          filteredNews.map((item, idx) => (
             <div
-              key={item.id}
+              key={`${item.id}-${idx}`}
               className="p-3 bg-surface-50 hover:bg-slate-800/60 border border-slate-800/80 hover:border-slate-700/80 rounded-xl transition-all group"
             >
               {/* Badges and Source */}
@@ -351,9 +351,9 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
                 {/* Related tags */}
                 <div className="flex items-center gap-1 flex-wrap">
                   {item.relatedSymbols.length > 0 ? (
-                    item.relatedSymbols.map((sym) => (
+                    Array.from(new Set(item.relatedSymbols)).map((sym, tagIdx) => (
                       <span
-                        key={sym}
+                        key={`${sym}-${tagIdx}`}
                         className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
                           sym === selectedAsset
                             ? "bg-blue-500/10 text-blue-400 border-blue-500/30"

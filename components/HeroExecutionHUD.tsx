@@ -155,12 +155,12 @@ export default function HeroExecutionHUD({
   const activeRiskPct = isCent ? customRiskPct.toFixed(1) : stdRiskPctActual;
 
   return (
-    <div className="rounded-2xl border-2 border-indigo-500/50 bg-gradient-to-b from-slate-900 via-surface-100 to-surface-50 p-4 sm:p-5 shadow-2xl space-y-4 relative overflow-hidden">
+    <div className="rounded-2xl border-2 border-indigo-500/40 hover:border-cyan-500/40 transition-colors bg-gradient-to-b from-[#0E131F] via-[#0B0F17] to-[#080B11] p-4 sm:p-5 shadow-2xl space-y-4 relative overflow-hidden backdrop-blur-md">
       {/* Glow Ambient Top Bar */}
       <div className={`absolute top-0 left-0 right-0 h-1.5 ${
-        isBuy ? "bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500" :
-        isSell ? "bg-gradient-to-r from-rose-500 via-red-500 to-amber-500" :
-        "bg-gradient-to-r from-amber-500 via-yellow-400 to-slate-500"
+        isBuy ? "bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]" :
+        isSell ? "bg-gradient-to-r from-rose-500 via-red-500 to-amber-500 shadow-[0_0_12px_rgba(244,63,94,0.5)]" :
+        "bg-gradient-to-r from-cyan-500 via-indigo-500 to-slate-500 shadow-[0_0_12px_rgba(6,182,212,0.4)]"
       }`} />
 
       {/* ─── 1. HERO HEADER: Order Type & R:R Ratio ─── */}
