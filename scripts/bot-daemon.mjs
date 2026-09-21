@@ -92,7 +92,7 @@ if (PORT) {
       })
     );
   });
-  server.listen(Number(PORT), () => {
-    console.log(`[Health Server] Keep-alive health check server running on port ${PORT}`);
+  server.listen(Number(PORT), "0.0.0.0", () => {
+    console.log(`[Health Server] Keep-alive health check server running on 0.0.0.0:${PORT}`);
   });
 }

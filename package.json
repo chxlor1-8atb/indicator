@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/start-production.mjs",
+    "next-start": "next start",
     "lint": "next lint",
     "bot": "node scripts/bot-daemon.mjs",
     "winrate": "npx tsx scripts/get-system-winrate.ts"
