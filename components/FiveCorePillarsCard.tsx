@@ -22,7 +22,7 @@ interface FiveCorePillarsCardProps {
   analysis: AnalysisResult;
 }
 
-export default function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
+function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"ALL" | "PIVOTS" | "SR" | "FIB" | "BANDS" | "SMC">("ALL");
 
@@ -528,3 +528,5 @@ export default function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardPro
     </div>
   );
 }
+
+export default React.memo(FiveCorePillarsCard);

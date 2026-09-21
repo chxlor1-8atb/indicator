@@ -8804,12 +8804,12 @@ export function calculateAutoFibonacciRetracement(
 }
 
 
-// ─── Indicator Result Cache (30s TTL, max 60 entries) ───
+// ─── Indicator Result Cache (90s TTL, max 120 entries) ───
 // Cache key: symbol + lastCandleTimestamp + candleCount prevents stale hits
 // while returning instantly for repeated calls within same candle window.
 const _indicatorResultCache = new Map<string, { value: IndicatorData; expiresAt: number }>();
-const _INDICATOR_CACHE_TTL_MS = 30_000;
-const _INDICATOR_CACHE_MAX = 60;
+const _INDICATOR_CACHE_TTL_MS = 90_000;
+const _INDICATOR_CACHE_MAX = 120;
 
 export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): IndicatorData {
   if (candles.length === 0) {

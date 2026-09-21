@@ -38,8 +38,8 @@ export async function GET(request: NextRequest) {
       },
       {
         headers: {
-          // Vercel Global Edge Cache: instant news load, 60s freshness
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=180",
+          // Vercel Global Edge Cache: instant news load, 120s freshness, 300s background revalidation
+          "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300",
         },
       }
     );

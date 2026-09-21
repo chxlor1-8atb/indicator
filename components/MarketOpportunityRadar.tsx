@@ -28,7 +28,7 @@ interface MarketOpportunityRadarProps {
   isLoading?: boolean;
 }
 
-export default function MarketOpportunityRadar({
+function MarketOpportunityRadar({
   summaries,
   selectedAsset,
   onSelectAsset,
@@ -489,3 +489,5 @@ export default function MarketOpportunityRadar({
     </div>
   );
 }
+
+export default React.memo(MarketOpportunityRadar);

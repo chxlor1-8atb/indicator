@@ -56,7 +56,7 @@ interface AnalysisCardProps {
   telegramStatus: { success: boolean; message: string } | null;
 }
 
-export default function AnalysisCard({
+function AnalysisCard({
   analysis,
   isLoading,
   onSendTelegram,
@@ -5413,3 +5413,5 @@ export default function AnalysisCard({
     </div>
   );
 }
+
+export default React.memo(AnalysisCard);

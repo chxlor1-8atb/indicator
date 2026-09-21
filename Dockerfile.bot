@@ -1,0 +1,20 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy dependency manifests
+COPY package*.json ./
+
+# Install production dependencies only
+RUN npm ci --omit=dev
+
+# Copy application scripts and codebase
+COPY scripts/ ./scripts/
+COPY lib/ ./lib/
+COPY app/ ./app/
+
+ENV NODE_ENV=production
+ENV SCAN_INTERVAL_SEC=30
+
+# Run the autonomous bot daemon
+CMD ["node", "scripts/bot-daemon.mjs"]

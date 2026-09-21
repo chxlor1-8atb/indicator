@@ -259,7 +259,7 @@ export function formatTelegramOrderResultMessage(data: OrderResultData): string 
   return lines.join("\n");
 }
 
-export const DEFAULT_TELEGRAM_BOT_TOKEN = "8784760707:AAFuvsJ7_zALe8gV4rXJe5tcTiCdlMugrQA";
+export const DEFAULT_TELEGRAM_BOT_TOKEN = "8885772085:AAG5AkCsHQEHE7_NLvAdTSIgG-DytpMvEy0";
 export const DEFAULT_TELEGRAM_CHAT_ID = "2101575299";
 
 export interface SendTelegramOptions {

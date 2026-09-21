@@ -31,7 +31,7 @@ interface HeroExecutionHUDProps {
   setAccountType: (type: "STANDARD" | "CENT") => void;
 }
 
-export default function HeroExecutionHUD({
+function HeroExecutionHUD({
   analysis,
   copiedKey,
   onCopy,
@@ -899,3 +899,5 @@ export default function HeroExecutionHUD({
     </div>
   );
 }
+
+export default React.memo(HeroExecutionHUD);

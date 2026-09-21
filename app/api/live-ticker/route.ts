@@ -6,6 +6,8 @@ import { validatePriceIntegrity } from "@/lib/priceIntegrity";
 
 export const dynamic = "force-dynamic";
 
+const resolutionThrottle = new Map<string, number>();
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -33,8 +35,14 @@ export async function GET(request: NextRequest) {
       if (integrity.isValid) {
         try {
           resolveOrdersAgainstLivePrice(symbol, quote.price);
-          resolveOpenSignals(symbol, quote.price).catch(() => {});
-        } catch (e) {
+          // Throttle DB resolution to once per 60s per symbol to eliminate CPU burn
+          const now = Date.now();
+          const lastResolve = resolutionThrottle.get(symbol) || 0;
+          if (now - lastResolve >= 60000) {
+            resolutionThrottle.set(symbol, now);
+            resolveOpenSignals(symbol, quote.price).catch(() => {});
+          }
+        } catch {
           // Non-blocking background resolution
         }
       }
@@ -54,7 +62,8 @@ export async function GET(request: NextRequest) {
         },
         {
           headers: {
-            "Cache-Control": "no-store, max-age=0",
+            // Vercel Global Edge Cache: 5s Edge Cache + 15s SWR background revalidate
+            "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
           },
         }
       );

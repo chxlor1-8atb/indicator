@@ -224,15 +224,15 @@ export default function DashboardPage() {
     const isGoldReferenceStream = selectedAsset === "XAUUSD" || selectedAsset === "GOLD";
 
     if (isInstitutionalAsset && !isGoldReferenceStream) {
-      // Direct TradingView Institutional OANDA/Interbank Feed Polling (adaptive 2.5s active / 12s inactive)
+      // Direct TradingView Institutional OANDA/Interbank Feed Polling (paused when inactive / 30s interval)
       const pollLiveTicker = async () => {
         if (!isMounted) return;
-        // If tab is in background, skip some polls to conserve bandwidth and prevent rate limiting
-        if (typeof document !== "undefined" && document.hidden && Math.random() > 0.25) {
+        // If tab is in background, pause polling completely to conserve CPU and Vercel quota
+        if (typeof document !== "undefined" && document.hidden) {
           return;
         }
         try {
-          const res = await fetch(`/api/live-ticker?symbol=${selectedAsset}`, { cache: "no-store" });
+          const res = await fetch(`/api/live-ticker?symbol=${selectedAsset}`);
           if (res.ok) {
             const data = await res.json();
             if (data.success && typeof data.price === "number" && data.price > 0 && isMounted) {
@@ -260,10 +260,9 @@ export default function DashboardPage() {
         }
       };
 
-      // This is a fallback for assets without a free browser-side stream.
-      // Keep it deliberately low-frequency to protect Vercel usage.
+      // Low-frequency polling (30s) + paused when inactive to protect Vercel usage.
       pollLiveTicker();
-      tickerInterval = setInterval(pollLiveTicker, 15000);
+      tickerInterval = setInterval(pollLiveTicker, 30000);
     } else {
       // Map crypto assets, plus XAUUSD's PAXG gold reference, to Binance's
       // public live-trade WebSocket. This connection is browser -> Binance.
@@ -356,13 +355,26 @@ export default function DashboardPage() {
     // Historical candles and indicators are reconciled periodically; the open
     // candle itself is updated by the direct stream above.
     const pollInterval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       loadMarketData(selectedAsset, selectedTimeframe, true);
     }, 60000);
+
+    const onVisChangeChart = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        loadMarketData(selectedAsset, selectedTimeframe, true);
+      }
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisChangeChart);
+    }
 
     return () => {
       isMounted = false;
       if (tickerInterval) clearInterval(tickerInterval);
       clearInterval(pollInterval);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisChangeChart);
+      }
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (wsRef.current) {
         wsRef.current.close();
@@ -371,17 +383,18 @@ export default function DashboardPage() {
     };
   }, [selectedAsset, selectedTimeframe, loadMarketData, loadNews]);
 
-  // Continuous Real-Time Autonomous Scanner Loop (reads cached status every 30s; zero CPU burn)
+  // Continuous Real-Time Autonomous Scanner Loop (reads cached status every 60s; paused when tab hidden)
   useEffect(() => {
     let isMounted = true;
     let inFlight = false;
     const runAutonomousSync = async (forceScan = false) => {
       if (!isMounted || inFlight) return;
+      if (typeof document !== "undefined" && document.hidden) return;
       inFlight = true;
       try {
         const endpoint = forceScan
-          ? `/api/autonomous-scanner?scan=true&_t=${Date.now()}`
-          : `/api/autonomous-scanner?_t=${Date.now()}`;
+          ? `/api/autonomous-scanner?scan=true`
+          : `/api/autonomous-scanner`;
         const res = await fetch(endpoint);
         if (res.ok && isMounted) {
           const data = await res.json();
@@ -405,13 +418,26 @@ export default function DashboardPage() {
       }
     };
 
-    const initialTimer = setTimeout(() => runAutonomousSync(true), 1000);
-    const syncInterval = setInterval(() => runAutonomousSync(false), 30000);
+    // Initial soft sync from cache instead of forcing serverless scan
+    const initialTimer = setTimeout(() => runAutonomousSync(false), 1000);
+    const syncInterval = setInterval(() => runAutonomousSync(false), 60000);
+
+    const onVisChangeScanner = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        runAutonomousSync(false);
+      }
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisChangeScanner);
+    }
 
     return () => {
       isMounted = false;
       clearTimeout(initialTimer);
       clearInterval(syncInterval);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisChangeScanner);
+      }
     };
   }, []);
 

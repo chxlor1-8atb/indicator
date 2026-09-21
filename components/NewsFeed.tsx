@@ -12,7 +12,7 @@ interface NewsFeedProps {
   lastNewsTime?: number | null;
 }
 
-export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime }: NewsFeedProps) {
+function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime }: NewsFeedProps) {
   const [viewMode, setViewMode] = useState<"NEWS" | "CALENDAR">("NEWS");
   const [filter, setFilter] = useState<"ALL" | "RELEVANT" | "HIGH_IMPACT">("ALL");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -406,3 +406,5 @@ export default function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime 
     </div>
   );
 }
+
+export default React.memo(NewsFeed);

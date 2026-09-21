@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       {
         headers: {
           // Vercel Global Edge Cache: instant <20ms response, background refresh
-          "Cache-Control": "public, s-maxage=5, stale-while-revalidate=15",
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
         },
       }
     );

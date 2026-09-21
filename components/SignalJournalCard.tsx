@@ -28,7 +28,7 @@ import {
   ListFilter,
 } from "lucide-react";
 
-export default function SignalJournalCard() {
+function SignalJournalCard() {
   const [signals, setSignals] = useState<DbAiSignal[]>([]);
   const [stats, setStats] = useState<WinRateStats>({
     totalSignals: 0,
@@ -202,11 +202,6 @@ export default function SignalJournalCard() {
           );
           if (data.perSymbolStats) {
             setPerSymbolStats(data.perSymbolStats);
-            // Auto-trigger initial backtest sync if database has 0 historical statistics
-            if (data.perSymbolStats.length === 0 && !hasAutoTriggeredRef.current) {
-              hasAutoTriggeredRef.current = true;
-              handleSeed500Candles("core", false);
-            }
           }
         }
       }
@@ -219,11 +214,23 @@ export default function SignalJournalCard() {
 
   useEffect(() => {
     fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined);
-    // Real-time continuous polling every 20s to ensure win rates in Neon are always up-to-date
+    // Polling every 60s to ensure win rates in Neon are fresh, paused when tab is hidden
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined);
-    }, 20000);
-    return () => clearInterval(interval);
+    }, 60000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [selectedSymbol]);
 
   const formatJournalPrice = (price: number | string, sym: string) => {
@@ -1320,3 +1327,5 @@ export default function SignalJournalCard() {
     </div>
   );
 }
+
+export default React.memo(SignalJournalCard);

@@ -14,6 +14,8 @@ import {
   updateSignalTelegramMessages,
   SaveAiSignalResult,
   getTelegramSubscribers,
+  getScannerCacheFromDb,
+  saveScannerCacheToDb,
 } from "@/lib/db";
 import {
   sendTelegramMessage,
@@ -24,8 +26,11 @@ import {
 } from "@/lib/telegramService";
 
 import { LRUCache } from "@/lib/cache";
+import { AnalysisResult } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+type ScanResultType = Awaited<ReturnType<typeof scanWatchlistAutonomous>>;
 
 // Use LRUCache (TTL + maxSize) instead of plain Maps to prevent unbounded memory growth
 // in long-running warm Serverless instances. TTL = cooldown + buffer to auto-evict.
@@ -35,6 +40,9 @@ const actionableAlertThrottle = new LRUCache<string, number>({ maxSize: 200, def
 const ACTIONABLE_COOLDOWN_MS = 20 * 60 * 1000; // 20 minutes cooldown per asset setup
 const preWarningMessagesMap = new LRUCache<string, Array<{ chatId: string; messageId: number }>>({ maxSize: 100, defaultTtlMs: 35 * 60 * 1000 });
 
+// Concurrency mutex to coalesce simultaneous scan requests into a single execution
+let _activeScanPromise: Promise<ScanResultType> | null = null;
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -43,9 +51,34 @@ export async function GET(request: NextRequest) {
     const isForce = searchParams.get("force") === "true";
     const triggerScan = hasScanParam || isCronHeader;
 
-    let scanResult = null;
+    let scanResult: ScanResultType | null = null;
     if (triggerScan) {
-      scanResult = await scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG, isForce);
+      // 1. If not force, check in-memory cache first
+      const memCache = !isForce ? getScannerCache() : null;
+      if (memCache) {
+        scanResult = { ...memCache, cached: true };
+      } else if (!isForce) {
+        // 2. Check Neon DB persistent cache (shared across cold serverless instances)
+        const dbCache = await getScannerCacheFromDb<ScanResultType>(3 * 60 * 1000);
+        if (dbCache && dbCache.payload) {
+          scanResult = { ...dbCache.payload, cached: true };
+        }
+      }
+
+      // 3. Only run physical scan if no valid cache exists
+      if (!scanResult) {
+        if (!_activeScanPromise) {
+          _activeScanPromise = scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG, isForce).finally(() => {
+            _activeScanPromise = null;
+          });
+        }
+        scanResult = await _activeScanPromise;
+
+        // Persist fresh scan results to Neon DB for other serverless instances
+        if (scanResult && !scanResult.cached) {
+          saveScannerCacheToDb(scanResult).catch(() => {});
+        }
+      }
 
       // Only dispatch alerts and update DB on fresh scans (not cached within 3-min TTL)
       if (!scanResult.cached) {
@@ -70,7 +103,7 @@ export async function GET(request: NextRequest) {
         // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram (AWAITED ป้องกัน Serverless kill)
         if (scanResult.actionableAnalyses && scanResult.actionableAnalyses.length > 0) {
           await Promise.allSettled(
-            scanResult.actionableAnalyses.map(async (analysis) => {
+            scanResult.actionableAnalyses.map(async (analysis: AnalysisResult) => {
               // ตรวจสอบ Throttle เพื่อป้องกันการส่งซ้ำ
               const throttleKey = `${analysis.symbol}_${analysis.signal}_${analysis.tradeSetup?.orderType}`;
               const now = Date.now();
@@ -139,7 +172,7 @@ export async function GET(request: NextRequest) {
         // 2. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) (AWAITED ป้องกัน Serverless kill)
         if (scanResult.preWarningAnalyses && scanResult.preWarningAnalyses.length > 0) {
           await Promise.allSettled(
-            scanResult.preWarningAnalyses.map(async (analysis) => {
+            scanResult.preWarningAnalyses.map(async (analysis: AnalysisResult) => {
               const now = Date.now();
               const lastAlert = preWarningAlertThrottle.get(analysis.symbol) || 0;
               if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {
@@ -192,13 +225,27 @@ export async function GET(request: NextRequest) {
         }
       }
     } else {
-      // Read-only request: ส่งข้อมูลจาก In-Memory Cache เพื่อประหยัด CPU 100%
+      // Read-only request: prioritize caches (In-Memory -> Neon DB -> Safe single scan fallback)
       const cached = getScannerCache();
       if (cached) {
         scanResult = { ...cached, cached: true };
       } else {
-        // หาก Cache ยังว่างเปล่า (เช่น เพิ่ง Cold Start) ทำการ scan ครั้งแรก 1 ครั้ง
-        scanResult = await scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG, false);
+        // Check Neon DB persistent cache (shared across cold serverless instances)
+        const dbCache = await getScannerCacheFromDb<ScanResultType>(5 * 60 * 1000);
+        if (dbCache && dbCache.payload) {
+          scanResult = { ...dbCache.payload, cached: true };
+        } else {
+          // If DB is completely empty (e.g. initial setup), run initial scan with concurrency lock
+          if (!_activeScanPromise) {
+            _activeScanPromise = scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG, false).finally(() => {
+              _activeScanPromise = null;
+            });
+          }
+          scanResult = await _activeScanPromise;
+          if (scanResult && !scanResult.cached) {
+            saveScannerCacheToDb(scanResult).catch(() => {});
+          }
+        }
       }
     }
 
@@ -218,7 +265,9 @@ export async function GET(request: NextRequest) {
       },
       {
         headers: {
-          "Cache-Control": "no-store, max-age=0",
+          // Vercel Global Edge Cache: 30s Edge freshness + 60s background SWR
+          // Prevents waking up Serverless Function CPU on redundant hits
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
         },
       }
     );

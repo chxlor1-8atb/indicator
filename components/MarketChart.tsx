@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useMemo } from "react";
 import { Candle, IndicatorData, OptimizedConfig, VolumeAnomalyItem } from "@/lib/types";
 import { BarChart2, Activity, Zap, TrendingUp, Compass, Layers, Clock } from "lucide-react";
 
@@ -15,7 +15,7 @@ interface MarketChartProps {
   priceFeedLabel?: string;
 }
 
-export default function MarketChart({
+function MarketChart({
   candles,
   indicators,
   symbol,
@@ -680,7 +680,9 @@ export default function MarketChart({
 
     const index = Math.floor((x - paddingLeft) / spacing);
     if (index >= 0 && index < candles.length) {
-      setHoverIndex(index);
+      if (index !== hoverIndex) {
+        setHoverIndex(index);
+      }
       setMousePos({ x, y });
     }
   };
@@ -698,14 +700,19 @@ export default function MarketChart({
   const priceChangePct = baselinePrice > 0 ? (priceChange / baselinePrice) * 100 : 0;
   const isPositive = priceChange >= 0;
 
-  let high24h = -Infinity;
-  let low24h = Infinity;
-  let totalVolume = 0;
-  candles.forEach((c) => {
-    if (c.high > high24h) high24h = c.high;
-    if (c.low < low24h) low24h = c.low;
-    totalVolume += c.volume;
-  });
+  // Memoize 24h High, Low, and Volume to eliminate O(N) loop on every mouse move
+  const { high24h, low24h, totalVolume } = useMemo(() => {
+    let high = -Infinity;
+    let low = Infinity;
+    let vol = 0;
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
+      if (c.high > high) high = c.high;
+      if (c.low < low) low = c.low;
+      vol += c.volume;
+    }
+    return { high24h: high, low24h: low, totalVolume: vol };
+  }, [candles]);
 
   const lastEma20 = indicators.ema20?.filter((v): v is number => v !== null && !isNaN(v)).pop();
   const lastEma50 = indicators.ema50?.filter((v): v is number => v !== null && !isNaN(v)).pop();
@@ -932,3 +939,5 @@ export default function MarketChart({
     </div>
   );
 }
+
+export default React.memo(MarketChart);

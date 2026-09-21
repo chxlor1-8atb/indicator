@@ -338,6 +338,15 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
       CREATE INDEX IF NOT EXISTS idx_sps_sym_tf ON system_performance_summary (symbol, timeframe)
     `);
 
+    // 8. Table for Autonomous Scanner Persistent Cache (Eliminates Serverless Cold-Start Recalculations)
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS autonomous_scanner_cache (
+        id INT PRIMARY KEY DEFAULT 1,
+        payload JSONB NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
+
     return { success: true, message: "Neon database initialized successfully." };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -2098,5 +2107,67 @@ export async function getSystemWinRateSummary(filterSymbol?: string): Promise<Sy
       recentClosedCandles: [],
       summaryTable: [],
     };
+  }
+}
+
+/**
+ * Retrieves the persistent autonomous scanner cache from Neon Postgres.
+ * If the record is missing or older than maxAgeMs, returns null.
+ */
+export async function getScannerCacheFromDb<T = unknown>(
+  maxAgeMs = 3 * 60 * 1000
+): Promise<{ payload: T; updatedAt: number } | null> {
+  if (!sql) return null;
+  try {
+    const rows = (await sql.query(
+      `SELECT payload, (EXTRACT(EPOCH FROM updated_at) * 1000)::BIGINT as updated_at_ms FROM autonomous_scanner_cache WHERE id = 1 LIMIT 1`
+    )) as Array<{ payload: T; updated_at_ms: string | number }>;
+
+    if (!rows || rows.length === 0) return null;
+    const updatedAt = Number(rows[0].updated_at_ms);
+    if (isNaN(updatedAt)) return null;
+
+    if (Date.now() - updatedAt > maxAgeMs) {
+      return null;
+    }
+    return { payload: rows[0].payload, updatedAt };
+  } catch {
+    // Table might not exist yet; gracefully return null
+    return null;
+  }
+}
+
+/**
+ * Persists the autonomous scanner cache to Neon Postgres.
+ * Upserts id = 1 with the serialized payload to serve all serverless instances.
+ */
+export async function saveScannerCacheToDb(payload: unknown): Promise<void> {
+  if (!sql) return;
+  try {
+    await sql.query(
+      `INSERT INTO autonomous_scanner_cache (id, payload, updated_at)
+       VALUES (1, $1::jsonb, NOW())
+       ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
+      [JSON.stringify(payload)]
+    );
+  } catch {
+    // If table doesn't exist, try creating it once and retry
+    try {
+      await sql.query(`
+        CREATE TABLE IF NOT EXISTS autonomous_scanner_cache (
+          id INT PRIMARY KEY DEFAULT 1,
+          payload JSONB NOT NULL,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `);
+      await sql.query(
+        `INSERT INTO autonomous_scanner_cache (id, payload, updated_at)
+         VALUES (1, $1::jsonb, NOW())
+         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
+        [JSON.stringify(payload)]
+      );
+    } catch {
+      // Non-blocking fallback
+    }
   }
 }
