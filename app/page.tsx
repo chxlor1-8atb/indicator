@@ -9,6 +9,8 @@ import AnalysisCard from "@/components/AnalysisCard";
 import SignalJournalCard from "@/components/SignalJournalCard";
 import MarketOpportunityRadar from "@/components/MarketOpportunityRadar";
 import TelegramSettingsModal from "@/components/TelegramSettingsModal";
+import AmbientBackground, { BackgroundTheme } from "@/components/AmbientBackground";
+import BackgroundCustomizerModal from "@/components/BackgroundCustomizerModal";
 import { Candle, IndicatorData, NewsItem, AnalysisResult, AssetScannerSummary } from "@/lib/types";
 import { calculateAllIndicators } from "@/lib/indicators";
 import { Bot, Radio, Zap, ShieldCheck, Activity, Target, BarChart3, Newspaper, BookOpen, Layers } from "lucide-react";
@@ -54,9 +56,64 @@ export default function DashboardPage() {
   const [telegramStatus, setTelegramStatus] = useState<{ success: boolean; message: string } | null>(null);
 
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
+  const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState<boolean>(false);
+  const [bgTheme, setBgTheme] = useState<BackgroundTheme>("cyber-aurora");
+  const [bgIntensity, setBgIntensity] = useState<number>(0.75);
+  const [parallaxEnabled, setParallaxEnabled] = useState<boolean>(true);
+
   const wsRef = useRef<WebSocket | null>(null);
   const marketDataInFlightRef = useRef<boolean>(false);
   const analysisInFlightRef = useRef<boolean>(false);
+
+  // ─── Background Settings LocalStorage Sync ───
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedTheme = localStorage.getItem("aegis_bg_theme") as BackgroundTheme;
+        if (savedTheme && ["cyber-aurora", "dark-gold", "neural-matrix", "minimal-obsidian"].includes(savedTheme)) {
+          setBgTheme(savedTheme);
+        }
+        const savedIntensity = localStorage.getItem("aegis_bg_intensity");
+        if (savedIntensity) {
+          const val = parseFloat(savedIntensity);
+          if (!isNaN(val) && val >= 0.1 && val <= 1.0) setBgIntensity(val);
+        }
+        const savedParallax = localStorage.getItem("aegis_bg_parallax");
+        if (savedParallax !== null) {
+          setParallaxEnabled(savedParallax === "true");
+        }
+      } catch {
+        // Fallback silently if storage unavailable
+      }
+    }
+  }, []);
+
+  const handleSelectBgTheme = (theme: BackgroundTheme) => {
+    setBgTheme(theme);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("aegis_bg_theme", theme);
+      } catch {}
+    }
+  };
+
+  const handleChangeIntensity = (intensity: number) => {
+    setBgIntensity(intensity);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("aegis_bg_intensity", intensity.toString());
+      } catch {}
+    }
+  };
+
+  const handleToggleParallax = (enabled: boolean) => {
+    setParallaxEnabled(enabled);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("aegis_bg_parallax", enabled.toString());
+      } catch {}
+    }
+  };
 
   // ─── Data Freshness & Last Updated Timestamps (ข้อ 7) ───
   const [marketLastUpdated, setMarketLastUpdated] = useState<number | null>(null);
@@ -476,19 +533,27 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#07090E] text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="min-h-screen flex flex-col text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200 relative overflow-x-hidden">
+      {/* Dynamic Multi-Layer Ambient Background with Parallax Scroll */}
+      <AmbientBackground
+        theme={bgTheme}
+        intensity={bgIntensity}
+        parallaxEnabled={parallaxEnabled}
+      />
+
       {/* Top Navigation */}
       <Header
         onRefreshAll={handleRefreshAll}
         isLoading={isLoadingMarket || isLoadingNews || isAnalyzing}
         onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
+        onOpenBackgroundModal={() => setIsBackgroundModalOpen(true)}
         lastSyncTimestamp={liveTickLastUpdated || marketLastUpdated}
       />
 
       {/* Main Container */}
       <main className="flex-1 w-full max-w-full min-w-0 overflow-x-hidden px-3 sm:px-6 lg:px-8 py-3 sm:py-4 lg:py-6 space-y-3 sm:space-y-4 pb-24 md:pb-8">
         {/* AI Autonomous Auto-Pilot Live HUD Banner (Compact Institutional Telemetry Bar) */}
-        <div className="w-full bg-[#0B0F17]/90 border border-slate-800/80 hover:border-cyan-500/30 transition-all rounded-2xl p-3 sm:p-3.5 shadow-xl shadow-black/30 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
+        <div className="w-full bg-[#0B0F17]/75 border border-white/[0.08] hover:border-cyan-500/40 transition-all rounded-2xl p-3 sm:p-3.5 shadow-2xl shadow-black/40 backdrop-blur-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div
               className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
@@ -547,7 +612,7 @@ export default function DashboardPage() {
 
         {/* ─── DESKTOP VIEW SELECTOR (แถบเมนูสลับหน้าจอสำหรับ Desktop/Tablet) ─── */}
         <div className="hidden md:flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5">
-          <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#0E131F]/90 border border-slate-800/80 backdrop-blur-md shrink-0 shadow-inner">
+          <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#0E131F]/80 border border-white/[0.08] backdrop-blur-xl shrink-0 shadow-inner">
             <button
               onClick={() => setActiveTab("SIGNALS")}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
@@ -779,7 +844,7 @@ export default function DashboardPage() {
       </main>
 
       {/* ─── MOBILE PWA BOTTOM NAVIGATION BAR (แถบเมนูด้านล่างสำหรับมือถือ สไตล์แอปแท้ ปราศจากเมนูซ้ำซ้อน) ─── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface-100/95 backdrop-blur-md border-t border-slate-800 md:hidden px-2 py-2 flex items-center justify-around shadow-2xl shadow-black pb-[max(0.6rem,env(safe-area-inset-bottom))]">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17]/85 backdrop-blur-2xl border-t border-white/[0.08] md:hidden px-2 py-2 flex items-center justify-around shadow-2xl shadow-black pb-[max(0.6rem,env(safe-area-inset-bottom))]">
         <button
           onClick={() => setActiveTab("SIGNALS")}
           className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
@@ -853,6 +918,18 @@ export default function DashboardPage() {
         onSave={() => {
           setTelegramStatus(null);
         }}
+      />
+
+      {/* Visual FX & Background Studio Modal */}
+      <BackgroundCustomizerModal
+        isOpen={isBackgroundModalOpen}
+        onClose={() => setIsBackgroundModalOpen(false)}
+        currentTheme={bgTheme}
+        onSelectTheme={handleSelectBgTheme}
+        intensity={bgIntensity}
+        onChangeIntensity={handleChangeIntensity}
+        parallaxEnabled={parallaxEnabled}
+        onToggleParallax={handleToggleParallax}
       />
     </div>
   );

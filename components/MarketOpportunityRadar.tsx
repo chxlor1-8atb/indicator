@@ -242,6 +242,8 @@ function MarketOpportunityRadar({
             <div className="relative shrink-0">
               <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2.5" />
               <input
+                id="radar-symbol-search"
+                name="radarSearch"
                 type="text"
                 placeholder="ค้นหาคู่เงิน (เช่น XAU, EUR, BTC)..."
                 value={searchQuery}

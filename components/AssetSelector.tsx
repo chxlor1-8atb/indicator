@@ -145,6 +145,8 @@ export default function AssetSelector({
                 <form onSubmit={handleCustomTickerSubmit} className="relative mb-2">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
                   <input
+                    id="asset-selector-search"
+                    name="assetSearch"
                     type="text"
                     placeholder="Search or type any pair (e.g. GBPJPY)..."
                     value={searchQuery}

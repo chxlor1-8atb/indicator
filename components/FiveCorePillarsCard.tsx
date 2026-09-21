@@ -499,7 +499,7 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs font-mono">
               <div className="p-2 rounded bg-black/40 border border-slate-800">
                 <span className="text-[10px] text-slate-400 block">Entry Point:</span>
-                <span className="text-amber-300 font-bold block">{formatPrice(analysis.tradeSetup.pendingPrice || analysis.tradeSetup.entryZone.min)}</span>
+                <span className="text-amber-300 font-bold block">{formatPrice(analysis.tradeSetup.pendingPrice || analysis.tradeSetup.entryZone?.min || analysis.currentPrice || 0)}</span>
                 <span className="text-[9px] text-slate-500 font-sans">โซน OTE Fib / OB / S&R</span>
               </div>
               <div className="p-2 rounded bg-black/40 border border-slate-800">
