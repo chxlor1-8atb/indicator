@@ -273,6 +273,31 @@ export interface SendTelegramOptions {
   currentPrice?: number;
 }
 
+// ─── ANTI-FLOOD RATE LIMITER & SEQUENTIAL DISPATCH QUEUE ───
+// Telegram limits: max 1 msg/sec per chat. We enforce a 1500ms gap to eliminate flood/freeze risk.
+let _dispatchQueue: Promise<unknown> = Promise.resolve();
+let _lastDispatchTimestamp = 0;
+const MIN_DISPATCH_INTERVAL_MS = 1500;
+
+// Maximum messages allowed per hour per chat (Protects bot from Telegram suspension)
+const _hourlyChatCount = new Map<string, { count: number; windowStart: number }>();
+const MAX_MESSAGES_PER_HOUR = 20;
+
+function isHourlyLimitExceeded(chatId: string): boolean {
+  const now = Date.now();
+  const entry = _hourlyChatCount.get(chatId);
+  if (!entry || now - entry.windowStart > 60 * 60 * 1000) {
+    _hourlyChatCount.set(chatId, { count: 1, windowStart: now });
+    return false;
+  }
+  if (entry.count >= MAX_MESSAGES_PER_HOUR) {
+    console.warn(`[Telegram Anti-Flood] Hourly limit (${MAX_MESSAGES_PER_HOUR}/h) reached for ${chatId}. Silencing to protect bot from suspension.`);
+    return true;
+  }
+  entry.count++;
+  return false;
+}
+
 export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; messageId?: number; error?: string }> {
   const botToken = options.botToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
   const chatId = options.chatId || process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
@@ -280,6 +305,11 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
 
   if (!botToken || !chatId) {
     return { success: false, error: "Telegram Bot Token and Chat ID are required." };
+  }
+
+  // Safety Shield: prevent bot freezing from spam bursts
+  if (isHourlyLimitExceeded(chatId)) {
+    return { success: false, error: "Anti-flood limit reached: max 20 alerts/hour per chat to protect bot from suspension." };
   }
 
   const textToSend = orderResult
@@ -292,28 +322,53 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
     ? message || ""
     : escapeHtml(message || "Test Notification from AI Indicator Bot");
 
-  try {
-    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: textToSend,
-        parse_mode: "HTML",
-      }),
+  // Queue through sequential dispatcher
+  return new Promise((resolve) => {
+    _dispatchQueue = _dispatchQueue.then(async () => {
+      try {
+        const now = Date.now();
+        const elapsed = now - _lastDispatchTimestamp;
+        if (elapsed < MIN_DISPATCH_INTERVAL_MS) {
+          await new Promise((r) => setTimeout(r, MIN_DISPATCH_INTERVAL_MS - elapsed));
+        }
+
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: textToSend,
+            parse_mode: "HTML",
+          }),
+        });
+
+        _lastDispatchTimestamp = Date.now();
+        const data = await res.json();
+
+        if (res.status === 429 && data.parameters?.retry_after) {
+          const waitSec = Number(data.parameters.retry_after) + 1;
+          console.warn(`[Telegram Anti-Flood] 429 Too Many Requests. Waiting ${waitSec}s...`);
+          await new Promise((r) => setTimeout(r, waitSec * 1000));
+          _lastDispatchTimestamp = Date.now();
+          resolve({ success: false, error: `Telegram rate limited. Paused for ${waitSec}s.` });
+          return;
+        }
+
+        if (!res.ok || !data.ok) {
+          resolve({ success: false, error: data.description || "Failed to send message to Telegram" });
+          return;
+        }
+
+        resolve({ success: true, messageId: data.result?.message_id });
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        resolve({ success: false, error: errMsg });
+      }
+    }).catch((err) => {
+      resolve({ success: false, error: String(err) });
     });
-
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      return { success: false, error: data.description || "Failed to send message to Telegram" };
-    }
-
-    return { success: true, messageId: data.result?.message_id };
-  } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    return { success: false, error: errMsg };
-  }
+  });
 }
 
 /**
@@ -370,7 +425,7 @@ export function isSymbolAllowedForAlert(symbol: string, filterPreference?: strin
   const sym = symbol.toUpperCase().trim();
   const pref = filterPreference.toUpperCase().trim();
 
-  if (pref === "GOLD") {
+  if (pref === "GOLD" || pref === "XAUUSD") {
     return sym.includes("XAU") || sym === "GOLD";
   }
   if (pref === "CRYPTO") {

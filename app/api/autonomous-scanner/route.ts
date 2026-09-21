@@ -85,8 +85,8 @@ export async function GET(request: NextRequest) {
         const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
         const envChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
 
-        // ดึงค่า filter จาก environment variable เป็น default สำหรับ primary chat
-        const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
+        // ดึงค่า filter จาก environment variable เป็น default สำหรับ primary chat (เริ่มต้นเฉพาะทองคำ XAUUSD เพื่อความปลอดภัยสูงสุด)
+        const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "XAUUSD";
 
         // รวบรวมรายชื่อผู้รับการแจ้งเตือนทั้งหมดจาก cached subscriber list (5-min TTL)
         const allSubs = await getTelegramSubscribers();
@@ -97,23 +97,32 @@ export async function GET(request: NextRequest) {
           subscribersMap.set(envChatId, envSub?.alert_symbol || primaryFilter);
         }
         for (const sub of allSubs) {
-          subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
+          subscribersMap.set(sub.chat_id, sub.alert_symbol || "XAUUSD");
         }
 
         // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram (AWAITED ป้องกัน Serverless kill)
         if (scanResult.actionableAnalyses && scanResult.actionableAnalyses.length > 0) {
+          // เรียงลำดับตามคะแนนความแม่นยำสูงสุดก่อนเสมอ
+          const sortedAnalyses = [...scanResult.actionableAnalyses].sort(
+            (a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)
+          );
+
           await Promise.allSettled(
-            scanResult.actionableAnalyses.map(async (analysis: AnalysisResult) => {
+            sortedAnalyses.map(async (analysis: AnalysisResult, idx: number) => {
               // ตรวจสอบ Throttle เพื่อป้องกันการส่งซ้ำ
               const throttleKey = `${analysis.symbol}_${analysis.signal}_${analysis.tradeSetup?.orderType}`;
               const now = Date.now();
               const lastSent = actionableAlertThrottle.get(throttleKey) || 0;
 
-              // บันทึกลงฐานข้อมูลแบบ Smart Deduplication
+              // บันทึกลงฐานข้อมูลแบบ Smart Deduplication (บันทึกทุกคู่เพื่อสถิติใน Dashboard)
               const saveRes: SaveAiSignalResult = await saveAiSignal(analysis).catch((err) => {
                 console.warn("Could not save signal to DB:", err);
                 return { saved: false };
               });
+
+              // Anti-Flood Guard: ในแต่ละรอบสแกน ส่งแจ้งเตือน Telegram สูงสุด 1 คู่ (คู่ที่คะแนนสูงสุด)
+              // เพื่อป้องกันการยิงหลายคู่พร้อมกันจนบัญชี Telegram โดนระงับ
+              if (idx > 0) return;
 
               // ส่ง Telegram ถ้าเป็นสัญญาณใหม่ หรือผ่าน Cooldown มาแล้ว
               if ((saveRes.saved || now - lastSent >= ACTIONABLE_COOLDOWN_MS) && now - lastSent >= ACTIONABLE_COOLDOWN_MS) {

@@ -10,24 +10,24 @@ interface TelegramSettingsModalProps {
 }
 
 const ALL_WATCHLIST = [
-  { symbol: "XAUUSD", name: "Gold" },
+  { symbol: "XAUUSD", name: "Gold (ทองคำ)" },
+  { symbol: "BTCUSDT", name: "Bitcoin" },
+  { symbol: "ETHUSDT", name: "Ethereum" },
+  { symbol: "SOLUSDT", name: "Solana" },
   { symbol: "EURUSD", name: "EUR/USD" },
   { symbol: "GBPUSD", name: "GBP/USD" },
   { symbol: "USDJPY", name: "USD/JPY" },
   { symbol: "GBPJPY", name: "GBP/JPY" },
-  { symbol: "EURJPY", name: "EUR/JPY" },
   { symbol: "AUDUSD", name: "AUD/USD" },
-  { symbol: "USDCAD", name: "USD/CAD" },
-  { symbol: "USDCHF", name: "USD/CHF" },
-  { symbol: "NZDUSD", name: "NZD/USD" },
-  { symbol: "USOIL", name: "Crude Oil" },
-  { symbol: "XAGUSD", name: "Silver" },
+  { symbol: "USOIL", name: "Crude Oil (น้ำมัน)" },
+  { symbol: "XAGUSD", name: "Silver (เงิน)" },
 ];
 
 export default function TelegramSettingsModal({ isOpen, onClose, onSave }: TelegramSettingsModalProps) {
   const [botToken, setBotToken] = useState("");
   const [chatId, setChatId] = useState("");
-  const [alertSymbols, setAlertSymbols] = useState("ALL");
+  const [alertSymbols, setAlertSymbols] = useState("XAUUSD");
+  const [filterMode, setFilterMode] = useState<"SINGLE" | "MULTI">("SINGLE");
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [massiveApiKey, setMassiveApiKey] = useState("");
   const [isTesting, setIsTesting] = useState(false);
@@ -37,7 +37,13 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
     if (typeof window !== "undefined") {
       setBotToken(localStorage.getItem("telegram_bot_token") || "");
       setChatId(localStorage.getItem("telegram_chat_id") || "");
-      setAlertSymbols(localStorage.getItem("telegram_alert_symbols") || "ALL");
+      const savedFilter = localStorage.getItem("telegram_alert_symbols") || "XAUUSD";
+      setAlertSymbols(savedFilter);
+      if (savedFilter.includes(",") || savedFilter === "ALL" || savedFilter === "FOREX") {
+        setFilterMode("MULTI");
+      } else {
+        setFilterMode("SINGLE");
+      }
       setGeminiApiKey(localStorage.getItem("gemini_api_key") || "");
       setMassiveApiKey(localStorage.getItem("massive_api_key") || "");
     }
@@ -45,7 +51,7 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
 
   if (!isOpen) return null;
 
-  const isAll = alertSymbols === "ALL" || alertSymbols === "";
+  const isAll = alertSymbols === "ALL" || alertSymbols === "*";
   const isGoldOnly = alertSymbols === "XAUUSD" || alertSymbols === "GOLD";
   const isForexOnly = alertSymbols === "FOREX";
 
@@ -54,10 +60,21 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
     : isGoldOnly
     ? ["XAUUSD"]
     : isForexOnly
-    ? ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "EURJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD"]
+    ? ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "AUDUSD"]
     : alertSymbols.split(",").map((s) => s.trim().toUpperCase());
 
+  const handleSelectSingle = (sym: string) => {
+    setFilterMode("SINGLE");
+    setAlertSymbols(sym);
+  };
+
   const toggleSymbol = (sym: string) => {
+    if (filterMode === "SINGLE") {
+      // Single mode: clicking directly switches to that single pair
+      setAlertSymbols(sym);
+      return;
+    }
+
     let nextList: string[];
     if (isAll) {
       nextList = ALL_WATCHLIST.map((a) => a.symbol).filter((s) => s !== sym);
@@ -243,84 +260,165 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
           <div className="pt-2 border-t border-slate-800/80">
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                <span>เลือกคู่เงินที่ต้องการรับแจ้งเตือน</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono">
-                  {isAll ? "ทุกคู่ (12 สินทรัพย์ MT5)" : isGoldOnly ? "ทองคำอย่างเดียว" : isForexOnly ? "Forex (9 คู่)" : `${selectedList.length} คู่ที่เลือก`}
+                <span>โหมดการแจ้งเตือนสัญญาณเทรด</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                  filterMode === "SINGLE" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-blue-500/20 text-blue-400"
+                }`}>
+                  {filterMode === "SINGLE" ? `🎯 เดี่ยว: ${alertSymbols}` : isAll ? "ทุกคู่ (11 สินทรัพย์)" : `${selectedList.length} คู่ที่เลือก`}
                 </span>
               </label>
-              <span className="text-[11px] text-slate-400">กรองเฉพาะคู่ที่เทรด</span>
+              <span className="text-[11px] text-slate-400">ปลอดภัยจาก Rate Limit</span>
             </div>
 
-            {/* Quick Preset Buttons */}
-            <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+            {/* Mode Switcher Tabs */}
+            <div className="grid grid-cols-2 gap-1.5 mb-2.5 bg-surface-50 p-1 rounded-xl border border-slate-800">
               <button
                 type="button"
-                onClick={() => setAlertSymbols("ALL")}
-                className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                  isAll
-                    ? "bg-brand-blue/20 border-brand-blue text-white shadow-sm"
-                    : "bg-surface-50 border-slate-800 text-slate-400 hover:text-slate-200"
+                onClick={() => {
+                  setFilterMode("SINGLE");
+                  if (alertSymbols.includes(",") || alertSymbols === "ALL") {
+                    setAlertSymbols("XAUUSD");
+                  }
+                }}
+                className={`py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
+                  filterMode === "SINGLE"
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
                 }`}
               >
-                🌐 ทุกคู่ (12)
+                <span>🎯</span>
+                <span>รับทีละคู่เดียว (แนะนำ)</span>
               </button>
               <button
                 type="button"
-                onClick={() => setAlertSymbols("XAUUSD")}
-                className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                  isGoldOnly
-                    ? "bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm"
-                    : "bg-surface-50 border-slate-800 text-slate-400 hover:text-slate-200"
+                onClick={() => setFilterMode("MULTI")}
+                className={`py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
+                  filterMode === "MULTI"
+                    ? "bg-brand-blue/20 text-brand-blue border border-brand-blue/40 shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
                 }`}
               >
-                🟡 ทองคำ
-              </button>
-              <button
-                type="button"
-                onClick={() => setAlertSymbols("FOREX")}
-                className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                  isForexOnly
-                    ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm"
-                    : "bg-surface-50 border-slate-800 text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                💱 Forex
+                <span>🔀</span>
+                <span>เลือกหลายคู่</span>
               </button>
             </div>
 
-            {/* Asset Selection Chips */}
-            <div className="p-2.5 rounded-xl bg-surface-50/70 border border-slate-800/80">
-              <div className="text-[11px] text-slate-400 mb-1.5 flex items-center justify-between">
-                <span>แตะเพื่อเปิด/ปิดคู่เงินรายตัว:</span>
-                <button
-                  type="button"
-                  onClick={() => setAlertSymbols("ALL")}
-                  className="text-[10px] text-brand-blue hover:underline"
-                >
-                  เลือกทั้งหมด (ALL)
-                </button>
+            {/* SINGLE PAIR MODE: Clean Single-Choice Grid */}
+            {filterMode === "SINGLE" ? (
+              <div className="space-y-2">
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-2">
+                  <span className="text-base">🛡️</span>
+                  <div>
+                    <span className="font-semibold">ระบบแจ้งเตือนเฉพาะคู่: [{alertSymbols}]</span>
+                    <p className="text-[11px] text-emerald-400/80 mt-0.5">
+                      ระบบจะสแกนและส่งสัญญาณเฉพาะคู่นี้เท่านั้น คู่อื่นจะไม่ถูกส่งเข้า Telegram ป้องกันปัญหาบอทโดนระงับ 100%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-surface-50/70 border border-slate-800/80">
+                  <div className="text-[11px] text-slate-400 mb-1.5">คลิกคู่เงินที่ต้องการรับแจ้งเตือนเดี่ยวๆ:</div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {ALL_WATCHLIST.map((item) => {
+                      const active = alertSymbols === item.symbol;
+                      return (
+                        <button
+                          key={item.symbol}
+                          type="button"
+                          onClick={() => handleSelectSingle(item.symbol)}
+                          className={`px-2 py-2 rounded-lg text-xs font-mono font-medium border transition-all flex flex-col items-center text-center ${
+                            active
+                              ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm ring-1 ring-emerald-500/50"
+                              : "bg-surface-100 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                          }`}
+                        >
+                          <span className="font-semibold text-[12px]">{item.symbol}</span>
+                          <span className="text-[10px] text-slate-500 truncate max-w-full">{item.name.split(" ")[0]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
-                {ALL_WATCHLIST.map((item) => {
-                  const active = selectedList.includes(item.symbol);
-                  return (
+            ) : (
+              /* MULTI PAIR MODE: Checkbox Grid with Presets */
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setAlertSymbols("ALL")}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      isAll
+                        ? "bg-amber-500/20 border-amber-500 text-amber-300 shadow-sm"
+                        : "bg-surface-50 border-slate-800 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🌐 ทุกคู่ (11)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlertSymbols("XAUUSD")}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      isGoldOnly
+                        ? "bg-brand-blue/20 border-brand-blue text-white shadow-sm"
+                        : "bg-surface-50 border-slate-800 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🟡 ทองคำ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlertSymbols("FOREX")}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                      isForexOnly
+                        ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm"
+                        : "bg-surface-50 border-slate-800 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    💱 Forex
+                  </button>
+                </div>
+
+                {isAll && (
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
+                    ⚠️ <b>คำเตือน:</b> การเปิดรับทุกคู่พร้อมกัน อาจทำให้ Telegram ส่งข้อความถี่ในช่วงตลาดผันผวน
+                  </div>
+                )}
+
+                <div className="p-2.5 rounded-xl bg-surface-50/70 border border-slate-800/80">
+                  <div className="text-[11px] text-slate-400 mb-1.5 flex items-center justify-between">
+                    <span>ติ๊กเลือกคู่เงินที่ต้องการ:</span>
                     <button
-                      key={item.symbol}
                       type="button"
-                      onClick={() => toggleSymbol(item.symbol)}
-                      className={`px-2 py-1 rounded-md text-[11px] font-mono font-medium border transition-all flex items-center gap-1 ${
-                        active
-                          ? "bg-brand-blue/25 border-brand-blue/60 text-white shadow-xs"
-                          : "bg-surface-100 border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700"
-                      }`}
+                      onClick={() => setAlertSymbols("ALL")}
+                      className="text-[10px] text-brand-blue hover:underline"
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-400" : "bg-slate-600"}`}></span>
-                      <span>{item.symbol}</span>
+                      เลือกทั้งหมด
                     </button>
-                  );
-                })}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
+                    {ALL_WATCHLIST.map((item) => {
+                      const active = selectedList.includes(item.symbol);
+                      return (
+                        <button
+                          key={item.symbol}
+                          type="button"
+                          onClick={() => toggleSymbol(item.symbol)}
+                          className={`px-2 py-1 rounded-md text-[11px] font-mono font-medium border transition-all flex items-center gap-1 ${
+                            active
+                              ? "bg-brand-blue/25 border-brand-blue/60 text-white shadow-xs"
+                              : "bg-surface-100 border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700"
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-400" : "bg-slate-600"}`}></span>
+                          <span>{item.symbol}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Test Status Banner */}
