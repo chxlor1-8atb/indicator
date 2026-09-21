@@ -1,36 +1,57 @@
 /**
- * Autonomous Bot Daemon Runner (Local 24/7 Mode)
+ * Autonomous Bot Daemon Runner & Unified Production Server
  * 
- * Runs the autonomous scanner loop continuously on local machine
- * without needing a browser tab open.
+ * If running in a Web Service environment (with PORT assigned e.g. on Render/Koyeb/Docker),
+ * it starts Next.js to serve the full React dashboard on 0.0.0.0:$PORT and simultaneously
+ * runs the 24/7 Autonomous Scanner loop.
  * 
- * Usage:
- *   node scripts/bot-daemon.mjs
- *   npm run bot
+ * If running locally against an already-running dev server (npm run dev),
+ * it runs the standalone polling loop.
  */
 
-import http from "node:http";
+import { spawn } from "node:child_process";
 
-const TARGET_HOST = process.env.BOT_HOST || process.argv[2] || "http://localhost:3000";
-const SCAN_INTERVAL_MS = (Number(process.env.SCAN_INTERVAL_SEC) || 30) * 1000; // default 30s
+const PORT = process.env.PORT;
+const TARGET_HOST = process.env.BOT_HOST || process.argv[2] || (PORT ? `http://127.0.0.1:${PORT}` : "http://localhost:3000");
+const SCAN_INTERVAL_MS = (Number(process.env.SCAN_INTERVAL_SEC) || 30) * 1000;
 
-console.log(`\n=============================================================`);
-console.log(`AI INDICATOR AUTONOMOUS BOT DAEMON (LOCAL 24/7 MODE)`);
-console.log(`Target Endpoint: ${TARGET_HOST}/api/autonomous-scanner?scan=true`);
-console.log(`Scan Interval: ${SCAN_INTERVAL_MS / 1000} seconds`);
-console.log(`Telegram Alerts: Auto-dispatched on actionable signals`);
+// If deployed on Render / Koyeb / Docker with PORT assigned:
+// Automatically start Next.js to serve the web dashboard on $PORT
+if (PORT && !process.env.BOT_HOST) {
+  console.log(`\n=============================================================`);
+  console.log(`AEGIS QUANT TERMINAL — CLOUD WEB DASHBOARD & AUTONOMOUS RUNNER`);
+  console.log(`Serving Web Dashboard on 0.0.0.0:${PORT}`);
+  console.log(`Scan Interval: ${SCAN_INTERVAL_MS / 1000}s | Auto-Pilot: 24/7`);
+  console.log(`=============================================================\n`);
 
-if (TARGET_HOST.includes("vercel.app")) {
-  console.warn(`\n⚠️ [VERCEL CPU SAFEGUARD WARNING]:`);
-  console.warn(`Targeting a Vercel deployment URL directly with a continuous 24/7 daemon`);
-  console.warn(`will consume Vercel Serverless Active CPU (4h monthly limit on Hobby).`);
-  console.warn(`Recommended: Run 'npm run dev' locally or run this worker on Railway/VPS/Render`);
-  console.warn(`where persistent background execution is 100% free.\n`);
+  const nextServer = spawn("npx", ["next", "start", "-H", "0.0.0.0", "-p", PORT], {
+    stdio: "inherit",
+    shell: true,
+    env: { ...process.env, PORT },
+  });
+
+  nextServer.on("error", (err) => {
+    console.error("[Next.js] Failed to start:", err);
+    process.exit(1);
+  });
+
+  nextServer.on("exit", (code) => {
+    if (code !== 0) {
+      console.error(`[Next.js] Exited with code ${code}`);
+      process.exit(code || 1);
+    }
+  });
+
+  const cleanExit = () => {
+    nextServer.kill("SIGTERM");
+    process.exit(0);
+  };
+  process.on("SIGTERM", cleanExit);
+  process.on("SIGINT", cleanExit);
 }
-console.log(`=============================================================\n`);
 
+// Autonomous scan loop
 let scanCount = 0;
-
 async function runScanCycle() {
   scanCount++;
   const timestamp = new Date().toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok" });
@@ -38,18 +59,17 @@ async function runScanCycle() {
     const url = `${TARGET_HOST}/api/autonomous-scanner?scan=true`;
     const res = await fetch(url);
     if (!res.ok) {
-      console.warn(`[${timestamp}] Server returned HTTP ${res.status}: ${res.statusText}`);
+      if (scanCount > 2) console.warn(`[${timestamp}] [Scanner] HTTP ${res.status}: ${res.statusText}`);
       return;
     }
 
     const data = await res.json();
     if (!data.success) {
-      console.warn(`[${timestamp}] Scan response error:`, data.error || "Unknown error");
+      if (scanCount > 2) console.warn(`[${timestamp}] [Scanner] Error:`, data.error || "Unknown error");
       return;
     }
 
     const summaries = data.scannerSummaries || [];
-    const activeOrders = data.activeOrders || [];
     const topAsset = summaries[0];
 
     const actionable = summaries.filter(
@@ -57,42 +77,24 @@ async function runScanCycle() {
     );
 
     console.log(
-      `[${timestamp}] [Scan #${scanCount}] Scanned ${summaries.length} assets | Actionable: ${actionable.length} | Active Orders: ${activeOrders.length} | Top: ${topAsset ? `${topAsset.symbol} (${topAsset.signal} ${topAsset.confluenceScore}%)` : "None"}`
+      `[${timestamp}] [Scan #${scanCount}] Scanned ${summaries.length} assets | Actionable: ${actionable.length} | Top: ${topAsset ? `${topAsset.symbol} (${topAsset.signal} ${topAsset.confluenceScore}%)` : "None"}`
     );
 
     if (actionable.length > 0) {
       for (const a of actionable) {
-        console.log(`  [${a.symbol}] ${a.signal} | MT5: ${a.orderType} @ ${a.pendingPrice} (SL: ${a.slPrice}, TP: ${a.tpPrice}) Grade: ${a.setupGrade}`);
+        console.log(`  🎯 [${a.symbol}] ${a.signal} | ${a.orderType} @ ${a.pendingPrice} (SL: ${a.slPrice}, TP: ${a.tpPrice}) Grade: ${a.setupGrade}`);
       }
     }
   } catch (err) {
-    console.error(`[${timestamp}] Connection error to ${TARGET_HOST}: ${err.message}. (Make sure 'npm run dev' is running!)`);
+    if (scanCount > 2) {
+      console.warn(`[${timestamp}] Connection note: ${err.message}`);
+    }
   }
 }
 
-// Initial scan
-runScanCycle();
-
-// Recurring scan loop
-setInterval(runScanCycle, SCAN_INTERVAL_MS);
-
-// ─── Optional Cloud Keep-Alive & Health Check Server ───
-// When deployed on Render, Koyeb, or Docker, platforms require an open HTTP port
-const PORT = process.env.PORT || process.env.HEALTH_PORT;
-if (PORT) {
-  const server = http.createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        status: "healthy",
-        uptimeSeconds: Math.floor(process.uptime()),
-        scanCount,
-        targetHost: TARGET_HOST,
-        timestamp: new Date().toISOString(),
-      })
-    );
-  });
-  server.listen(Number(PORT), "0.0.0.0", () => {
-    console.log(`[Health Server] Keep-alive health check server running on 0.0.0.0:${PORT}`);
-  });
-}
+// Start scan loop (delay 8s if starting Next.js server, else 1s)
+const startDelayMs = PORT && !process.env.BOT_HOST ? 8000 : 1000;
+setTimeout(() => {
+  runScanCycle();
+  setInterval(runScanCycle, SCAN_INTERVAL_MS);
+}, startDelayMs);
