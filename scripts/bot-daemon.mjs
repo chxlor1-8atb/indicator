@@ -24,7 +24,7 @@ if (PORT && !process.env.BOT_HOST) {
   console.log(`Scan Interval: ${SCAN_INTERVAL_MS / 1000}s | Auto-Pilot: 24/7`);
   console.log(`=============================================================\n`);
 
-  const nextServer = spawn("npx", ["next", "start", "-H", "0.0.0.0", "-p", PORT], {
+  const nextServer = spawn(`npx next start -H 0.0.0.0 -p ${PORT}`, {
     stdio: "inherit",
     shell: true,
     env: { ...process.env, PORT },

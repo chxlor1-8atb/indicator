@@ -75,7 +75,7 @@ export async function syncLiveEconomicCalendar(): Promise<EconomicCalendarEvent[
   try {
     const res = await fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.json", {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(8000),
       next: { revalidate: 900 },
     });
     if (!res.ok) return _liveEventsCache;
@@ -123,7 +123,7 @@ export async function syncLiveEconomicCalendar(): Promise<EconomicCalendarEvent[
       _lastCalendarSyncTime = now;
     }
   } catch (err) {
-    console.warn("[calendarEngine] Live calendar sync notice:", err);
+    console.warn("[calendarEngine] Live calendar sync notice:", (err as Error)?.message || err);
   }
 
   return _liveEventsCache;

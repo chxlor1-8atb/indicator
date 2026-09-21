@@ -149,7 +149,7 @@ export async function fetchTradingViewSpotQuote(symbol: string): Promise<{
           symbols: { tickers },
           columns: ["close", "open", "high", "low", "change", "volume"]
         }),
-        signal: AbortSignal.timeout(5000), // Increased timeout for better reliability
+        signal: AbortSignal.timeout(8000), // Increased timeout for cloud server reliability
         cache: "no-store"
       });
 

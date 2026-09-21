@@ -20,7 +20,7 @@ console.log(`Auto-Pilot:     Active 24/7 in background`);
 console.log(`=============================================================\n`);
 
 // 1. Start Next.js server on 0.0.0.0:$PORT
-const nextServer = spawn("npx", ["next", "start", "-H", "0.0.0.0", "-p", PORT], {
+const nextServer = spawn(`npx next start -H 0.0.0.0 -p ${PORT}`, {
   stdio: "inherit",
   shell: true,
   env: { ...process.env, PORT },

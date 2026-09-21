@@ -256,7 +256,7 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
     try {
       const res = await fetch(feed.url, {
         headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-        signal: AbortSignal.timeout(3500),
+        signal: AbortSignal.timeout(8000),
         next: { revalidate: 60 },
       });
       if (res.ok) {
@@ -264,7 +264,7 @@ export async function fetchLiveNews(category = "all"): Promise<NewsItem[]> {
         return parseRssItems(xml, feed.source);
       }
     } catch (err) {
-      console.warn(`Feed error for ${feed.source}:`, err);
+      console.warn(`[NewsService] Feed fetch notice for ${feed.source}:`, (err as Error)?.message || err);
     }
     return [];
   });
