@@ -2596,27 +2596,8 @@ CRITICAL INSTRUCTIONS:
 
 Respond ONLY with valid JSON matching this schema:
 {
-  "symbol": "${symbol}",
-  "timeframe": "${timeframe}",
-  "timestamp": "${new Date().toISOString()}",
-  "currentPrice": ${indicators.currentPrice},
-  "signal": "${ruleAnalysis.signal}",
-  "confidence": ${ruleAnalysis.confidence},
-  "setupGrade": "${ruleAnalysis.setupGrade}",
-  "summary": "บทวิเคราะห์ภาษาไทยสำนวนสละสลวยเข้าใจง่ายสำหรับมือใหม่ สรุปสถานะกล่องข่าวและสิ่งที่ควรทำ",
-  "confluenceChecklist": ${JSON.stringify(ruleAnalysis.confluenceChecklist)},
-  "timeframeMatrix": ${JSON.stringify(ruleAnalysis.timeframeMatrix)},
-  "technicalAnalysis": {
-    "trend": "${ruleAnalysis.technicalAnalysis.trend}",
-    "rsiStatus": "${ruleAnalysis.technicalAnalysis.rsiStatus}",
-    "emaStatus": "${ruleAnalysis.technicalAnalysis.emaStatus}",
-    "macdStatus": "${ruleAnalysis.technicalAnalysis.macdStatus}",
-    "keySupport": ${ruleAnalysis.technicalAnalysis.keySupport},
-    "keyResistance": ${ruleAnalysis.technicalAnalysis.keyResistance},
-    "details": ${JSON.stringify(ruleAnalysis.technicalAnalysis.details)}
-  },
-  "newsSentimentAnalysis": ${JSON.stringify(ruleAnalysis.newsSentimentAnalysis)},
-  "tradeSetup": ${JSON.stringify(ruleAnalysis.tradeSetup)}
+  "summary": "บทวิเคราะห์ภาษาไทย 2-3 ประโยค สรุปสถานะกล่องข่าวและสิ่งที่ควรทำ",
+  "mentorAdvice": "คำแนะนำสั้นๆ สไตล์รุ่นพี่สอนรุ่นน้อง"
 }`;
 
   try {
@@ -2632,29 +2613,32 @@ Respond ONLY with valid JSON matching this schema:
     }
     recordGeminiCall();
 
-    // Attempt with fast, robust gemini-3.5-flash first
+    // Fast, responsive Gemini call with zero thinking budget to prevent latency stalls
     let res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(5000),
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: "application/json",
             temperature: 0.15,
+            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
       }
-    );
+    ).catch(() => null);
 
-    // Fallback to gemini-3.1-flash-lite if 3.5 is busy
-    if (!res.ok) {
+    // Fallback to gemini-1.5-flash if 3.5 was unavailable
+    if (!res || !res.ok) {
       res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(4000),
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
@@ -2663,252 +2647,36 @@ Respond ONLY with valid JSON matching this schema:
             },
           }),
         }
-      );
+      ).catch(() => null);
     }
 
-    if (!res.ok) {
-      console.warn(`Gemini API error: ${res.statusText}`);
-      return ruleAnalysis;
-    }
-
-    const data = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) return ruleAnalysis;
-
-    const cleanedText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-    const firstBrace = cleanedText.indexOf("{");
-    const lastBrace = cleanedText.lastIndexOf("}");
-    const jsonStr =
-      firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace
-        ? cleanedText.substring(firstBrace, lastBrace + 1)
-        : cleanedText;
-    const parsed: AnalysisResult = JSON.parse(jsonStr);
-    parsed.historicalBacktest = ruleAnalysis.historicalBacktest;
-    parsed.optimizedConfig = ruleAnalysis.optimizedConfig;
-    parsed.traderHierarchy = ruleAnalysis.traderHierarchy;
-    parsed.masterConfluence = ruleAnalysis.masterConfluence;
-    parsed.regimeInfo = ruleAnalysis.regimeInfo;
-    parsed.sessionStatus = ruleAnalysis.sessionStatus;
-    parsed.calendarSafety = ruleAnalysis.calendarSafety;
-    parsed.oteZone = ruleAnalysis.oteZone;
-    parsed.volumeDelta = ruleAnalysis.volumeDelta;
-    parsed.breakevenAdvice = ruleAnalysis.breakevenAdvice;
-    parsed.roundLevel = ruleAnalysis.roundLevel;
-    parsed.volumeProfile = ruleAnalysis.volumeProfile;
-    parsed.advancedVolumeProfile = ruleAnalysis.advancedVolumeProfile;
-    parsed.footprintAnalysis = ruleAnalysis.footprintAnalysis;
-    parsed.tdSequential = ruleAnalysis.tdSequential;
-    parsed.spreadImpact = ruleAnalysis.spreadImpact;
-    parsed.trailingStop = ruleAnalysis.trailingStop;
-    parsed.anchoredVwap = ruleAnalysis.anchoredVwap;
-    parsed.cvd = ruleAnalysis.cvd;
-    parsed.orderBlocks = ruleAnalysis.orderBlocks;
-    parsed.priceFeedIntegrity = ruleAnalysis.priceFeedIntegrity;
-    parsed.sessionSweep = ruleAnalysis.sessionSweep;
-    parsed.fibonacciCluster = ruleAnalysis.fibonacciCluster;
-    parsed.realizedVolatility = ruleAnalysis.realizedVolatility;
-    parsed.candleMicrostructure = ruleAnalysis.candleMicrostructure;
-    parsed.correlationShield = ruleAnalysis.correlationShield;
-    parsed.fvgMitigation = ruleAnalysis.fvgMitigation;
-    parsed.marketStructureShift = ruleAnalysis.marketStructureShift;
-    parsed.premiumDiscount = ruleAnalysis.premiumDiscount;
-    parsed.keyLevelTargets = ruleAnalysis.keyLevelTargets;
-    parsed.orderFlowVelocity = ruleAnalysis.orderFlowVelocity;
-    parsed.breakevenLadder = ruleAnalysis.breakevenLadder;
-    parsed.liquidityVoid = ruleAnalysis.liquidityVoid;
-    parsed.fibonacciExtension = ruleAnalysis.fibonacciExtension;
-    parsed.footprintAbsorption = ruleAnalysis.footprintAbsorption;
-    parsed.mtfStructureMatrix = ruleAnalysis.mtfStructureMatrix;
-    parsed.liquidityInducement = ruleAnalysis.liquidityInducement;
-    parsed.institutionalChoS = ruleAnalysis.institutionalChoS;
-    parsed.dynamicRiskBracket = ruleAnalysis.dynamicRiskBracket;
-    parsed.rejectionBlock = ruleAnalysis.rejectionBlock;
-    parsed.mcpiConviction = ruleAnalysis.mcpiConviction;
-    parsed.kellySizing = ruleAnalysis.kellySizing;
-    parsed.harmonics = ruleAnalysis.harmonics;
-    parsed.ehlersMESA = ruleAnalysis.ehlersMESA;
-    parsed.shannonEntropy = ruleAnalysis.shannonEntropy;
-    parsed.candlestickPatterns = ruleAnalysis.candlestickPatterns;
-    parsed.milestone50 = ruleAnalysis.milestone50;
-    parsed.hurstExponent = ruleAnalysis.hurstExponent;
-    parsed.kalmanFilter = ruleAnalysis.kalmanFilter;
-    parsed.halfLife = ruleAnalysis.halfLife;
-    parsed.ttmSqueeze = ruleAnalysis.ttmSqueeze;
-    parsed.chaikinMoneyFlow = ruleAnalysis.chaikinMoneyFlow;
-    parsed.kama = ruleAnalysis.kama;
-    parsed.hma = ruleAnalysis.hma;
-    parsed.parabolicSAR = ruleAnalysis.parabolicSAR;
-    parsed.aroon = ruleAnalysis.aroon;
-    parsed.vortex = ruleAnalysis.vortex;
-    parsed.fisher = ruleAnalysis.fisher;
-    parsed.connorsRSI = ruleAnalysis.connorsRSI;
-    parsed.awesomeOsc = ruleAnalysis.awesomeOsc;
-    parsed.tsi = ruleAnalysis.tsi;
-    parsed.advancedVol = ruleAnalysis.advancedVol;
-    parsed.keltner = ruleAnalysis.keltner;
-    parsed.donchian = ruleAnalysis.donchian;
-    parsed.chaikinVol = ruleAnalysis.chaikinVol;
-    parsed.ker = ruleAnalysis.ker;
-    parsed.vpci = ruleAnalysis.vpci;
-    parsed.mcginley = ruleAnalysis.mcginley;
-    parsed.elderForce = ruleAnalysis.elderForce;
-    parsed.rvi = ruleAnalysis.rvi;
-    parsed.frama = ruleAnalysis.frama;
-    parsed.milestone75 = ruleAnalysis.milestone75;
-    parsed.orderBookImbalance = ruleAnalysis.orderBookImbalance;
-    parsed.vwapVarianceBands = ruleAnalysis.vwapVarianceBands;
-    parsed.volumeVelocity = ruleAnalysis.volumeVelocity;
-    parsed.icebergOrders = ruleAnalysis.icebergOrders;
-    parsed.liquidityMatrix = ruleAnalysis.liquidityMatrix;
-    parsed.advancedCVD = ruleAnalysis.advancedCVD;
-    parsed.footprintCluster = ruleAnalysis.footprintCluster;
-    parsed.vpinToxicity = ruleAnalysis.vpinToxicity;
-    parsed.liquidityVacuum = ruleAnalysis.liquidityVacuum;
-    parsed.orderFlowFusion = ruleAnalysis.orderFlowFusion;
-    parsed.kylesLambda = ruleAnalysis.kylesLambda;
-    parsed.tradeSizeDistribution = ruleAnalysis.tradeSizeDistribution;
-    parsed.microPrice = ruleAnalysis.microPrice;
-    parsed.adverseSelection = ruleAnalysis.adverseSelection;
-    parsed.executionEngine = ruleAnalysis.executionEngine;
-    parsed.crossMarketLeadLag = ruleAnalysis.crossMarketLeadLag;
-    parsed.liquidityReplenishment = ruleAnalysis.liquidityReplenishment;
-    parsed.permanentPriceImpact = ruleAnalysis.permanentPriceImpact;
-    parsed.algoExecutionFootprint = ruleAnalysis.algoExecutionFootprint;
-    parsed.executionAlpha = ruleAnalysis.executionAlpha;
-    parsed.quantumProbabilityVector = ruleAnalysis.quantumProbabilityVector;
-    parsed.multiFractalHurst = ruleAnalysis.multiFractalHurst;
-    parsed.fillProbabilitySlippage = ruleAnalysis.fillProbabilitySlippage;
-    parsed.darkPoolDealerGamma = ruleAnalysis.darkPoolDealerGamma;
-    parsed.sovereignSingularityAlpha = ruleAnalysis.sovereignSingularityAlpha;
-    parsed.timeframeMatrix = ruleAnalysis.timeframeMatrix;
-    parsed.mlPrediction = ruleAnalysis.mlPrediction;
-    parsed.metaLabeling = ruleAnalysis.metaLabeling;
-    parsed.sniperMicroSL = ruleAnalysis.sniperMicroSL;
-
-    if (ruleAnalysis.timeframeMatrix.htfGuardStatus?.isGuarded || (ruleAnalysis.metaLabeling && !ruleAnalysis.metaLabeling.isApproved)) {
-      parsed.signal = "WAIT";
-      parsed.setupGrade = "C (Wait)";
-      parsed.confidence = Math.min(parsed.confidence, 40);
-      if (parsed.tradeSetup) {
-        parsed.tradeSetup.action = "NO_TRADE";
-        parsed.tradeSetup.orderType = "WAIT_NO_ORDER";
-        parsed.tradeSetup.mtOrderLabel = "Wait / No Order";
-        parsed.tradeSetup.mtOrderAdvice = ruleAnalysis.tradeSetup.mtOrderAdvice;
+    if (res && res.ok) {
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (rawText) {
+        const cleanedText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+        const firstBrace = cleanedText.indexOf("{");
+        const lastBrace = cleanedText.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          try {
+            const parsed = JSON.parse(cleanedText.substring(firstBrace, lastBrace + 1));
+            if (parsed?.summary && typeof parsed.summary === "string" && parsed.summary.trim().length > 10) {
+              ruleAnalysis.summary = parsed.summary.trim();
+            }
+          } catch {
+            // Keep default rule-based summary if JSON parsing fails
+          }
+        }
       }
     }
 
-    if (parsed.tradeSetup) {
-      parsed.tradeSetup.oteZone = ruleAnalysis.tradeSetup.oteZone;
-      parsed.tradeSetup.structuralSL = ruleAnalysis.tradeSetup.structuralSL;
-      parsed.tradeSetup.breakevenAdvice = ruleAnalysis.tradeSetup.breakevenAdvice;
-      parsed.tradeSetup.roundLevel = ruleAnalysis.tradeSetup.roundLevel;
-      parsed.tradeSetup.trailingStop = ruleAnalysis.tradeSetup.trailingStop;
-      parsed.tradeSetup.spreadImpact = ruleAnalysis.tradeSetup.spreadImpact;
-      parsed.tradeSetup.volumeProfile = ruleAnalysis.tradeSetup.volumeProfile;
-      parsed.tradeSetup.advancedVolumeProfile = ruleAnalysis.tradeSetup.advancedVolumeProfile;
-      parsed.tradeSetup.footprintAnalysis = ruleAnalysis.tradeSetup.footprintAnalysis;
-      parsed.tradeSetup.kellySizing = ruleAnalysis.tradeSetup.kellySizing;
-      parsed.tradeSetup.anchoredVwap = ruleAnalysis.tradeSetup.anchoredVwap;
-      parsed.tradeSetup.cvd = ruleAnalysis.tradeSetup.cvd;
-      parsed.tradeSetup.orderBlocks = ruleAnalysis.tradeSetup.orderBlocks;
-      parsed.tradeSetup.sessionSweep = ruleAnalysis.tradeSetup.sessionSweep;
-      parsed.tradeSetup.fibonacciCluster = ruleAnalysis.tradeSetup.fibonacciCluster;
-      parsed.tradeSetup.realizedVolatility = ruleAnalysis.tradeSetup.realizedVolatility;
-      parsed.tradeSetup.candleMicrostructure = ruleAnalysis.tradeSetup.candleMicrostructure;
-      parsed.tradeSetup.correlationShield = ruleAnalysis.tradeSetup.correlationShield;
-      parsed.tradeSetup.fvgMitigation = ruleAnalysis.tradeSetup.fvgMitigation;
-      parsed.tradeSetup.marketStructureShift = ruleAnalysis.tradeSetup.marketStructureShift;
-      parsed.tradeSetup.sniperMicroSL = ruleAnalysis.tradeSetup.sniperMicroSL;
-      parsed.tradeSetup.premiumDiscount = ruleAnalysis.tradeSetup.premiumDiscount;
-      parsed.tradeSetup.keyLevelTargets = ruleAnalysis.tradeSetup.keyLevelTargets;
-      parsed.tradeSetup.orderFlowVelocity = ruleAnalysis.tradeSetup.orderFlowVelocity;
-      parsed.tradeSetup.breakevenLadder = ruleAnalysis.tradeSetup.breakevenLadder;
-      parsed.tradeSetup.liquidityVoid = ruleAnalysis.tradeSetup.liquidityVoid;
-      parsed.tradeSetup.fibonacciExtension = ruleAnalysis.tradeSetup.fibonacciExtension;
-      parsed.tradeSetup.footprintAbsorption = ruleAnalysis.tradeSetup.footprintAbsorption;
-      parsed.tradeSetup.mtfStructureMatrix = ruleAnalysis.tradeSetup.mtfStructureMatrix;
-      parsed.tradeSetup.liquidityInducement = ruleAnalysis.tradeSetup.liquidityInducement;
-      parsed.tradeSetup.institutionalChoS = ruleAnalysis.tradeSetup.institutionalChoS;
-      parsed.tradeSetup.dynamicRiskBracket = ruleAnalysis.tradeSetup.dynamicRiskBracket;
-      parsed.tradeSetup.rejectionBlock = ruleAnalysis.tradeSetup.rejectionBlock;
-      parsed.tradeSetup.mcpiConviction = ruleAnalysis.tradeSetup.mcpiConviction;
-      parsed.tradeSetup.harmonics = ruleAnalysis.tradeSetup.harmonics;
-      parsed.tradeSetup.ehlersMESA = ruleAnalysis.tradeSetup.ehlersMESA;
-      parsed.tradeSetup.shannonEntropy = ruleAnalysis.tradeSetup.shannonEntropy;
-      parsed.tradeSetup.candlestickPatterns = ruleAnalysis.tradeSetup.candlestickPatterns;
-      parsed.tradeSetup.milestone50 = ruleAnalysis.tradeSetup.milestone50;
-      parsed.tradeSetup.hurstExponent = ruleAnalysis.tradeSetup.hurstExponent;
-      parsed.tradeSetup.kalmanFilter = ruleAnalysis.tradeSetup.kalmanFilter;
-      parsed.tradeSetup.halfLife = ruleAnalysis.tradeSetup.halfLife;
-      parsed.tradeSetup.ttmSqueeze = ruleAnalysis.tradeSetup.ttmSqueeze;
-      parsed.tradeSetup.chaikinMoneyFlow = ruleAnalysis.tradeSetup.chaikinMoneyFlow;
-      parsed.tradeSetup.kama = ruleAnalysis.tradeSetup.kama;
-      parsed.tradeSetup.hma = ruleAnalysis.tradeSetup.hma;
-      parsed.tradeSetup.parabolicSAR = ruleAnalysis.tradeSetup.parabolicSAR;
-      parsed.tradeSetup.aroon = ruleAnalysis.tradeSetup.aroon;
-      parsed.tradeSetup.vortex = ruleAnalysis.tradeSetup.vortex;
-      parsed.tradeSetup.fisher = ruleAnalysis.tradeSetup.fisher;
-      parsed.tradeSetup.connorsRSI = ruleAnalysis.tradeSetup.connorsRSI;
-      parsed.tradeSetup.awesomeOsc = ruleAnalysis.tradeSetup.awesomeOsc;
-      parsed.tradeSetup.tsi = ruleAnalysis.tradeSetup.tsi;
-      parsed.tradeSetup.advancedVol = ruleAnalysis.tradeSetup.advancedVol;
-      parsed.tradeSetup.keltner = ruleAnalysis.tradeSetup.keltner;
-      parsed.tradeSetup.donchian = ruleAnalysis.tradeSetup.donchian;
-      parsed.tradeSetup.chaikinVol = ruleAnalysis.tradeSetup.chaikinVol;
-      parsed.tradeSetup.ker = ruleAnalysis.tradeSetup.ker;
-      parsed.tradeSetup.vpci = ruleAnalysis.tradeSetup.vpci;
-      parsed.tradeSetup.mcginley = ruleAnalysis.tradeSetup.mcginley;
-      parsed.tradeSetup.elderForce = ruleAnalysis.tradeSetup.elderForce;
-      parsed.tradeSetup.rvi = ruleAnalysis.tradeSetup.rvi;
-      parsed.tradeSetup.frama = ruleAnalysis.tradeSetup.frama;
-      parsed.tradeSetup.milestone75 = ruleAnalysis.tradeSetup.milestone75;
-      parsed.tradeSetup.orderBookImbalance = ruleAnalysis.tradeSetup.orderBookImbalance;
-      parsed.tradeSetup.vwapVarianceBands = ruleAnalysis.tradeSetup.vwapVarianceBands;
-      parsed.tradeSetup.volumeVelocity = ruleAnalysis.tradeSetup.volumeVelocity;
-      parsed.tradeSetup.icebergOrders = ruleAnalysis.tradeSetup.icebergOrders;
-      parsed.tradeSetup.liquidityMatrix = ruleAnalysis.tradeSetup.liquidityMatrix;
-      parsed.tradeSetup.advancedCVD = ruleAnalysis.tradeSetup.advancedCVD;
-      parsed.tradeSetup.footprintCluster = ruleAnalysis.tradeSetup.footprintCluster;
-      parsed.tradeSetup.vpinToxicity = ruleAnalysis.tradeSetup.vpinToxicity;
-      parsed.tradeSetup.liquidityVacuum = ruleAnalysis.tradeSetup.liquidityVacuum;
-      parsed.tradeSetup.orderFlowFusion = ruleAnalysis.tradeSetup.orderFlowFusion;
-      parsed.tradeSetup.kylesLambda = ruleAnalysis.tradeSetup.kylesLambda;
-      parsed.tradeSetup.tradeSizeDistribution = ruleAnalysis.tradeSetup.tradeSizeDistribution;
-      parsed.tradeSetup.microPrice = ruleAnalysis.tradeSetup.microPrice;
-      parsed.tradeSetup.adverseSelection = ruleAnalysis.tradeSetup.adverseSelection;
-      parsed.tradeSetup.executionEngine = ruleAnalysis.tradeSetup.executionEngine;
-      parsed.tradeSetup.crossMarketLeadLag = ruleAnalysis.tradeSetup.crossMarketLeadLag;
-      parsed.tradeSetup.liquidityReplenishment = ruleAnalysis.tradeSetup.liquidityReplenishment;
-      parsed.tradeSetup.permanentPriceImpact = ruleAnalysis.tradeSetup.permanentPriceImpact;
-      parsed.tradeSetup.algoExecutionFootprint = ruleAnalysis.tradeSetup.algoExecutionFootprint;
-      parsed.tradeSetup.executionAlpha = ruleAnalysis.tradeSetup.executionAlpha;
-      parsed.tradeSetup.quantumProbabilityVector = ruleAnalysis.tradeSetup.quantumProbabilityVector;
-      parsed.tradeSetup.multiFractalHurst = ruleAnalysis.tradeSetup.multiFractalHurst;
-      parsed.tradeSetup.fillProbabilitySlippage = ruleAnalysis.tradeSetup.fillProbabilitySlippage;
-      parsed.tradeSetup.darkPoolDealerGamma = ruleAnalysis.tradeSetup.darkPoolDealerGamma;
-      parsed.tradeSetup.sovereignSingularityAlpha = ruleAnalysis.tradeSetup.sovereignSingularityAlpha;
-      parsed.tradeSetup.htfConfluence = ruleAnalysis.tradeSetup.htfConfluence;
-      parsed.tradeSetup.mlPrediction = ruleAnalysis.tradeSetup.mlPrediction;
-      parsed.tradeSetup.metaLabeling = ruleAnalysis.tradeSetup.metaLabeling;
-      if (ruleAnalysis.tradeSetup.structuralSL) {
-        parsed.tradeSetup.stopLoss = ruleAnalysis.tradeSetup.stopLoss;
-        parsed.tradeSetup.entryZone = ruleAnalysis.tradeSetup.entryZone;
-        parsed.tradeSetup.pendingPrice = ruleAnalysis.tradeSetup.pendingPrice;
-        parsed.tradeSetup.takeProfit1 = ruleAnalysis.tradeSetup.takeProfit1;
-        parsed.tradeSetup.takeProfit2 = ruleAnalysis.tradeSetup.takeProfit2;
-        parsed.tradeSetup.slPips = ruleAnalysis.tradeSetup.slPips;
-        parsed.tradeSetup.tp1Pips = ruleAnalysis.tradeSetup.tp1Pips;
-        parsed.tradeSetup.tp2Pips = ruleAnalysis.tradeSetup.tp2Pips;
-        parsed.tradeSetup.riskRewardRatio = ruleAnalysis.tradeSetup.riskRewardRatio;
-      }
-    }
     aiAnalysisCache.set(cacheKey, {
-      result: parsed,
+      result: ruleAnalysis,
       timestamp: Date.now(),
       lastCandleTime: lastCandle?.time,
       lastClosePrice: currentPrice,
     });
-    return parsed;
+    return ruleAnalysis;
   } catch (err) {
     console.error("Gemini analysis error, falling back to calendar-aware rule engine:", err);
     aiAnalysisCache.set(cacheKey, {

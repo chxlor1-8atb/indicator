@@ -489,40 +489,42 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
           </div>
 
           {/* ─── 4. ALIGNED TRADE SETUP DERIVATION CALLOUT (ชี้ให้เห็นว่าแผนเทรดคำนวณจาก 5 เสาหลักอย่างไร) ─── */}
-          <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-slate-900 border border-indigo-500/40 space-y-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-              <h5 className="text-xs font-bold text-white">
-                การแปลงผล 5 เสาหลักเป็นแผนเทรด (5-Pillar Execution Alignment)
-              </h5>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs font-mono">
-              <div className="p-2 rounded bg-black/40 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Entry Point:</span>
-                <span className="text-amber-300 font-bold block">{formatPrice(analysis.tradeSetup.pendingPrice || analysis.tradeSetup.entryZone?.min || analysis.currentPrice || 0)}</span>
-                <span className="text-[9px] text-slate-500 font-sans">โซน OTE Fib / OB / S&R</span>
+          {analysis?.tradeSetup && (
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-slate-900 border border-indigo-500/40 space-y-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                <h5 className="text-xs font-bold text-white">
+                  การแปลงผล 5 เสาหลักเป็นแผนเทรด (5-Pillar Execution Alignment)
+                </h5>
               </div>
-              <div className="p-2 rounded bg-black/40 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Stop Loss:</span>
-                <span className="text-rose-400 font-bold block">{formatPrice(analysis.tradeSetup.stopLoss)}</span>
-                <span className="text-[9px] text-slate-500 font-sans">ซ่อนหลัง Swing / Liquidity</span>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs font-mono">
+                <div className="p-2 rounded bg-black/40 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Entry Point:</span>
+                  <span className="text-amber-300 font-bold block">{formatPrice(analysis.tradeSetup.pendingPrice || analysis.tradeSetup.entryZone?.min || analysis.currentPrice || 0)}</span>
+                  <span className="text-[9px] text-slate-500 font-sans">โซน OTE Fib / OB / S&R</span>
+                </div>
+                <div className="p-2 rounded bg-black/40 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Stop Loss:</span>
+                  <span className="text-rose-400 font-bold block">{formatPrice(analysis.tradeSetup.stopLoss)}</span>
+                  <span className="text-[9px] text-slate-500 font-sans">ซ่อนหลัง Swing / Liquidity</span>
+                </div>
+                <div className="p-2 rounded bg-black/40 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Take Profit 1:</span>
+                  <span className="text-emerald-400 font-bold block">{formatPrice(analysis.tradeSetup.takeProfit1)}</span>
+                  <span className="text-[9px] text-slate-500 font-sans">Pivot R1/S1 หรือ S&R ใกล้สุด</span>
+                </div>
+                <div className="p-2 rounded bg-black/40 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Take Profit 2:</span>
+                  <span className="text-emerald-400 font-bold block">{formatPrice(analysis.tradeSetup.takeProfit2)}</span>
+                  <span className="text-[9px] text-slate-500 font-sans">Pivot R2/S2 หรือ Donchian</span>
+                </div>
               </div>
-              <div className="p-2 rounded bg-black/40 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Take Profit 1:</span>
-                <span className="text-emerald-400 font-bold block">{formatPrice(analysis.tradeSetup.takeProfit1)}</span>
-                <span className="text-[9px] text-slate-500 font-sans">Pivot R1/S1 หรือ S&R ใกล้สุด</span>
-              </div>
-              <div className="p-2 rounded bg-black/40 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Take Profit 2:</span>
-                <span className="text-emerald-400 font-bold block">{formatPrice(analysis.tradeSetup.takeProfit2)}</span>
-                <span className="text-[9px] text-slate-500 font-sans">Pivot R2/S2 หรือ Donchian</span>
-              </div>
-            </div>
 
-            <p className="text-[10.5px] text-slate-300 leading-relaxed pt-1">
-              📱 <strong>ระบบ AI Signal Web & Telegram:</strong> ระบบวิเคราะห์อัตโนมัติ 24 ชม. เมื่อตรวจพบความสอดคล้อง ≥ 3 เสาหลัก สัญญาณจะอัปเดตบนหน้าเว็บนี้ทันที และส่งตรงไปยัง Telegram พร้อมจุด Entry, SL, TP1, TP2 โดยไม่มีการส่งคำสั่งไป MT4/MT5
-            </p>
-          </div>
+              <p className="text-[10.5px] text-slate-300 leading-relaxed pt-1">
+                📱 <strong>ระบบ AI Signal Web & Telegram:</strong> ระบบวิเคราะห์อัตโนมัติ 24 ชม. เมื่อตรวจพบความสอดคล้อง ≥ 3 เสาหลัก สัญญาณจะอัปเดตบนหน้าเว็บนี้ทันที และส่งตรงไปยัง Telegram พร้อมจุด Entry, SL, TP1, TP2 โดยไม่มีการส่งคำสั่งไป MT4/MT5
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

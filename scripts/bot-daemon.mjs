@@ -85,16 +85,28 @@ async function runScanCycle() {
         console.log(`  🎯 [${a.symbol}] ${a.signal} | ${a.orderType} @ ${a.pendingPrice} (SL: ${a.slPrice}, TP: ${a.tpPrice}) Grade: ${a.setupGrade}`);
       }
     }
+    consecutiveErrors = 0;
   } catch (err) {
+    consecutiveErrors++;
     if (scanCount > 2) {
       console.warn(`[${timestamp}] Connection note: ${err.message}`);
     }
   }
 }
 
-// Start scan loop (delay 8s if starting Next.js server, else 1s)
-const startDelayMs = PORT && !process.env.BOT_HOST ? 8000 : 1000;
+let consecutiveErrors = 0;
+
+// Start scan loop (delay 15s if starting Next.js server to ensure full startup, else 1s)
+const startDelayMs = PORT && !process.env.BOT_HOST ? 15000 : 1000;
 setTimeout(() => {
   runScanCycle();
-  setInterval(runScanCycle, SCAN_INTERVAL_MS);
+  setInterval(() => {
+    // If consecutive connection errors, back off to allow server recovery
+    if (consecutiveErrors > 3) {
+      console.log(`[Daemon] Backing off scan cycle due to connection errors...`);
+      consecutiveErrors = 0;
+      return;
+    }
+    runScanCycle();
+  }, SCAN_INTERVAL_MS);
 }, startDelayMs);

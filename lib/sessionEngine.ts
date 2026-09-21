@@ -315,3 +315,12 @@ export function getMarketSessionStatus(symbol: string, customDate?: Date, candle
     orb,
   };
 }
+
+export function getMarketSessionInfo(date: Date = new Date()) {
+  const status = getMarketSessionStatus("EURUSD", date);
+  return {
+    ...status,
+    currentSession: status.activeSessions.join(", ") || "Closed/Off-Hours",
+    isLondonNyOverlap: status.isGoldenHour,
+  };
+}

@@ -855,6 +855,8 @@ function SignalJournalCard() {
             <div className="relative">
               <Search className="w-3 h-3 text-slate-400 absolute left-2 top-2" />
               <input
+                id="journal-quick-search"
+                name="journalQuickSearch"
                 type="text"
                 placeholder="ค้นหาคู่เงิน (เช่น EUR, XAU, JPY)..."
                 value={searchQuery}
@@ -992,6 +994,8 @@ function SignalJournalCard() {
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                id="journal-trade-search"
+                name="journalTradeSearch"
                 type="text"
                 placeholder="ค้นหาคู่เงิน (XAUUSD, EUR...), BUY/SELL, Grade A, TP..."
                 value={tradeSearchQuery}

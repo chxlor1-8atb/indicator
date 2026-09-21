@@ -787,6 +787,8 @@ function HeroExecutionHUD({
             <div className="flex items-center gap-1 bg-surface-100 px-2 py-0.5 rounded border border-slate-800">
               <span className="text-[10px] text-slate-500">$</span>
               <input
+                id="hero-custom-balance-input"
+                name="customBalance"
                 type="number"
                 min={1}
                 max={100000}
