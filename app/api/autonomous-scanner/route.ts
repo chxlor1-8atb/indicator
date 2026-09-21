@@ -85,8 +85,8 @@ export async function GET(request: NextRequest) {
         const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
         const envChatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
 
-        // ดึงค่า filter จาก environment variable เป็น default สำหรับ primary chat (เริ่มต้นเฉพาะทองคำ XAUUSD เพื่อความปลอดภัยสูงสุด)
-        const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "XAUUSD";
+        // ดึงค่า filter จาก database subscriber หรือ environment variable (เริ่มต้น "ALL" ทุกคู่ โดยระบบจะคัดส่งทีละ 1 คู่ที่ดีที่สุดอัตโนมัติ)
+        const primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
 
         // รวบรวมรายชื่อผู้รับการแจ้งเตือนทั้งหมดจาก cached subscriber list (5-min TTL)
         const allSubs = await getTelegramSubscribers();
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
           subscribersMap.set(envChatId, envSub?.alert_symbol || primaryFilter);
         }
         for (const sub of allSubs) {
-          subscribersMap.set(sub.chat_id, sub.alert_symbol || "XAUUSD");
+          subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
         }
 
         // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram (AWAITED ป้องกัน Serverless kill)

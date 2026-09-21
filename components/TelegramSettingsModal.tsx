@@ -37,7 +37,7 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
     if (typeof window !== "undefined") {
       setBotToken(localStorage.getItem("telegram_bot_token") || "");
       setChatId(localStorage.getItem("telegram_chat_id") || "");
-      const savedFilter = localStorage.getItem("telegram_alert_symbols") || "XAUUSD";
+      const savedFilter = localStorage.getItem("telegram_alert_symbols") || "ALL";
       setAlertSymbols(savedFilter);
       if (savedFilter.includes(",") || savedFilter === "ALL" || savedFilter === "FOREX") {
         setFilterMode("MULTI");

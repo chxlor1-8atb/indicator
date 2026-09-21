@@ -973,6 +973,7 @@ export async function saveTelegramSubscriber(chatId: string, username?: string, 
        ON CONFLICT (chat_id) DO UPDATE SET alert_symbol = $3, min_grade = $4, is_active = TRUE`,
       [chatId, username || "trader", alertSymbol, minGrade]
     );
+    invalidateSubscriberCache();
     return { success: true };
   } catch (err) {
     console.error("Error saving telegram subscriber:", err);
