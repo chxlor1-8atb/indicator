@@ -107,81 +107,103 @@ export async function GET(request: NextRequest) {
             (a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)
           );
 
-          await Promise.allSettled(
-            sortedAnalyses.map(async (analysis: AnalysisResult, idx: number) => {
-              // ตรวจสอบ Throttle เพื่อป้องกันการส่งซ้ำ
-              const throttleKey = `${analysis.symbol}_${analysis.signal}_${analysis.tradeSetup?.orderType}`;
-              const now = Date.now();
-              const lastSent = actionableAlertThrottle.get(throttleKey) || 0;
+          let hasDispatchedTelegramInCycle = false;
 
-              // บันทึกลงฐานข้อมูลแบบ Smart Deduplication (บันทึกทุกคู่เพื่อสถิติใน Dashboard)
-              const saveRes: SaveAiSignalResult = await saveAiSignal(analysis).catch((err) => {
-                console.warn("Could not save signal to DB:", err);
-                return { saved: false };
-              });
+          for (const analysis of sortedAnalyses) {
+            // บันทึกลงฐานข้อมูลแบบ Single Active Trade & Smart Deduplication (บันทึกทุกคู่เพื่อสถิติใน Dashboard)
+            const saveRes: SaveAiSignalResult = await saveAiSignal(analysis).catch((err) => {
+              console.warn("Could not save signal to DB:", err);
+              return { saved: false };
+            });
 
-              // Anti-Flood Guard: ในแต่ละรอบสแกน ส่งแจ้งเตือน Telegram สูงสุด 1 คู่ (คู่ที่คะแนนสูงสุด)
-              // เพื่อป้องกันการยิงหลายคู่พร้อมกันจนบัญชี Telegram โดนระงับ
-              if (idx > 0) return;
+            // 🚨 กฎเหล็กข้อสำคัญ: ส่ง Telegram ได้ก็ต่อเมื่อเป็นสัญญาณใหม่ที่บันทึกสำเร็จจริงเท่านั้น!
+            // ถ้า saveRes.saved === false (เช่น มีออเดอร์เดิมเปิดค้างอยู่ยังไม่ชน TP/SL) จะต้องไม่ส่งเด็ดขาด
+            if (!saveRes.saved || !saveRes.signalId) {
+              continue;
+            }
 
-              // ส่ง Telegram ถ้าเป็นสัญญาณใหม่ หรือผ่าน Cooldown มาแล้ว
-              if ((saveRes.saved || now - lastSent >= ACTIONABLE_COOLDOWN_MS) && now - lastSent >= ACTIONABLE_COOLDOWN_MS) {
-                actionableAlertThrottle.set(throttleKey, now);
+            // ตรวจสอบ Throttle เพื่อป้องกันการส่งซ้ำ
+            const throttleKey = `${analysis.symbol}_${analysis.signal}_${analysis.tradeSetup?.orderType}`;
+            const now = Date.now();
+            const lastSent = actionableAlertThrottle.get(throttleKey) || 0;
+            if (now - lastSent < ACTIONABLE_COOLDOWN_MS) {
+              continue;
+            }
 
-                // ── Auto-delete: ลบข้อความสัญญาณเก่าของคู่นี้ทิ้งเมื่อมีสัญญาณใหม่เข้ามาแทน ──
-                if (saveRes.saved && saveRes.previousMessages && Array.isArray(saveRes.previousMessages)) {
-                  for (const prev of saveRes.previousMessages) {
-                    if (prev.chatId && prev.messageId) {
-                      deleteTelegramMessage({ botToken, chatId: prev.chatId, messageId: prev.messageId }).catch(() => {});
-                    }
-                  }
-                }
+            // Anti-Flood Guard: ในแต่ละรอบสแกน ส่งแจ้งเตือน Telegram สูงสุด 1 คู่ใหม่ (คู่ที่คะแนนสูงสุด)
+            if (hasDispatchedTelegramInCycle) {
+              continue;
+            }
 
-                // ── Auto-delete: ลบข้อความเรดาร์ล่วงหน้า (Pre-Warning) เดิมของคู่นี้ทิ้ง เพราะมีจุดเข้าจริงแล้ว ──
-                const prevPreWarning = preWarningMessagesMap.get(analysis.symbol);
-                if (prevPreWarning) {
-                  for (const prev of prevPreWarning) {
-                    deleteTelegramMessage({ botToken, chatId: prev.chatId, messageId: prev.messageId }).catch(() => {});
-                  }
-                  preWarningMessagesMap.delete(analysis.symbol);
-                }
+            actionableAlertThrottle.set(throttleKey, now);
+            hasDispatchedTelegramInCycle = true;
 
-                if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
-                  const sentMessages: Array<{ chatId: string; messageId: number }> = [];
-                  const sendPromises: Promise<unknown>[] = [];
-
-                  subscribersMap.forEach((filter, targetChatId) => {
-                    if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
-                      sendPromises.push(
-                        sendTelegramMessage({ botToken, chatId: targetChatId, analysis })
-                          .then((res) => {
-                            if (res.success && res.messageId) {
-                              sentMessages.push({ chatId: targetChatId, messageId: res.messageId });
-                            }
-                          })
-                          .catch((e) => {
-                            console.warn(`Failed to dispatch alert to ${targetChatId}:`, e);
-                          })
-                      );
-                    }
-                  });
-
-                  await Promise.allSettled(sendPromises);
-
-                  // บันทึก Message ID ลงใน DB เพื่อให้ลบทิ้งอัตโนมัติได้เมื่อออเดอร์ชน TP/SL
-                  if (saveRes.signalId && sentMessages.length > 0) {
-                    await updateSignalTelegramMessages(saveRes.signalId, sentMessages);
-                  }
+            // ── Auto-delete: ลบข้อความสัญญาณเก่าของคู่นี้ทิ้งเมื่อมีสัญญาณใหม่เข้ามาแทน ──
+            if (saveRes.previousMessages && Array.isArray(saveRes.previousMessages)) {
+              for (const prev of saveRes.previousMessages) {
+                if (prev.chatId && prev.messageId) {
+                  deleteTelegramMessage({ botToken, chatId: prev.chatId, messageId: prev.messageId }).catch(() => {});
                 }
               }
-            })
-          );
+            }
+
+            // ── Auto-delete: ลบข้อความเรดาร์ล่วงหน้า (Pre-Warning) เดิมของคู่นี้ทิ้ง เพราะมีจุดเข้าจริงแล้ว ──
+            const prevPreWarning = preWarningMessagesMap.get(analysis.symbol);
+            if (prevPreWarning) {
+              for (const prev of prevPreWarning) {
+                deleteTelegramMessage({ botToken, chatId: prev.chatId, messageId: prev.messageId }).catch(() => {});
+              }
+              preWarningMessagesMap.delete(analysis.symbol);
+            }
+
+            if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
+              const sentMessages: Array<{ chatId: string; messageId: number }> = [];
+              const sendPromises: Promise<unknown>[] = [];
+
+              subscribersMap.forEach((filter, targetChatId) => {
+                if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
+                  sendPromises.push(
+                    sendTelegramMessage({
+                      botToken,
+                      chatId: targetChatId,
+                      analysis,
+                      orderId: saveRes.signalId,
+                    })
+                      .then((res) => {
+                        if (res.success && res.messageId) {
+                          sentMessages.push({ chatId: targetChatId, messageId: res.messageId });
+                        }
+                      })
+                      .catch((e) => {
+                        console.warn(`Failed to dispatch alert to ${targetChatId}:`, e);
+                      })
+                  );
+                }
+              });
+
+              await Promise.allSettled(sendPromises);
+
+              // บันทึก Message ID ลงใน DB เพื่อให้ลบทิ้งอัตโนมัติได้เมื่อออเดอร์ชน TP/SL
+              if (saveRes.signalId && sentMessages.length > 0) {
+                await updateSignalTelegramMessages(saveRes.signalId, sentMessages);
+              }
+            }
+          }
         }
 
         // 2. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) (AWAITED ป้องกัน Serverless kill)
         if (scanResult.preWarningAnalyses && scanResult.preWarningAnalyses.length > 0) {
           await Promise.allSettled(
             scanResult.preWarningAnalyses.map(async (analysis: AnalysisResult) => {
+              // ข้ามหากมีออเดอร์ ACTIVE หรือ HIT_TP1 เปิดค้างอยู่สำหรับสินทรัพย์นี้
+              const activeCheck = await resilientQuery<Array<{ id: number }>>(
+                `SELECT id FROM ai_signals WHERE symbol = $1 AND status IN ('ACTIVE', 'HIT_TP1') LIMIT 1`,
+                [analysis.symbol]
+              ).catch(() => []);
+              if (activeCheck && activeCheck.length > 0) {
+                return;
+              }
+
               const now = Date.now();
               const lastAlert = preWarningAlertThrottle.get(analysis.symbol) || 0;
               if (now - lastAlert >= PRE_WARNING_COOLDOWN_MS) {

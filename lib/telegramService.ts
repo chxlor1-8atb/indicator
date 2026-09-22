@@ -35,7 +35,7 @@ export function getAssetPipMultiplier(symbol: string): number {
   return 10000;
 }
 
-export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentPrice?: number): string {
+export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentPrice?: number, orderId?: number | string): string {
   const signalBadge = {
     STRONG_BUY: "🟢🟢 <b>STRONG BUY</b>",
     BUY: "🟢 <b>BUY</b>",
@@ -105,8 +105,11 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentP
   const adjustedRR = analysis.tradeSetup.dynamicRiskReward?.adjustedRR || analysis.tradeSetup.riskRewardRatio;
   const riskRec = analysis.tradeSetup.dynamicRiskReward?.recommendation || "";
 
+  const orderIdDisplay = orderId ? `🎫 <b>ตั๋วออเดอร์ที่:</b> <code>#${String(orderId).padStart(4, "0")}</code>` : "";
+
   const lines = [
     `⚡ <b>AI SIGNAL: ${analysis.symbol} (${analysis.timeframe})</b>`,
+    orderIdDisplay,
     `━━━━━━━━━━━━━━━━━━━━`,
     `🎯 <b>คำสั่ง MT5:</b> ${mtOrderIcon} <b><code>${mtOrderType}</code></b> (${signalBadge})`,
     `💰 <b>ราคาตลาด:</b> <code>${formatPrice(currentP, analysis.symbol)}</code>`,
@@ -243,9 +246,11 @@ export function formatTelegramOrderResultMessage(data: OrderResultData): string 
 
   const grade = data.setupGrade || "A";
   const conf = data.confluenceScore || 85;
+  const orderTicketDisplay = data.id ? `🎫 <b>ตั๋วออเดอร์ที่:</b> <code>#${String(data.id).padStart(4, "0")}</code>` : "";
 
   const lines = [
     headerTitle,
+    orderTicketDisplay,
     `━━━━━━━━━━━━━━━━━━━━`,
     `📊 <b>สินทรัพย์:</b> <code>${data.symbol}</code> (${data.timeframe})`,
     `📱 <b>คำสั่ง:</b> ${orderIcon} <b><code>${mtOrderType}</code></b> (เกรด: <b>${grade}</b> | ${conf}%)`,
@@ -271,7 +276,12 @@ export interface SendTelegramOptions {
   orderResult?: OrderResultData;
   rawHtml?: boolean;
   currentPrice?: number;
+  orderId?: number | string;
 }
+
+// ─── DEDUPLICATION DISPATCH SHIELD (60s window per chat + fingerprint) ───
+const _recentDispatches = new Map<string, number>();
+const DISPATCH_SUPPRESSION_WINDOW_MS = 60 * 1000;
 
 // ─── ANTI-FLOOD RATE LIMITER & SEQUENTIAL DISPATCH QUEUE ───
 // Telegram limits: max 1 msg/sec per chat. We enforce a 1500ms gap to eliminate flood/freeze risk.
@@ -301,10 +311,32 @@ function isHourlyLimitExceeded(chatId: string): boolean {
 export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; messageId?: number; error?: string }> {
   const botToken = options.botToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
   const chatId = options.chatId || process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
-  const { message, analysis, isPreWarning, orderResult, rawHtml, currentPrice } = options;
+  const { message, analysis, isPreWarning, orderResult, rawHtml, currentPrice, orderId } = options;
 
   if (!botToken || !chatId) {
     return { success: false, error: "Telegram Bot Token and Chat ID are required." };
+  }
+
+  // Safety Shield: prevent duplicate alerts to the same chat within 60 seconds
+  const fingerprintKey = orderResult
+    ? `res_${chatId}_${orderResult.id}_${orderResult.outcome}`
+    : analysis
+    ? `sig_${chatId}_${analysis.symbol}_${orderId || analysis.tradeSetup.pendingPrice}_${analysis.signal}_${isPreWarning ? "pre" : "act"}`
+    : null;
+
+  if (fingerprintKey) {
+    const lastSentTime = _recentDispatches.get(fingerprintKey);
+    const now = Date.now();
+    if (lastSentTime && now - lastSentTime < DISPATCH_SUPPRESSION_WINDOW_MS) {
+      console.log(`[Telegram Dispatch Shield] Suppressed duplicate alert within 60s: ${fingerprintKey}`);
+      return { success: true, error: "Duplicate alert suppressed within 60s window" };
+    }
+    _recentDispatches.set(fingerprintKey, now);
+    if (_recentDispatches.size > 200) {
+      for (const [k, t] of _recentDispatches.entries()) {
+        if (now - t > DISPATCH_SUPPRESSION_WINDOW_MS) _recentDispatches.delete(k);
+      }
+    }
   }
 
   // Safety Shield: prevent bot freezing from spam bursts
@@ -317,7 +349,7 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
     : analysis
     ? isPreWarning
       ? formatTelegramPreWarningMessage(analysis, currentPrice)
-      : formatTelegramAnalysisMessage(analysis, currentPrice)
+      : formatTelegramAnalysisMessage(analysis, currentPrice, orderId)
     : rawHtml
     ? message || ""
     : escapeHtml(message || "Test Notification from AI Indicator Bot");

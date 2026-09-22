@@ -496,9 +496,42 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<SaveAiSign
   try {
     const entryPrice = tradeSetup.pendingPrice || (tradeSetup.entryZone.min + tradeSetup.entryZone.max) / 2;
 
-    // 1. Smart State-Transition & Deduplication Filter:
-    // Check the latest recorded signal for this symbol and timeframe
-    const latestRows = await resilientQuery<Array<{
+    // 1. Single-Active-Trade Constraint & Smart Deduplication Filter:
+    // Check if there is ANY currently active signal on this symbol (across all timeframes)
+    // that is still in progress ('ACTIVE' or 'HIT_TP1')
+    const activeRows = await resilientQuery<Array<{
+      id: number;
+      action: string;
+      entry_price: number | string;
+      status: string;
+      created_at: string;
+      timeframe: string;
+      telegram_messages?: Array<{ chatId: string; messageId: number }>;
+    }>>(
+      `
+      SELECT id, action, entry_price, status, created_at, timeframe, telegram_messages
+      FROM ai_signals 
+      WHERE symbol = $1 AND status IN ('ACTIVE', 'HIT_TP1')
+      ORDER BY created_at DESC
+      LIMIT 1;
+      `,
+      [symbol]
+    );
+
+    let previousMessages: Array<{ chatId: string; messageId: number }> | undefined;
+
+    if (activeRows && activeRows.length > 0) {
+      const active = activeRows[0];
+      return {
+        saved: false,
+        signalId: active.id,
+        previousMessages: active.telegram_messages,
+        reason: `Signal skipped: Active trade #${active.id} is already open on ${symbol} (${active.timeframe}, Status: ${active.status}). Cannot open new position until current trade reaches TP or SL.`,
+      };
+    }
+
+    // 2. Cooldown Guard: Check if a trade on this symbol was created within the last 30 minutes in the same zone
+    const recentClosedRows = await resilientQuery<Array<{
       id: number;
       action: string;
       entry_price: number | string;
@@ -509,29 +542,26 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<SaveAiSign
       `
       SELECT id, action, entry_price, status, created_at, telegram_messages
       FROM ai_signals 
-      WHERE symbol = $1 AND timeframe = $2
+      WHERE symbol = $1 AND created_at > NOW() - INTERVAL '30 minutes'
       ORDER BY created_at DESC
       LIMIT 1;
       `,
-      [symbol, timeframe]
+      [symbol]
     );
 
-    let previousMessages: Array<{ chatId: string; messageId: number }> | undefined;
-
-    if (latestRows && latestRows.length > 0) {
-      const latest = latestRows[0];
-      previousMessages = latest.telegram_messages;
-      const prevPrice = Number(latest.entry_price);
-      const isSameDirection = latest.action === signal;
-      const isStillActive = latest.status === "ACTIVE";
-
-      // Price distance from previous entry (threshold approx 0.5% or entry zone width)
+    if (recentClosedRows && recentClosedRows.length > 0) {
+      const recent = recentClosedRows[0];
+      previousMessages = recent.telegram_messages;
+      const prevPrice = Number(recent.entry_price);
+      const isSameDirection = recent.action === signal;
       const priceDistance = Math.abs(entryPrice - prevPrice);
-      const threshold = Math.max(entryPrice * 0.005, 1);
+      const threshold = Math.max(entryPrice * 0.003, 0.5);
 
-      // If active, same direction, and price hasn't moved significantly, skip duplicate signal
-      if (isStillActive && isSameDirection && priceDistance < threshold) {
-        return { saved: false, reason: "Signal skipped: Active trade already exists within the same entry zone" };
+      if (isSameDirection && priceDistance < threshold) {
+        return {
+          saved: false,
+          reason: `Signal skipped: Duplicate entry for ${symbol} within 30m of trade #${recent.id} in the same zone.`,
+        };
       }
     }
 

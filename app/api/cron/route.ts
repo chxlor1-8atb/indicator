@@ -10,7 +10,7 @@ import {
   DEFAULT_TELEGRAM_CHAT_ID,
 } from "@/lib/telegramService";
 
-import { resolveOpenSignals, saveAiSignal, saveBacktestResults, BacktestTrade, resilientQuery } from "@/lib/db";
+import { resolveOpenSignals, saveAiSignal, saveBacktestResults, BacktestTrade, resilientQuery, SaveAiSignalResult } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -101,21 +101,29 @@ export async function GET(request: NextRequest) {
         // Record actionable trades with state-transition deduplication
         const isActionable = analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER";
         if (isActionable) {
-          saveAiSignal(analysis).catch(console.error);
-        }
-
-        // Broadcast alert if confluence score is actionable (Grade A/A+ or score >= 60)
-        const isConfluenceEligible =
-          analysis.setupGrade === "A+" ||
-          analysis.setupGrade === "A" ||
-          (analysis.masterConfluence?.totalScore ?? 0) >= 60;
-
-        if (botToken && isActionable && isConfluenceEligible && subscribersMap.size > 0) {
-          subscribersMap.forEach((filter, targetChatId) => {
-            if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
-              sendTelegramMessage({ botToken, chatId: targetChatId, analysis }).catch(() => {});
-            }
+          const saveRes: SaveAiSignalResult = await saveAiSignal(analysis).catch((e) => {
+            console.warn("Cron save signal error:", e);
+            return { saved: false };
           });
+
+          // Broadcast alert ONLY if it was genuinely saved as a new non-conflicting trade
+          const isConfluenceEligible =
+            analysis.setupGrade === "A+" ||
+            analysis.setupGrade === "A" ||
+            (analysis.masterConfluence?.totalScore ?? 0) >= 65;
+
+          if (botToken && saveRes.saved && saveRes.signalId && isConfluenceEligible && subscribersMap.size > 0) {
+            subscribersMap.forEach((filter, targetChatId) => {
+              if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
+                sendTelegramMessage({
+                  botToken,
+                  chatId: targetChatId,
+                  analysis,
+                  orderId: saveRes.signalId,
+                }).catch(() => {});
+              }
+            });
+          }
         }
 
         results.push({
