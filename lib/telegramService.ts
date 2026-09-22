@@ -97,10 +97,22 @@ export function formatTelegramAnalysisMessage(
   const recommendedScenario = analysis.tradeSetup.multiScenarioPlanning?.recommendedScenario || "";
   const scenarioAnalysis = analysis.tradeSetup.multiScenarioPlanning?.analysis || "";
 
-  // Breakout Confirmation
-  const breakoutStatus = analysis.tradeSetup.breakoutConfirmation?.isBreakoutConfirmed ? "✅ ยืนยัน" : 
-                         analysis.tradeSetup.breakoutConfirmation?.requiresConfirmation ? "⏳ รอยืนยัน" : "❌ ไม่ยืนยัน";
-  const breakoutRec = analysis.tradeSetup.breakoutConfirmation?.recommendation || "";
+  // ─── 8-IMAGE BREAKOUT & FALSE BREAKOUT MATRIX ───
+  const bConf = analysis.tradeSetup.breakoutConfirmation;
+  const isTrap = bConf?.breakoutType === "FALSE_BREAKOUT_TRAP";
+  const isValidBreak = bConf?.breakoutType === "VALID_BREAKOUT";
+  const breakoutStatus = isValidBreak
+    ? `✅ เบรกจริง (โอกาสชนะ ${bConf?.winProbability || 75}%)`
+    : isTrap
+    ? `❌ เบรกหลอก (False Breakout Trap!)`
+    : bConf?.requiresConfirmation
+    ? `⏳ รอยืนยันแท่งเทียนปิด`
+    : bConf?.isBreakoutConfirmed ? `✅ ยืนยัน` : `⚪ สภาวะในกรอบ`;
+  const breakoutRec = bConf?.recommendation || "";
+  const breakoutTactics = bConf?.tacticalAdvice || "";
+  const breakoutChecklistSummary = bConf?.checklistScore !== undefined
+    ? `เช็กลิสต์ผ่าน: ${bConf.checklistScore}/7 ข้อ | วอลุ่ม: ${bConf.volumeRatio || 1.0}x`
+    : "";
 
   // MTF Validation
   const mtfStatus = analysis.tradeSetup.mtfValidation?.isValid ? "✅ ผ่าน" : "❌ ไม่ผ่าน";
@@ -146,8 +158,10 @@ export function formatTelegramAnalysisMessage(
     scenarioAnalysis ? `   └─ ${scenarioAnalysis}` : "",
     ``,
     // Breakout Confirmation Section
-    breakoutRec ? `🚀 <b>Breakout Status:</b> ${breakoutStatus}` : "",
-    breakoutRec ? `   └─ ${breakoutRec}` : "",
+    bConf ? `🚀 <b>Breakout Matrix:</b> ${breakoutStatus}` : "",
+    breakoutChecklistSummary ? `   ├─ <b>สถิติ:</b> ${breakoutChecklistSummary}` : "",
+    breakoutRec ? `   ├─ <b>สัญญาณ:</b> ${breakoutRec}` : "",
+    breakoutTactics ? `   └─ <b>กลยุทธ์:</b> ${breakoutTactics}` : "",
     ``,
     // MTF Validation Section
     mtfRec ? `📊 <b>MTF Validation:</b> ${mtfStatus}` : "",

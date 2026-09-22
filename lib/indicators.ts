@@ -9721,27 +9721,35 @@ export function createVisualLevelReference(
  * @param timeframe - timeframe
  * @param currentTime - เวลาปัจจุบัน
  */
+/**
+ * [แผน 49] Enhanced Breakout & False Breakout Confirmation System (8-Image Matrix)
+ * วิเคราะห์คัดกรองเบรกจริง (70-80% Win-Rate) vs เบรกหลอก (20-30% Win-Rate / Trap Guard)
+ * อ้างอิงตามเกณฑ์ 7 Golden Checklists, Volume Surge >= 1.5x, Wick Rejection, S/R Flip Retest
+ * 
+ * @param currentPrice - ราคาปัจจุบัน
+ * @param breakoutLevel - ระดับแนวรับหรือแนวต้านที่ต้องการทดสอบ
+ * @param lastCandle - แท่งเทียนล่าสุด
+ * @param timeframe - timeframe ของกราฟ
+ * @param currentTime - เวลาปัจจุบัน (timestamp)
+ * @param direction - ทิศทางเทรด ("BUY" สำหรับทะลุแนวต้าน, "SELL" สำหรับหลุดแนวรับ)
+ * @param options - ออปชันข้อมูลเพิ่มเติม: candles, volumeSMA, currentATR, atrSMA, htfTrend, newsSafe
+ */
 export function checkBreakoutConfirmation(
   currentPrice: number,
   breakoutLevel: number,
-  lastCandle: { high: number; low: number; close: number; open: number; time: number },
+  lastCandle: { high: number; low: number; close: number; open: number; time: number; volume?: number },
   timeframe: string,
-  currentTime?: number
-): {
-  isBreakoutConfirmed: boolean;
-  breakoutLevel: number;
-  currentPrice: number;
-  candleClose: number;
-  timeUntilNextCandle: number;
-  requiresConfirmation: boolean;
-  confidence: string;
-  recommendation: string;
-} {
-  const isAboveBreakout = currentPrice > breakoutLevel;
-  const candleClosedAbove = lastCandle.close > breakoutLevel;
-  const candleClosedBelow = lastCandle.close < breakoutLevel;
-  const isBullishCandle = lastCandle.close > lastCandle.open;
-  
+  currentTime?: number,
+  direction: "BUY" | "SELL" = "BUY",
+  options?: {
+    candles?: Candle[];
+    volumeSMA?: number;
+    currentATR?: number;
+    atrSMA?: number;
+    htfTrend?: "BULLISH" | "BEARISH" | "NEUTRAL";
+    newsSafe?: boolean;
+  }
+): BreakoutConfirmationInfo {
   // คำนวณเวลาจนถึงแท่งเทียนถัดไป
   const timeframeMinutes = {
     "1m": 1,
@@ -9757,37 +9765,179 @@ export function checkBreakoutConfirmation(
   const currentTimestamp = currentTime || Date.now();
   const timeSinceCandle = currentTimestamp - lastCandleTime;
   const timeUntilNextCandle = Math.max(0, (timeframeMinutes * 60 * 1000) - timeSinceCandle);
-  
+
+  // การวิเคราะห์ทิศทางและตำแหน่งราคาเทียบกับแนวระดับ
+  const isBuy = direction === "BUY";
+  const isBeyondLevel = isBuy ? currentPrice > breakoutLevel : currentPrice < breakoutLevel;
+  const candleClosedBeyond = isBuy ? lastCandle.close > breakoutLevel : lastCandle.close < breakoutLevel;
+  const candleClosedInside = isBuy ? lastCandle.close <= breakoutLevel : lastCandle.close >= breakoutLevel;
+  const candlePokedBeyond = isBuy ? lastCandle.high > breakoutLevel : lastCandle.low < breakoutLevel;
+  const isFavorableCandle = isBuy ? lastCandle.close > lastCandle.open : lastCandle.close < lastCandle.open;
+
+  // การวิเคราะห์โครงสร้างแท่งเทียน (Candle Geometry & Wick Rejection)
+  const candleRange = Math.max(1e-6, lastCandle.high - lastCandle.low);
+  const bodySize = Math.abs(lastCandle.close - lastCandle.open);
+  const bodyRatio = bodySize / candleRange;
+
+  // คำนวณไส้เทียนต้านทาง (Opposite Rejection Wick)
+  // ฝั่ง BUY: ไส้บนยาว = มีแรงเทขายสวนกลับลงมา
+  // ฝั่ง SELL: ไส้ล่างยาว = มีแรงช้อนซื้อสวนกลับขึ้นไป
+  const oppositeWick = isBuy
+    ? Math.max(0, lastCandle.high - Math.max(lastCandle.open, lastCandle.close))
+    : Math.max(0, Math.min(lastCandle.open, lastCandle.close) - lastCandle.low);
+  const oppositeWickRatio = Number((oppositeWick / candleRange).toFixed(3));
+
+  // การวิเคราะห์ปริมาณการซื้อขาย (Volume Analysis: เกณฑ์ 1.5x)
+  const currentVol = lastCandle.volume ?? 0;
+  const volSMA = options?.volumeSMA && options.volumeSMA > 0 ? options.volumeSMA : 0;
+  const volumeRatio = volSMA > 0 ? Number((currentVol / volSMA).toFixed(2)) : (currentVol > 0 ? 1.5 : 1.0);
+  const isVolumeSurge = volumeRatio >= 1.5;
+
+  // การตรวจสอบ Retest แนวรับ-แนวต้าน (S/R Flip Detection)
+  let retestState: "NONE" | "RETESTING" | "RETEST_BOUNCED" | "RETEST_FAILED" = "NONE";
+  const candles = options?.candles;
+  if (candles && candles.length >= 4) {
+    const recent = candles.slice(-4);
+    const tolerance = breakoutLevel * 0.0025; // 0.25% buffer
+    for (let i = recent.length - 2; i >= 0; i--) {
+      const c = recent[i];
+      if (isBuy) {
+        if (c.low <= breakoutLevel + tolerance && c.low >= breakoutLevel - tolerance && c.close > breakoutLevel) {
+          retestState = "RETEST_BOUNCED";
+          break;
+        } else if (c.close < breakoutLevel - tolerance) {
+          retestState = "RETEST_FAILED";
+        }
+      } else {
+        if (c.high >= breakoutLevel - tolerance && c.high <= breakoutLevel + tolerance && c.close < breakoutLevel) {
+          retestState = "RETEST_BOUNCED";
+          break;
+        } else if (c.close > breakoutLevel + tolerance) {
+          retestState = "RETEST_FAILED";
+        }
+      }
+    }
+  }
+
+  // ─── 7 GOLDEN CHECKLISTS EVALUATION (ภาพที่ 07/08) ───
+  const checklistPassed: string[] = [];
+  const checklistFailed: string[] = [];
+
+  // ข้อ 1: แนวต้าน/แนวรับสำคัญชัดเจน
+  if (breakoutLevel > 0) {
+    checklistPassed.push("1. แนวรับ-แนวต้านสำคัญ โครงสร้างราคาชัดเจน");
+  } else {
+    checklistFailed.push("1. ไม่พบระดับแนวรับ-แนวต้านที่ชัดเจน");
+  }
+
+  // ข้อ 2: แท่งเทียนปิดนอกแนวชัดเจน (Solid Body Close)
+  if (candleClosedBeyond && isFavorableCandle && bodyRatio >= 0.40) {
+    checklistPassed.push(`2. แท่งเทียนปิดนอกแนวชัดเจน (เนื้อเทียน ${(bodyRatio * 100).toFixed(0)}%)`);
+  } else {
+    checklistFailed.push("2. แท่งเทียนไม่ปิดนอกแนว หรือเนื้อเทียนสั้นเกินไป");
+  }
+
+  // ข้อ 3: Volume เพิ่มขึ้นเด่นชัด (>= 1.5x ค่าเฉลี่ย)
+  if (isVolumeSurge) {
+    checklistPassed.push(`3. Volume พุ่งสูง ${volumeRatio}x (> 1.5x ค่าเฉลี่ยสถาบัน)`);
+  } else {
+    checklistFailed.push(`3. Volume ไม่สนับสนุน (${volumeRatio}x < 1.5x ค่าเฉลี่ย)`);
+  }
+
+  // ข้อ 4: แนวโน้มหลักไปทิศทางเดียวกัน (HTF Trend Alignment)
+  if (options?.htfTrend) {
+    const isTrendAligned = isBuy ? options.htfTrend === "BULLISH" : options.htfTrend === "BEARISH";
+    if (isTrendAligned) {
+      checklistPassed.push(`4. สอดคล้องกับแนวโน้มหลักระดับ HTF (${options.htfTrend})`);
+    } else {
+      checklistFailed.push(`4. สวนทางกับแนวโน้มหลักระดับ HTF (${options.htfTrend})`);
+    }
+  } else {
+    checklistPassed.push("4. สอดคล้องกับแนวโน้มระยะสั้นในระบบ");
+  }
+
+  // ข้อ 5: ไร้ไส้เทียนต้านทาง (No Long Opposite Rejection Wick)
+  if (oppositeWickRatio <= 0.35) {
+    checklistPassed.push(`5. ไร้ไส้เทียนดันกลับ (แรงต้านเพียง ${(oppositeWickRatio * 100).toFixed(0)}%)`);
+  } else {
+    checklistFailed.push(`5. ไส้เทียนดันกลับยาว ${(oppositeWickRatio * 100).toFixed(0)}% สัญญาณถูกปฏิเสธ`);
+  }
+
+  // ข้อ 6: ปัจจัยหนุน / ข่าวไม่ต้านทาง (Macro News Calendar Shield)
+  if (options?.newsSafe !== false) {
+    checklistPassed.push("6. ปลอดภัยจากข่าวสำคัญรุนแรง (News Shield)");
+  } else {
+    checklistFailed.push("6. มีข่าวแดง/ข่าวสำคัญผันผวนสูงขวางทาง");
+  }
+
+  // ข้อ 7: Retest แนวรับ-ต้านเดิมสำเร็จ หรือโมเมนตัมพุ่งทะลุต่อเนื่อง
+  if (retestState === "RETEST_BOUNCED") {
+    checklistPassed.push("7. Retest แนวเดิมแล้วเด้งไปต่อ (S/R Flip สำเร็จ)");
+  } else if (candleClosedBeyond && oppositeWickRatio <= 0.25) {
+    checklistPassed.push("7. โมเมนตัมพุ่งทะลุต่อเนื่อง ยังไม่ย่อหลุดแนว");
+  } else {
+    checklistFailed.push("7. ยังไม่ยืนยันการ Retest หรือหลุดกลับเข้ากรอบ");
+  }
+
+  const checklistScore = checklistPassed.length;
+
+  // ─── การจำแนกประเภท (BREAKOUT CLASSIFICATION) & PROBABILITY ───
+  let breakoutType: "VALID_BREAKOUT" | "FALSE_BREAKOUT_TRAP" | "WAITING_CONFIRMATION" | "RANGE_BOUND" = "RANGE_BOUND";
   let isBreakoutConfirmed = false;
   let requiresConfirmation = true;
   let confidence = "ต่ำ";
   let recommendation = "";
-  
-  if (candleClosedAbove && isBullishCandle) {
+  let winProbability = 45;
+  let tacticalAdvice = "";
+
+  // เงื่อนไขเบรกหลอก (FALSE BREAKOUT TRAP - ภาพที่ 01, 02, 04, 05)
+  // 1. แทงทะลุแนวแต่ปิดหลุดกลับเข้ากรอบ (Pierced but closed inside)
+  // 2. มีไส้เทียนยาวดันกลับเกิน 40% และ Volume ต่ำ
+  // 3. Retest ล้มเหลวและหลุดกลับเข้ากรอบอย่างรวดเร็ว
+  const isTrapCase1 = candlePokedBeyond && candleClosedInside;
+  const isTrapCase2 = oppositeWickRatio >= 0.40 && volumeRatio < 1.3;
+  const isTrapCase3 = retestState === "RETEST_FAILED";
+
+  if (isTrapCase1 || isTrapCase2 || isTrapCase3) {
+    breakoutType = "FALSE_BREAKOUT_TRAP";
+    isBreakoutConfirmed = false;
+    requiresConfirmation = false;
+    winProbability = 25; // โอกาสสำเร็จเพียง 20-30% ตามภาพที่ 05
+    confidence = "ต่ำมาก (False Breakout Trap)";
+    recommendation = `❌ ตรวจพบ False Breakout Trap! (ไส้เทียนดันกลับ ${(oppositeWickRatio * 100).toFixed(0)}% | Volume ${volumeRatio}x)`;
+    tacticalAdvice = "🛡️ บล็อกการเปิด Follow Buy/Sell ตามน้ำทันที! ระวังกับดักล่าสภาพคล่อง (Liquidity Sweep) หรือดักรอ Mean Reversion กลับเข้ากรอบ";
+  }
+  // เงื่อนไขเบรกจริง (VALID BREAKOUT - ภาพที่ 01-08)
+  else if (candleClosedBeyond && isFavorableCandle && oppositeWickRatio <= 0.35 && checklistScore >= 4) {
+    breakoutType = "VALID_BREAKOUT";
     isBreakoutConfirmed = true;
     requiresConfirmation = false;
-    confidence = "สูง";
-    recommendation = "✅ Breakout ยืนยันแล้ว แท่งปิดเหนือแนวต้านพร้อมแท่งเขียว";
-  } else if (candleClosedAbove && !isBullishCandle) {
-    isBreakoutConfirmed = true;
-    requiresConfirmation = false;
-    confidence = "ปานกลาง";
-    recommendation = "⚠️ Breakout ยืนยันแต่แท่งปิดเป็นแดง รอสัญญาณเพิ่มเติม";
-  } else if (isAboveBreakout && !candleClosedAbove) {
+    winProbability = checklistScore >= 6 ? 80 : 75; // โอกาสสำเร็จ 70-80% ตามภาพที่ 05
+    confidence = checklistScore >= 6 ? "สูงมาก (Institutional Grade)" : "สูง";
+    recommendation = `✅ Breakout ยืนยันสมบูรณ์ (เบรกจริง) ผ่านเช็กลิสต์ ${checklistScore}/7 ข้อ พร้อม Volume ${volumeRatio}x`;
+    tacticalAdvice = "🎯 เข้าออเดอร์ตามแผน Breakout Expansion ตั้ง SL หลังแนวรับ-แนวต้านเดิม และคุม R:R >= 1:2 ปล่อย Run กำไร";
+  }
+  // ราคาทะลุออกไปแต่ยังไม่ปิดแท่งเทียน
+  else if (isBeyondLevel && !candleClosedBeyond) {
+    breakoutType = "WAITING_CONFIRMATION";
     isBreakoutConfirmed = false;
     requiresConfirmation = true;
+    winProbability = 50;
     confidence = "ปานกลางต่ำ";
-    recommendation = `⏳ รอแท่งปิดเหนือ ${breakoutLevel.toFixed(2)} เพื่อยืนยัน breakout (${Math.round(timeUntilNextCandle / 1000)} วินาที)`;
-  } else if (candleClosedBelow) {
+    recommendation = `⏳ ราคาทะลุแนวแต่รอแท่งเทียนปิดเพื่อยืนยัน (${Math.round(timeUntilNextCandle / 1000)} วินาที)`;
+    tacticalAdvice = "อย่าเพิ่งรีบกระโดดเข้า รอแท่งเทียนปิดเพื่อเช็คเนื้อเทียนและ Volume ยืนยันตามภาพที่ 02 & 06";
+  }
+  // สภาวะแกว่งตัวในกรอบ
+  else {
+    breakoutType = "RANGE_BOUND";
     isBreakoutConfirmed = false;
     requiresConfirmation = false;
-    confidence = "ต่ำมาก";
-    recommendation = "❌ Breakout ล้มเหลว แท่งปิดต่ำกว่าแนวต้าน เป็น fakeout";
-  } else {
-    confidence = "ต่ำ";
-    recommendation = "⏳ ราคายังไม่ถึงระดับ breakout";
+    winProbability = 45;
+    confidence = "ปกติ";
+    recommendation = `⏳ ราคายังแกว่งตัวในกรอบปกติ (ห่างจากแนว ${(Math.abs(currentPrice - breakoutLevel)).toFixed(2)})`;
+    tacticalAdvice = "เล่นตามกรอบแนวรับ-แนวต้าน หรือรอการสะสมกำลังก่อนเกิดการระเบิด Breakout";
   }
-  
+
   return {
     isBreakoutConfirmed,
     breakoutLevel,
@@ -9796,7 +9946,17 @@ export function checkBreakoutConfirmation(
     timeUntilNextCandle: Math.round(timeUntilNextCandle / 1000),
     requiresConfirmation,
     confidence,
-    recommendation
+    recommendation,
+    breakoutType,
+    checklistScore,
+    checklistPassed,
+    checklistFailed,
+    volumeRatio,
+    isVolumeSurge,
+    oppositeWickRatio,
+    retestState,
+    winProbability,
+    tacticalAdvice
   };
 }
 

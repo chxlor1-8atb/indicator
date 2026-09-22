@@ -192,6 +192,18 @@ export interface BreakoutConfirmationInfo {
   timeUntilNextCandle: number;
   requiresConfirmation: boolean;
   confidence: string;
+  recommendation?: string;
+  // ─── 8-IMAGE BREAKOUT & FALSE BREAKOUT ENHANCEMENTS ───
+  breakoutType?: "VALID_BREAKOUT" | "FALSE_BREAKOUT_TRAP" | "WAITING_CONFIRMATION" | "RANGE_BOUND";
+  checklistScore?: number; // 0 - 7
+  checklistPassed?: string[];
+  checklistFailed?: string[];
+  volumeRatio?: number; // currentVolume / volumeSMA20
+  isVolumeSurge?: boolean; // >= 1.5x
+  oppositeWickRatio?: number; // Wick rejection ratio
+  retestState?: "NONE" | "RETESTING" | "RETEST_BOUNCED" | "RETEST_FAILED";
+  winProbability?: number; // e.g. 75 (%) for valid breakout, 25 (%) for trap
+  tacticalAdvice?: string;
 }
 
 export interface EnhancedTPSLInfo {
@@ -1339,13 +1351,7 @@ export interface AnalysisResult {
       recommendedScenario: string;
       analysis: string;
     };
-    breakoutConfirmation?: {
-      isBreakoutConfirmed: boolean;
-      breakoutLevel: number;
-      requiresConfirmation: boolean;
-      confidence: string;
-      recommendation: string;
-    };
+    breakoutConfirmation?: BreakoutConfirmationInfo;
     htfConfluence?: {
       macroTrend: "BULLISH" | "BEARISH" | "NEUTRAL";
       isCounterTrendBlocked: boolean;

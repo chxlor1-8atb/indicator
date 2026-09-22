@@ -17,6 +17,8 @@ import {
   Layers,
   Lock,
   Target,
+  Globe,
+  Flame,
 } from "lucide-react";
 
 interface HeroExecutionHUDProps {
@@ -246,6 +248,25 @@ function HeroExecutionHUD({
             >
               <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>เฝ้าระวังสภาพคล่อง/กับดักสถาบัน</span>
+            </span>
+          )}
+
+          {/* Finviz Macro Relative Currency Strength Badge */}
+          {analysis.finvizStrength && (
+            <span
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1.5 border font-mono ${
+                analysis.finvizStrength.alignment === "STRONG_BULLISH" || analysis.finvizStrength.alignment === "MODERATE_BULLISH"
+                  ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                  : analysis.finvizStrength.alignment === "STRONG_BEARISH" || analysis.finvizStrength.alignment === "MODERATE_BEARISH"
+                  ? "bg-rose-500/10 text-rose-300 border-rose-500/30"
+                  : "bg-surface-50 text-zinc-400 border-slate-700"
+              }`}
+              title={analysis.finvizStrength.description}
+            >
+              <Globe className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span>
+                CSM: {analysis.finvizStrength.baseCurrency} vs {analysis.finvizStrength.quoteCurrency} ({analysis.finvizStrength.divergenceScore > 0 ? "+" : ""}{analysis.finvizStrength.divergenceScore})
+              </span>
             </span>
           )}
 

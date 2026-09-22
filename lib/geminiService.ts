@@ -1841,14 +1841,59 @@ export function generateRuleBasedAnalysis(
     symbol
   );
   
-  // [แผน 49] Breakout Confirmation
+  // ─── [แผน 49 & 8-IMAGE BREAKOUT ENGINE] BREAKOUT CONFIRMATION ───
+  const last20Candles = candles.slice(-20);
+  const avgVolume20 = last20Candles.reduce((acc, c) => acc + (c.volume || 0), 0) / Math.max(1, last20Candles.length);
+  const testBreakoutLevel = tradeAction === "SELL" ? nearestSupport : nearestResistance;
+  const htfTrendDirection: "BULLISH" | "BEARISH" | "NEUTRAL" = macroBullish ? "BULLISH" : macroBearish ? "BEARISH" : "NEUTRAL";
+
   breakoutConfirmation = checkBreakoutConfirmation(
     currentPrice,
-    nearestResistance,
+    testBreakoutLevel,
     lastCandle,
     timeframe,
-    Date.now()
+    Date.now(),
+    tradeAction === "SELL" ? "SELL" : "BUY",
+    {
+      candles,
+      volumeSMA: avgVolume20,
+      currentATR,
+      atrSMA: currentATR,
+      htfTrend: htfTrendDirection,
+      newsSafe: calendarSafety.tradeAllowed
+    }
   );
+
+  // ปรับจูนตาม 8-Image Breakout & False Breakout Rules
+  if (breakoutConfirmation.breakoutType === "FALSE_BREAKOUT_TRAP") {
+    // กฎภาพที่ 01, 02, 04, 05: เบรกหลอกมีโอกาสสำเร็จเพียง 20-30% ปรับลด Confidence เพื่อป้องกันการถูกดัก Stop Hunt
+    confidence = Math.max(38, Math.min(confidence, 52));
+    if (setupGrade === "A+" || setupGrade === "A") {
+      setupGrade = "B";
+    }
+  } else if (breakoutConfirmation.breakoutType === "VALID_BREAKOUT") {
+    // กฎภาพที่ 05 & 07: เบรกจริงมีโอกาสชนะ 70-80% เพิ่ม Confidence
+    confidence = Math.min(99, confidence + 4);
+    if (setupGrade === "B") setupGrade = "A";
+    else if (setupGrade === "A") setupGrade = "A+";
+
+    // กฎภาพที่ 08: บังคับ R:R >= 1:2 สำหรับ Valid Breakout
+    if (tradeAction === "BUY") {
+      const currentRisk = Math.max(0.0001, pendingPrice - stopLoss);
+      const minTP2Dist = currentRisk * 2.0;
+      if (takeProfit2 - pendingPrice < minTP2Dist) {
+        takeProfit2 = Number((pendingPrice + minTP2Dist).toFixed(precision));
+        riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / currentRisk).toFixed(1)}`;
+      }
+    } else if (tradeAction === "SELL") {
+      const currentRisk = Math.max(0.0001, stopLoss - pendingPrice);
+      const minTP2Dist = currentRisk * 2.0;
+      if (pendingPrice - takeProfit2 < minTP2Dist) {
+        takeProfit2 = Number((pendingPrice - minTP2Dist).toFixed(precision));
+        riskRewardRatio = `1:${((pendingPrice - takeProfit2) / currentRisk).toFixed(1)}`;
+      }
+    }
+  }
   
   // [แผน 50] MTF Validation
   mtfValidation = validateBreakoutWithMTF(
@@ -2198,9 +2243,22 @@ export function generateRuleBasedAnalysis(
       breakoutConfirmation: {
         isBreakoutConfirmed: breakoutConfirmation.isBreakoutConfirmed,
         breakoutLevel: breakoutConfirmation.breakoutLevel,
+        currentPrice: breakoutConfirmation.currentPrice,
+        candleClose: breakoutConfirmation.candleClose,
+        timeUntilNextCandle: breakoutConfirmation.timeUntilNextCandle,
         requiresConfirmation: breakoutConfirmation.requiresConfirmation,
         confidence: breakoutConfirmation.confidence,
         recommendation: breakoutConfirmation.recommendation,
+        breakoutType: breakoutConfirmation.breakoutType,
+        checklistScore: breakoutConfirmation.checklistScore,
+        checklistPassed: breakoutConfirmation.checklistPassed,
+        checklistFailed: breakoutConfirmation.checklistFailed,
+        volumeRatio: breakoutConfirmation.volumeRatio,
+        isVolumeSurge: breakoutConfirmation.isVolumeSurge,
+        oppositeWickRatio: breakoutConfirmation.oppositeWickRatio,
+        retestState: breakoutConfirmation.retestState,
+        winProbability: breakoutConfirmation.winProbability,
+        tacticalAdvice: breakoutConfirmation.tacticalAdvice,
       },
       mtfValidation: {
         isValid: mtfValidation.isValid,
