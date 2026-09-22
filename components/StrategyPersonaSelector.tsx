@@ -80,12 +80,12 @@ export const StrategyPersonaSelector: React.FC<StrategyPersonaSelectorProps> = (
   const currentPresetMeta = PRESETS.find((p) => p.id === selectedPreset) || PRESETS[0];
 
   return (
-    <div className="p-4 rounded-xl bg-gradient-to-br from-slate-900 via-surface-100 to-indigo-950/25 border border-indigo-500/30 space-y-4">
+    <div className="terminal-card p-4 space-y-3.5">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
         <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded-lg bg-indigo-500/20 text-indigo-400 border border-indigo-500/40">
-            <ShieldCheck className="w-5 h-5" />
+          <div className="p-2 rounded-md bg-surface-50 text-slate-300 border border-slate-800">
+            <ShieldCheck className="w-5 h-5 text-primary" />
           </div>
           <div>
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
@@ -132,14 +132,14 @@ export const StrategyPersonaSelector: React.FC<StrategyPersonaSelectorProps> = (
               <button
                 key={preset.id}
                 onClick={() => handleSelect(preset.id)}
-                className={`p-2.5 rounded-xl text-left border transition-all flex flex-col justify-between space-y-1.5 ${
+                className={`p-2.5 rounded-md text-left border transition-colors flex flex-col justify-between space-y-1.5 cursor-pointer ${
                   isSelected
-                    ? "bg-indigo-600/20 border-indigo-400 text-white shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/40"
-                    : "bg-surface-50 border-slate-800 text-slate-400 hover:bg-surface-100 hover:text-slate-200"
+                    ? "bg-primary/15 border-primary text-white shadow-xs"
+                    : "bg-surface-50 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200"
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <Icon className={`w-4 h-4 ${isSelected ? "text-indigo-300" : "text-slate-400"}`} />
+                  <Icon className={`w-4 h-4 ${isSelected ? "text-primary" : "text-slate-400"}`} />
                   {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
                 </div>
                 <div>
@@ -155,7 +155,7 @@ export const StrategyPersonaSelector: React.FC<StrategyPersonaSelectorProps> = (
       {/* Orchestrator Analysis & Muting Transparency Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
         {/* Left Card: Active Amplified Tools */}
-        <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-2">
+        <div className="p-3 rounded-md bg-emerald-950/20 border border-emerald-500/30 space-y-2">
           <div className="flex items-center justify-between text-xs font-bold text-emerald-300">
             <span className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -176,7 +176,7 @@ export const StrategyPersonaSelector: React.FC<StrategyPersonaSelectorProps> = (
         </div>
 
         {/* Right Card: Muted Clashing Tools */}
-        <div className="p-3 rounded-xl bg-rose-950/20 border border-rose-500/30 space-y-2">
+        <div className="p-3 rounded-md bg-rose-950/20 border border-rose-500/30 space-y-2">
           <div className="flex items-center justify-between text-xs font-bold text-rose-300">
             <span className="flex items-center gap-1.5">
               <EyeOff className="w-4 h-4 text-rose-400" />
@@ -198,7 +198,7 @@ export const StrategyPersonaSelector: React.FC<StrategyPersonaSelectorProps> = (
       </div>
 
       {/* Rationale & Execution Advice */}
-      <div className="p-3 rounded-xl bg-surface-50 border border-slate-800 space-y-1.5 text-xs">
+      <div className="p-3 rounded-md bg-surface-50 border border-slate-800 space-y-1.5 text-xs">
         <div className="flex items-center justify-between">
           <span className="text-slate-400 text-[11px]">หลักการหักล้างสัญญาณขัดแย้ง:</span>
           <span className="text-[10px] font-mono text-cyan-300">{orchestrator.regimeState}</span>

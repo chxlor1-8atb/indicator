@@ -274,10 +274,10 @@ function AnalysisCard({
 
   if (isLoading) {
     return (
-      <div className="bg-surface-100 border border-slate-800 rounded-2xl p-8 shadow-sm flex flex-col items-center justify-center min-h-[480px] text-center">
+      <div className="terminal-card p-8 shadow-sm flex flex-col items-center justify-center min-h-[480px] text-center">
         <div className="relative">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-blue to-brand-purple flex items-center justify-center shadow-xl shadow-blue-500/20 animate-pulse">
-            <Sparkles className="w-8 h-8 text-white animate-spin" />
+          <div className="w-14 h-14 rounded-lg bg-surface-50 border border-slate-800 flex items-center justify-center text-primary shadow-xs">
+            <Sparkles className="w-7 h-7 text-primary animate-spin" />
           </div>
         </div>
         <h3 className="text-base font-bold text-white mt-4">Scanning Economic Calendar & Market Sessions...</h3>
@@ -290,8 +290,8 @@ function AnalysisCard({
 
   if (!analysis) {
     return (
-      <div className="bg-surface-100 border border-slate-800 rounded-2xl p-8 shadow-sm text-center flex flex-col items-center justify-center min-h-[350px]">
-        <div className="w-12 h-12 rounded-xl bg-surface-50 border border-slate-800 flex items-center justify-center text-indigo-400 mb-3">
+      <div className="terminal-card p-8 shadow-sm text-center flex flex-col items-center justify-center min-h-[350px]">
+        <div className="w-12 h-12 rounded-md bg-surface-50 border border-slate-800 flex items-center justify-center text-primary mb-3">
           <Sparkles className="w-6 h-6 animate-pulse" />
         </div>
         <h3 className="text-sm font-semibold text-white">กำลังรอผลวิเคราะห์ AI หรือเริ่มต้นการวิเคราะห์ใหม่</h3>
@@ -459,7 +459,7 @@ function AnalysisCard({
 
             <button
               onClick={() => copyToClipboard(analysis.summary, "ai_summary")}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-50 hover:bg-slate-800 border border-slate-700/80 text-[11px] font-semibold text-slate-300 hover:text-white transition-all active:scale-95 cursor-pointer"
+              className="btn-terminal flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold text-slate-300 hover:text-white cursor-pointer"
             >
               {copiedKey === "ai_summary" ? (
                 <>
@@ -475,7 +475,7 @@ function AnalysisCard({
             </button>
           </div>
 
-          <div className="text-xs sm:text-[13px] text-slate-200 leading-relaxed font-sans whitespace-pre-line bg-surface-50/60 p-3 rounded-xl border border-slate-800/80">
+          <div className="text-xs sm:text-[13px] text-slate-200 leading-relaxed font-sans whitespace-pre-line bg-surface-50/60 p-3 rounded-md border border-slate-800/80">
             {analysis.summary}
           </div>
         </div>
@@ -496,16 +496,16 @@ function AnalysisCard({
 
       {/* 🤖 AI/ML META-LABELING CONVICTION GATE (Marcos López de Prado Architecture) */}
       {(analysis.metaLabeling || analysis.mlPrediction) && (
-        <div className={`p-4 rounded-2xl border transition-all ${
+        <div className={`p-4 rounded-lg border transition-colors ${
           analysis.metaLabeling?.recommendation === "EXECUTE_HIGH_CONVICTION"
-            ? "bg-emerald-950/25 border-emerald-500/40 shadow-lg shadow-emerald-950/20"
+            ? "bg-emerald-950/25 border-emerald-500/40 shadow-xs"
             : analysis.metaLabeling?.recommendation === "SKIP_LOW_PROBABILITY"
-            ? "bg-rose-950/25 border-rose-500/40 shadow-lg shadow-rose-950/20"
-            : "bg-surface-100/60 border-slate-800"
+            ? "bg-rose-950/25 border-rose-500/40 shadow-xs"
+            : "bg-surface-100 border-slate-800"
         }`}>
           <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
             <div className="flex items-center gap-2.5">
-              <div className={`p-2 rounded-xl border ${
+              <div className={`p-2 rounded-md border ${
                 analysis.metaLabeling?.recommendation === "EXECUTE_HIGH_CONVICTION"
                   ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
                   : analysis.metaLabeling?.recommendation === "SKIP_LOW_PROBABILITY"
@@ -611,11 +611,11 @@ function AnalysisCard({
 
       {/* 🎯 2.4. SNIPER PRECISION LIMIT & MICRO-SL MATRIX ($10 USD CAPITAL PROTOCOL) */}
       {(analysis.sniperMicroSL || analysis.tradeSetup?.sniperMicroSL) && (
-        <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/30 via-surface-100 to-slate-900 p-4 space-y-3 shadow-xl">
+        <div className="rounded-lg border border-amber-500/30 bg-surface-50 p-4 space-y-3 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-inner">
-                <Target className="w-5 h-5" />
+              <div className="p-2 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                <Target className="w-5 h-5 text-amber-400" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -636,7 +636,7 @@ function AnalysisCard({
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300">
+              <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300">
                 Invalidation: {(analysis.sniperMicroSL || analysis.tradeSetup?.sniperMicroSL)?.invalidationType}
               </span>
             </div>
@@ -647,22 +647,22 @@ function AnalysisCard({
             const sn = (analysis.sniperMicroSL || analysis.tradeSetup?.sniperMicroSL)!;
             return (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <div className="p-2.5 rounded-xl bg-black/40 border border-slate-800 space-y-0.5">
+                <div className="p-2.5 rounded-md bg-surface-100 border border-slate-800 space-y-0.5">
                   <span className="text-[10px] text-slate-400 block font-medium">จุดเข้า Limit (50% CE/OB)</span>
                   <span className="text-base font-mono font-black text-amber-300 block">{sn.entryLimit}</span>
                   <span className="text-[9px] text-slate-500 block">ดักของถูก / ไม่ไล่ราคา</span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-black/40 border border-rose-500/30 space-y-0.5">
+                <div className="p-2.5 rounded-md bg-surface-100 border border-rose-500/30 space-y-0.5">
                   <span className="text-[10px] text-rose-400 block font-medium">Sniper SL (ชิดขอบ)</span>
                   <span className="text-base font-mono font-black text-rose-300 block">{sn.stopLoss}</span>
                   <span className="text-[9px] text-rose-400/80 font-mono block">สั้นเพียง {sn.slPips} pips</span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30 space-y-0.5">
+                <div className="p-2.5 rounded-md bg-surface-100 border border-emerald-500/30 space-y-0.5">
                   <span className="text-[10px] text-emerald-400 block font-medium">ความเสี่ยงบน 0.01 Lot</span>
                   <span className="text-base font-mono font-black text-emerald-300 block">-${sn.dollarRiskOn001Lot} USD</span>
                   <span className="text-[9px] text-emerald-400/80 font-mono block">ทุน $10 เสี่ยง {((sn.dollarRiskOn001Lot / 10) * 100).toFixed(0)}%</span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-black/40 border border-emerald-500/30 space-y-0.5">
+                <div className="p-2.5 rounded-md bg-surface-100 border border-emerald-500/30 space-y-0.5">
                   <span className="text-[10px] text-emerald-400 block font-medium">เป้าหมายกำไร (TP1 / TP2)</span>
                   <span className="text-base font-mono font-black text-emerald-400 block">+{sn.tp1Pips}p / +{sn.tp2Pips}p</span>
                   <span className="text-[9px] text-emerald-400/80 font-mono block">กำไร +${(sn.dollarRiskOn001Lot * 2).toFixed(1)} / +${(sn.dollarRiskOn001Lot * 4).toFixed(1)}</span>
@@ -677,14 +677,14 @@ function AnalysisCard({
       <FiveCorePillarsCard analysis={analysis} />
 
       {/* ─── 3. MODULAR COLLAPSIBLE DRAWER (ย่อ UI ให้กระชับ ไม่รก ทำงานเบื้องหลัง 100%) ─── */}
-      <div className="rounded-2xl border border-slate-800 bg-surface-50/50 p-3 space-y-3">
+      <div className="rounded-lg border border-slate-800 bg-surface-50 p-3 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setActiveCardTab(activeCardTab === "STRATEGY" ? "NONE" : "STRATEGY")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
                 activeCardTab === "STRATEGY"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/25"
+                  ? "bg-primary text-white shadow-xs"
                   : "bg-surface-100 text-slate-300 hover:text-white border border-slate-700/80"
               }`}
             >
@@ -695,15 +695,15 @@ function AnalysisCard({
 
             <button
               onClick={() => setActiveCardTab(activeCardTab === "DEEP_QUANT" ? "NONE" : "DEEP_QUANT")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
                 activeCardTab === "DEEP_QUANT"
-                  ? "bg-purple-600 text-white shadow-md shadow-purple-500/25"
+                  ? "bg-primary text-white shadow-xs"
                   : "bg-surface-100 text-slate-300 hover:text-white border border-slate-700/80"
               }`}
             >
               <Cpu className="w-3.5 h-3.5" />
               <span>🔬 เบื้องหลัง 100 อินดิเคเตอร์ (Deep Quant)</span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-surface-100 text-slate-300 border border-slate-700 font-mono">
                 Active 100%
               </span>
               {activeCardTab === "DEEP_QUANT" ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
@@ -729,16 +729,16 @@ function AnalysisCard({
 
       {/* 2. 📅 ECONOMIC CALENDAR & RED FOLDER SHIELD (กล่องแดง เหลือง เทา) */}
       {cal && (
-        <div className="p-4 rounded-xl bg-gradient-to-r from-rose-950/20 via-surface-50 to-slate-900 border border-rose-500/30 space-y-3">
+        <div className="p-4 rounded-md bg-surface-100 border border-slate-800 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40">
+              <div className="p-1.5 rounded-md bg-surface-50 text-rose-400 border border-slate-800">
                 <AlertOctagon className="w-4 h-4" />
               </div>
               <div>
                 <h5 className="text-xs font-bold text-white flex items-center gap-2">
                   <span>Economic Calendar & News Shield</span>
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${cal.badgeColor}`}>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cal.badgeColor}`}>
                     {cal.badgeText}
                   </span>
                 </h5>
@@ -749,14 +749,14 @@ function AnalysisCard({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowPlaybookGuide(!showPlaybookGuide)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-100 hover:bg-slate-800 border border-slate-700 text-[10px] font-semibold text-amber-300 transition-all active:scale-95"
+                className="btn-terminal flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-amber-300"
               >
                 <BookOpen className="w-3 h-3 text-amber-400" />
                 <span>คู่มือ 4 กล่องข่าว</span>
-                {showPlaybookGuide ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                {showPlaybookGuide ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3 text-slate-400" />}
               </button>
 
-              <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold ${
+              <span className={`px-2.5 py-1 rounded-md border text-[11px] font-bold ${
                 cal.tradeAllowed
                   ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                   : "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"

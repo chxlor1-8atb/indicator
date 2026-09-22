@@ -18,11 +18,11 @@ interface AssetSelectorProps {
   lastPriceUpdate?: number | null;
 }
 
-const CATEGORIES: { id: "all" | AssetCategory; label: string }[] = [
-  { id: "all", label: "All Assets" },
-  { id: "crypto", label: "Crypto Hot (12 Pairs)" },
-  { id: "forex", label: "Forex (39 Pairs)" },
-  { id: "commodities", label: "Gold & Commodities (MT5)" },
+const CATEGORIES: { id: "all" | AssetCategory; label: string; shortLabel: string }[] = [
+  { id: "all", label: "All Assets", shortLabel: "All" },
+  { id: "crypto", label: "Crypto Hot (12 Pairs)", shortLabel: "Crypto" },
+  { id: "forex", label: "Forex (39 Pairs)", shortLabel: "Forex" },
+  { id: "commodities", label: "Gold & Commodities (MT5)", shortLabel: "Commodities" },
 ];
 
 export interface TimeframeItem {
@@ -101,7 +101,7 @@ export default function AssetSelector({
         {/* Left: Category tabs & Searchable Asset Selector */}
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           {/* Categories Segmented Control */}
-          <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-[#0A0C10] border border-white/[0.08] overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-[#0A0C10] border border-white/[0.08] overflow-x-auto scrollbar-none flex-nowrap max-w-full">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
@@ -110,13 +110,14 @@ export default function AssetSelector({
                   setSearchQuery("");
                   setIsOpen(true);
                 }}
-                className={`px-2.5 py-1 rounded-[5px] text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                className={`px-2 sm:px-2.5 py-1 rounded-[5px] text-[11px] sm:text-xs font-medium whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
                   activeTab === cat.id
                     ? "bg-white/[0.12] text-white font-semibold border border-white/[0.15]"
                     : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
                 }`}
               >
-                {cat.label}
+                <span className="hidden sm:inline">{cat.label}</span>
+                <span className="sm:hidden">{cat.shortLabel}</span>
               </button>
             ))}
           </div>
@@ -127,20 +128,20 @@ export default function AssetSelector({
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="btn-terminal h-8 px-2.5 flex items-center justify-between gap-2 text-xs font-medium min-w-[190px]"
+              className="btn-terminal h-8 px-2 sm:px-2.5 flex items-center justify-between gap-1.5 sm:gap-2 text-xs font-medium min-w-[140px] sm:min-w-[180px]"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                 <span className="font-mono text-white font-bold">{selectedAsset}</span>
-                <span className="text-zinc-400 truncate max-w-[110px] font-normal">
+                <span className="text-zinc-400 truncate max-w-[80px] sm:max-w-[110px] font-normal">
                   {currentAssetInfo.name.split("(")[0]}
                 </span>
               </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} />
             </button>
 
             {/* Dropdown Menu */}
             {isOpen && (
-              <div className="absolute top-full left-0 mt-1 w-80 terminal-card-elevated shadow-2xl p-2 z-50 animate-fadeIn">
+              <div className="absolute top-full left-0 mt-1 w-[calc(100vw-32px)] max-w-[340px] sm:w-80 terminal-card-elevated shadow-2xl p-2 z-50 animate-fadeIn">
                 {/* Search Input */}
                 <form onSubmit={handleCustomTickerSubmit} className="relative mb-2">
                   <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2.5" />
@@ -242,9 +243,9 @@ export default function AssetSelector({
         </div>
 
         {/* Right: Timeframes & AI Trigger Button */}
-        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           {/* Timeframe Chips with MT4/MT5 Standards */}
-          <div className="flex items-center gap-0.5 bg-[#0A0C10] p-0.5 rounded-md border border-white/[0.08] overflow-x-auto max-w-full scrollbar-none">
+          <div className="flex items-center gap-0.5 bg-[#0A0C10] p-0.5 rounded-md border border-white/[0.08] overflow-x-auto max-w-full scrollbar-none flex-nowrap">
             {TIMEFRAMES.map((tf) => {
               const isSelected = selectedTimeframe === tf.id;
               return (
@@ -252,7 +253,7 @@ export default function AssetSelector({
                   key={tf.id}
                   onClick={() => onSelectTimeframe(tf.id)}
                   title={`${tf.label} (${tf.id}) - ${tf.tooltip}`}
-                  className={`h-7 px-2.5 rounded-[5px] text-xs font-mono font-medium transition-colors relative shrink-0 flex items-center gap-1 cursor-pointer ${
+                  className={`h-7 px-2 sm:px-2.5 rounded-[5px] text-[11px] sm:text-xs font-mono font-medium transition-colors relative shrink-0 flex items-center gap-1 cursor-pointer ${
                     isSelected
                       ? "bg-blue-600 text-white font-bold border border-blue-500"
                       : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
@@ -271,10 +272,11 @@ export default function AssetSelector({
           <button
             onClick={onRunAnalysis}
             disabled={isAnalyzing}
-            className="btn-primary h-7 px-3 flex items-center gap-1.5 text-xs font-medium disabled:opacity-50"
+            className="btn-primary h-7 px-2.5 sm:px-3 flex items-center gap-1.5 text-xs font-medium disabled:opacity-50 shrink-0"
           >
             <Sparkles className={`w-3.5 h-3.5 ${isAnalyzing ? "animate-spin" : ""}`} />
-            <span>{isAnalyzing ? "Analyzing..." : "AI Synthesize"}</span>
+            <span className="hidden xs:inline">{isAnalyzing ? "Analyzing..." : "AI Synthesize"}</span>
+            <span className="xs:hidden">{isAnalyzing ? "..." : "AI Run"}</span>
           </button>
         </div>
       </div>

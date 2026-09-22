@@ -50,6 +50,11 @@ const config: Config = {
         card: "8px",
         btn: "6px",
         badge: "4px",
+        xl: "8px",
+        "2xl": "8px",
+      },
+      screens: {
+        xs: "480px",
       },
     },
   },
