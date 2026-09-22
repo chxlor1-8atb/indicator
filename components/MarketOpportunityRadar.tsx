@@ -152,31 +152,31 @@ function MarketOpportunityRadar({
   };
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden bg-[#0B0F17]/95 border border-slate-800/80 rounded-2xl p-3.5 sm:p-4 shadow-xl shadow-black/25 backdrop-blur-md space-y-3 transition-all">
+    <div className="terminal-card p-3 sm:p-3.5 space-y-2.5 transition-all w-full min-w-0 max-w-full overflow-hidden">
       {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center shadow-sm shrink-0">
+          <div className="w-7 h-7 rounded-md bg-white/[0.06] border border-white/[0.1] text-blue-400 flex items-center justify-center shrink-0">
             <Compass className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-bold text-white flex items-center gap-1.5 tracking-tight">
-                <span>Live Market Opportunity Radar</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">
-                  สแกนทั้งตลาดสด
+              <h3 className="text-sm font-semibold text-white flex items-center gap-1.5 tracking-tight">
+                <span>Market Opportunity Radar</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  SCANNER
                 </span>
               </h3>
 
               {actionableCount > 0 && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/35 animate-pulse shadow-sm shadow-amber-500/10">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/30">
                   <Flame className="w-3 h-3 text-amber-400" />
-                  <span>{actionableCount} คู่เงินพร้อมเทรด 🔥</span>
+                  <span>{actionableCount} Actionable</span>
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-400 truncate max-w-xl">
-              สแกนความสอดคล้อง (Confluence), โซนราคาเข้าเทรดสถาบัน (OTE) และตรวจจับข่าวกล่องแดง Real-time (ซิงค์ {lastSyncTime})
+            <p className="text-[11px] text-zinc-400 truncate max-w-xl">
+              สแกน Confluence, OTE โซนเข้าเทรดสถาบัน และตรวจจับข่าวกล่องแดง (ซิงค์ {lastSyncTime})
             </p>
           </div>
         </div>
@@ -184,16 +184,16 @@ function MarketOpportunityRadar({
         {/* Action Controls */}
         <div className="flex items-center gap-2">
           {/* Quick Metrics Badges */}
-          <div className="hidden md:flex items-center gap-1.5 text-[10.5px] font-mono">
-            <span className="px-2 py-0.5 rounded-lg bg-[#0E131F] border border-slate-800 text-emerald-400 font-semibold shadow-sm">
-              🟢 Buy: {bullishCount}
+          <div className="hidden md:flex items-center gap-1 text-[10.5px] font-mono">
+            <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium">
+              Buy: {bullishCount}
             </span>
-            <span className="px-2 py-0.5 rounded-lg bg-[#0E131F] border border-slate-800 text-rose-400 font-semibold shadow-sm">
-              🔴 Sell: {bearishCount}
+            <span className="px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 font-medium">
+              Sell: {bearishCount}
             </span>
             {frozenCount > 0 && (
-              <span className="px-2 py-0.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 font-semibold">
-                🛡️ ติดข่าว: {frozenCount}
+              <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 font-medium">
+                Shielded: {frozenCount}
               </span>
             )}
           </div>
@@ -201,10 +201,10 @@ function MarketOpportunityRadar({
           {/* Toggle Expand Button */}
           <button
             onClick={() => setIsExpanded((prev) => !prev)}
-            className="px-2.5 py-1.5 rounded-xl bg-[#0E131F] hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition-all text-xs flex items-center gap-1 cursor-pointer shadow-sm"
+            className="btn-terminal h-7 px-2 text-xs flex items-center gap-1 cursor-pointer"
             title={isExpanded ? "ย่อตาราง" : "ขยายตาราง"}
           >
-            <span className="text-[11px] font-medium">{isExpanded ? "ย่อหน้าต่าง" : "เปิดดูเรดาร์ทั้งตลาด"}</span>
+            <span className="text-[11px] font-medium">{isExpanded ? "ย่อหน้าต่าง" : "เปิดดูเรดาร์"}</span>
             {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
         </div>
@@ -212,25 +212,25 @@ function MarketOpportunityRadar({
 
       {/* Expandable Body */}
       {isExpanded && (
-        <div className="space-y-3 pt-1 border-t border-slate-800/80 animate-fadeIn min-w-0 max-w-full">
+        <div className="space-y-2.5 pt-1.5 border-t border-white/[0.08] animate-fadeIn min-w-0 max-w-full">
           {/* Filter Bar & Search */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0 w-full">
-            {/* Category Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none min-w-0 w-full">
+            {/* Category Tabs (Segmented Control) */}
+            <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-[#0A0C10] border border-white/[0.08] overflow-x-auto scrollbar-none min-w-0">
               {[
                 { id: "ALL", label: `ทั้งหมด (${summaries.length})` },
-                { id: "ACTIONABLE", label: `🔥 พร้อมเทรด (${actionableCount})` },
-                { id: "CRYPTO", label: "คริปโต (Crypto)" },
-                { id: "FOREX", label: "Forex Majors & Crosses" },
-                { id: "COMMODITIES", label: "ทองคำ & สินค้าโภคภัณฑ์" },
+                { id: "ACTIONABLE", label: `พร้อมเทรด (${actionableCount})` },
+                { id: "CRYPTO", label: "Crypto" },
+                { id: "FOREX", label: "Forex" },
+                { id: "COMMODITIES", label: "Commodities" },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-2.5 py-1 rounded-lg text-[10.5px] font-semibold whitespace-nowrap transition-all border cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-[5px] text-[11px] font-medium whitespace-nowrap transition-colors border cursor-pointer ${
                     activeTab === tab.id
-                      ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white border-cyan-400/30 shadow-md shadow-cyan-500/20"
-                      : "bg-[#0E131F] text-slate-400 border-slate-800 hover:text-white hover:border-slate-700"
+                      ? "bg-white/[0.12] text-white border-white/[0.2]"
+                      : "bg-transparent text-zinc-400 border-transparent hover:text-white hover:bg-white/[0.04]"
                   }`}
                 >
                   {tab.label}
@@ -240,15 +240,15 @@ function MarketOpportunityRadar({
 
             {/* Search Input */}
             <div className="relative shrink-0">
-              <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2.5" />
+              <Search className="w-3 h-3 text-zinc-400 absolute left-2.5 top-2.5" />
               <input
                 id="radar-symbol-search"
                 name="radarSearch"
                 type="text"
-                placeholder="ค้นหาคู่เงิน (เช่น XAU, EUR, BTC)..."
+                placeholder="ค้นหาคู่เงิน (XAU, EUR, BTC)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-7 pr-3 py-1 bg-[#0E131F] border border-slate-800 rounded-lg text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 w-full sm:w-56 transition-all"
+                className="pl-7 pr-3 py-1 bg-white/[0.04] border border-white/[0.1] rounded-md text-[11px] text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 w-full sm:w-52 transition-colors"
               />
             </div>
           </div>
@@ -263,20 +263,20 @@ function MarketOpportunityRadar({
           ) : (
             <>
               {/* Desktop View: Full Data Table (hidden on mobile) */}
-              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-800 max-h-[380px] overflow-y-auto scrollbar-thin">
+              <div className="hidden md:block overflow-x-auto rounded-md border border-white/[0.08] max-h-[380px] overflow-y-auto scrollbar-thin">
               <table className="w-full text-left text-[11px] font-mono whitespace-nowrap">
-                <thead className="sticky top-0 bg-[#0E131F]/95 backdrop-blur-sm text-slate-400 border-b border-slate-800 z-10">
+                <thead className="sticky top-0 bg-[#14171F] text-zinc-400 border-b border-white/[0.08] z-10">
                   <tr>
-                    <th className="px-3 py-2.5 font-semibold">คู่เงิน (Asset)</th>
-                    <th className="px-3 py-2.5 font-semibold">ราคาล่าสุด & 24h</th>
-                    <th className="px-3 py-2.5 font-semibold">Confluence Score</th>
-                    <th className="px-3 py-2.5 font-semibold">สัญญาณ AI</th>
-                    <th className="px-3 py-2.5 font-semibold">แผนการออกออเดอร์</th>
-                    <th className="px-3 py-2.5 font-semibold">สภาวะตลาด & ข่าว</th>
-                    <th className="px-3 py-2.5 text-right font-semibold">Action</th>
+                    <th className="px-3 py-2 font-medium">คู่เงิน (Asset)</th>
+                    <th className="px-3 py-2 font-medium">ราคาล่าสุด & 24h</th>
+                    <th className="px-3 py-2 font-medium">Confluence</th>
+                    <th className="px-3 py-2 font-medium">สัญญาณ AI</th>
+                    <th className="px-3 py-2 font-medium">แผนออกออเดอร์</th>
+                    <th className="px-3 py-2 font-medium">สภาวะตลาด & ข่าว</th>
+                    <th className="px-3 py-2 text-right font-medium">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 bg-[#0B0F17]/40">
+                <tbody className="divide-y divide-white/[0.06] bg-[#0E1015]">
                   {filteredSummaries.map((item) => {
                     const isSelected = selectedAsset === item.symbol;
                     const isActionable = item.orderType !== "WAIT_NO_ORDER" && !item.isNewsFrozen;
@@ -287,8 +287,8 @@ function MarketOpportunityRadar({
                         onClick={() => onSelectAsset(item.symbol)}
                         className={`transition-colors cursor-pointer group ${
                           isSelected
-                            ? "bg-indigo-950/40 border-l-2 border-cyan-400"
-                            : "hover:bg-slate-800/40"
+                            ? "bg-blue-600/15 border-l-2 border-blue-500"
+                            : "hover:bg-white/[0.04]"
                         }`}
                       >
                         {/* 1. Asset & Name */}
@@ -396,12 +396,12 @@ function MarketOpportunityRadar({
                               e.stopPropagation();
                               onSelectAsset(item.symbol);
                             }}
-                            className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold transition-all inline-flex items-center gap-1 cursor-pointer ${
+                            className={`px-2.5 py-1 rounded-md text-[10.5px] font-semibold transition-colors inline-flex items-center gap-1 cursor-pointer ${
                               isSelected
-                                ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
+                                ? "bg-primary text-white"
                                 : isActionable
-                                ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-500/20 active:scale-95"
-                                : "bg-[#0E131F] hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700"
+                                ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                                : "btn-terminal"
                             }`}
                           >
                             <span>{isSelected ? "กำลังดู" : "วิเคราะห์"}</span>
@@ -425,10 +425,10 @@ function MarketOpportunityRadar({
                     <div
                       key={`mob-${item.symbol}`}
                       onClick={() => onSelectAsset(item.symbol)}
-                      className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                      className={`p-3 rounded-md border transition-colors cursor-pointer ${
                         isSelected
-                          ? "bg-indigo-950/40 border-indigo-500 shadow-sm"
-                          : "bg-surface-50/70 border-slate-800 hover:border-slate-700"
+                          ? "bg-primary/10 border-primary/40 shadow-xs"
+                          : "bg-surface-50 border-slate-800 hover:border-slate-700"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -468,12 +468,12 @@ function MarketOpportunityRadar({
                             e.stopPropagation();
                             onSelectAsset(item.symbol);
                           }}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all inline-flex items-center gap-1 ${
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors inline-flex items-center gap-1 ${
                             isSelected
-                              ? "bg-indigo-600 text-white"
+                              ? "bg-primary text-white"
                               : isActionable
                               ? "bg-emerald-600 text-white"
-                              : "bg-surface-100 text-slate-300 border border-slate-700"
+                              : "btn-terminal"
                           }`}
                         >
                           <span>{isSelected ? "กำลังดู" : "วิเคราะห์"}</span>

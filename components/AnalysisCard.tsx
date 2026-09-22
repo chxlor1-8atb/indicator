@@ -355,16 +355,16 @@ function AnalysisCard({
   const iq = analysis.institutionalQuant;
 
   return (
-    <div className="bg-[#0B0F17]/95 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-xl shadow-black/25 backdrop-blur-md space-y-4 sm:space-y-5">
+    <div className="terminal-card p-3.5 sm:p-4 space-y-3 sm:space-y-3.5">
       {/* 1. Header Signal & Actions Banner */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 backdrop-blur-sm shadow-inner">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className={`px-4 py-2 rounded-xl border text-sm font-black tracking-wide ${signalConfig.bg} ${signalConfig.glow} shadow-sm`}>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3 rounded-md bg-[#14171F] border border-white/[0.08]">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className={`px-3 py-1 rounded-md border text-xs font-mono font-black tracking-wide ${signalConfig.bg} ${signalConfig.glow} shadow-sm`}>
             {signalConfig.label}
           </div>
 
           {/* Setup Grade */}
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold ${getGradeBadge(analysis.setupGrade)} shadow-sm`}>
+          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs font-mono font-medium shadow-sm ${getGradeBadge(analysis.setupGrade)}`}>
             <Award className="w-3.5 h-3.5" />
             <span>Grade: {analysis.setupGrade || "A"} Setup</span>
           </div>
@@ -372,10 +372,10 @@ function AnalysisCard({
           {/* Analysis Timestamp */}
           {analysis.timestamp && (
             <div
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0B0F17] border border-slate-700/80 text-xs font-mono text-slate-300"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] border border-white/[0.06] text-xs font-mono text-zinc-400"
               title="เวลาที่ระบบรันการสังเคราะห์ AI ล่าสุด"
             >
-              <Clock className="w-3.5 h-3.5 text-cyan-400" />
+              <Clock className="w-3.5 h-3.5 text-zinc-400" />
               <span>
                 วิเคราะห์เมื่อ: {new Date(analysis.timestamp).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
@@ -385,22 +385,22 @@ function AnalysisCard({
           {/* Confluence Score Gauge */}
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-300">Master Confluence Score</span>
+              <span className="text-[11px] font-medium text-zinc-400">Master Confluence</span>
               <span className="text-xs font-mono font-bold text-white">{mc?.totalScore || analysis.confidence}%</span>
             </div>
-            <div className="w-36 h-2 bg-slate-800/80 rounded-full overflow-hidden mt-1 shadow-inner">
+            <div className="w-32 h-1.5 bg-white/[0.08] rounded-full overflow-hidden mt-1">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
                   (mc?.totalScore || analysis.confidence) >= 85
-                    ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
+                    ? "bg-emerald-400"
                     : (mc?.totalScore || analysis.confidence) >= 70
-                    ? "bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.4)]"
+                    ? "bg-blue-400"
                     : (mc?.totalScore || analysis.confidence) >= 55
-                    ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]"
+                    ? "bg-amber-400"
                     : "bg-rose-400"
                 }`}
                 style={{ width: `${mc?.totalScore || analysis.confidence}%` }}
-              ></div>
+              />
             </div>
           </div>
         </div>
@@ -409,17 +409,17 @@ function AnalysisCard({
         <div className="flex items-center gap-2">
           <button
             onClick={handleCopyFullPlan}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0B0F17] hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 transition-all active:scale-95 cursor-pointer shadow-sm"
+            className="btn-terminal h-8 px-3 text-xs font-medium flex items-center gap-1.5"
             title="Copy trade setup to clipboard"
           >
             {copiedKey === "full_plan" ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-400">Copied!</span>
+                <span className="text-emerald-400 font-semibold">Copied!</span>
               </>
             ) : (
               <>
-                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                <Copy className="w-3.5 h-3.5 text-zinc-400" />
                 <span>Copy Trade Plan</span>
               </>
             )}
@@ -428,21 +428,21 @@ function AnalysisCard({
           <button
             onClick={onSendTelegram}
             disabled={isSendingTelegram}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-xs font-bold text-white shadow-md shadow-cyan-500/20 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+            className="btn-primary h-8 px-3.5 text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
           >
             <Send className={`w-3.5 h-3.5 ${isSendingTelegram ? "animate-spin" : ""}`} />
-            <span>{isSendingTelegram ? "Sending..." : "Send to Telegram Bot"}</span>
+            <span>{isSendingTelegram ? "Sending..." : "Send to Telegram"}</span>
           </button>
         </div>
       </div>
 
       {/* 🧠 1.5. AI INSTITUTIONAL SYNTHESIZE & RATIONALE (บทวิเคราะห์สรุป AI สถาบัน) */}
       {analysis.summary && (
-        <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-[#0C101A] via-surface-100 to-indigo-950/20 p-4 shadow-xl space-y-2.5 relative overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm">
-                <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+        <div className="rounded-lg border border-blue-500/25 bg-[#101216] p-3.5 space-y-2 relative overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center shrink-0">
+                <Sparkles className="w-3.5 h-3.5" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">

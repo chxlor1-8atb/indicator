@@ -65,83 +65,87 @@ export default function BackgroundCustomizerModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-lg rounded-2xl bg-[#0E131F]/95 border border-slate-700/80 shadow-2xl shadow-black/80 overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-md animate-fadeIn cursor-pointer"
+    >
+      <div className="relative w-full max-w-lg terminal-card overflow-hidden flex flex-col max-h-[90vh] cursor-default border border-white/[0.12] shadow-2xl shadow-black">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-900/40">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08] bg-[#14171F]">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-cyan-500/20">
+            <div className="w-7 h-7 rounded-md bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
+              <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 Background Studio
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/25">
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono">
                   Visual FX
                 </span>
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-[11px] text-zinc-400">
                 ปรับแต่งพื้นหลังพรีเมียมและระบบ Parallax Scroll
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+            className="btn-terminal w-7 h-7 flex items-center justify-center cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-4 sm:p-5 space-y-5 overflow-y-auto">
+        <div className="p-4 space-y-4 overflow-y-auto">
           {/* Concept Banner */}
-          <div className="rounded-xl bg-gradient-to-r from-cyan-950/40 via-indigo-950/30 to-purple-950/40 border border-cyan-500/20 p-3 flex items-start gap-2.5">
-            <Layers className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-slate-300 leading-relaxed">
-              <span className="font-bold text-white">"เว็บมี Background — ดูพรีเมียมทันที"</span>
+          <div className="rounded-md bg-white/[0.03] border border-white/[0.08] p-2.5 flex items-start gap-2.5">
+            <Layers className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-zinc-300 leading-relaxed">
+              <span className="font-semibold text-white">"เว็บมี Background — ดูพรีเมียมทันที"</span>
               <br />
-              ระบบ Multi-layer Parallax ขับเคลื่อนด้วย GPU ทำให้เมื่อเลื่อนหน้าจอ พื้นหลังจะขยับตามช้าๆ สร้างมิติลึกอย่างนุ่มนวล
+              ระบบ Multi-layer Parallax ขับเคลื่อนด้วย GPU พื้นหลังขยับตามการเลื่อนหน้าจออย่างนุ่มนวล
             </div>
           </div>
 
           {/* Theme Selection */}
-          <div className="space-y-2.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
               <span>เลือกธีมพื้นหลัง (Theme Presets)</span>
-              <span className="text-[11px] text-slate-400 font-normal">คลิกเพื่อเปลี่ยนทันที</span>
+              <span className="text-[11px] text-zinc-500 font-normal">คลิกเพื่อเปลี่ยนทันที</span>
             </label>
 
-            <div className="grid grid-cols-1 gap-2.5">
+            <div className="grid grid-cols-1 gap-2">
               {THEME_OPTIONS.map((opt) => {
                 const isSelected = currentTheme === opt.id;
                 return (
                   <button
                     key={opt.id}
                     onClick={() => onSelectTheme(opt.id)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                    className={`w-full text-left p-2.5 rounded-md border transition-colors flex items-center justify-between gap-3 cursor-pointer ${
                       isSelected
-                        ? "bg-slate-800/80 border-cyan-500/60 shadow-lg shadow-cyan-500/10 ring-1 ring-cyan-500/30"
-                        : "bg-slate-900/50 border-slate-800/80 hover:border-slate-700 hover:bg-slate-850"
+                        ? "bg-white/[0.08] border-blue-500/60 shadow-md ring-1 ring-blue-500/30"
+                        : "bg-white/[0.02] border-white/[0.06] hover:border-white/[0.15] hover:bg-white/[0.04]"
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       {/* Color Palette Pill Preview */}
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-tr p-[1px] shrink-0 overflow-hidden shadow-inner flex items-center justify-center border border-white/10">
-                        <div
-                          className={`w-full h-full bg-gradient-to-br ${opt.colors[0]} ${opt.colors[1]} ${opt.colors[2]} opacity-80`}
-                        />
+                      <div className="w-9 h-9 rounded-md bg-gradient-to-tr p-[1px] shrink-0 overflow-hidden shadow-inner flex items-center justify-center border border-white/10">
+                        <div className={`w-full h-full bg-gradient-to-tr ${opt.colors.join(" ")} opacity-85`} />
                       </div>
+
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs sm:text-sm font-bold text-white truncate">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-white tracking-tight">
                             {opt.title}
                           </span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                          <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-white/[0.06] text-zinc-300 border border-white/[0.08] font-mono">
                             {opt.tag}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        <p className="text-[11px] text-zinc-400 truncate mt-0.5">
                           {opt.subtitle}
                         </p>
                       </div>
@@ -149,11 +153,11 @@ export default function BackgroundCustomizerModal({
 
                     <div className="shrink-0">
                       {isSelected ? (
-                        <div className="w-6 h-6 rounded-full bg-cyan-500 text-slate-950 flex items-center justify-center shadow-md shadow-cyan-500/30">
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <div className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm">
+                          <Check className="w-3 h-3 stroke-[3]" />
                         </div>
                       ) : (
-                        <div className="w-6 h-6 rounded-full border border-slate-700" />
+                        <div className="w-5 h-5 rounded-full border border-white/[0.15]" />
                       )}
                     </div>
                   </button>
@@ -163,18 +167,18 @@ export default function BackgroundCustomizerModal({
           </div>
 
           {/* Parallax Scroll Switch */}
-          <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800 flex items-center justify-between gap-3">
+          <div className="p-3 rounded-md bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center">
-                <Move className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+                <Move className="w-3.5 h-3.5" />
               </div>
               <div>
-                <span className="text-xs sm:text-sm font-bold text-white block">
+                <span className="text-xs font-semibold text-white block">
                   Dynamic Parallax Scroll
                 </span>
-                <span className="text-[11px] text-slate-400 block">
+                <span className="text-[11px] text-zinc-400 block">
                   {parallaxEnabled
-                    ? "เปิดใช้งาน (พื้นหลังขยับตามการเลื่อนหน้าจอช้าๆ)"
+                    ? "เปิดใช้งาน (พื้นหลังขยับตามการเลื่อนหน้าจอ)"
                     : "ปิดใช้งาน (พื้นหลังตรึงนิ่งแบบ Static)"}
                 </span>
               </div>
@@ -182,13 +186,13 @@ export default function BackgroundCustomizerModal({
 
             <button
               onClick={() => onToggleParallax(!parallaxEnabled)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                parallaxEnabled ? "bg-cyan-500" : "bg-slate-700"
+              className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                parallaxEnabled ? "bg-blue-600" : "bg-zinc-700"
               }`}
             >
               <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  parallaxEnabled ? "translate-x-5" : "translate-x-0"
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  parallaxEnabled ? "translate-x-5" : "translate-x-0.5"
                 }`}
               />
             </button>
@@ -196,12 +200,12 @@ export default function BackgroundCustomizerModal({
 
           {/* Glow Intensity Presets */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+            <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                <Eye className="w-3.5 h-3.5 text-blue-400" />
                 ระดับแสงเรือง (Glow Intensity)
               </span>
-              <span className="text-xs text-cyan-400 font-mono font-bold">
+              <span className="text-xs text-blue-400 font-mono font-bold">
                 {Math.round(intensity * 100)}%
               </span>
             </label>
@@ -217,10 +221,10 @@ export default function BackgroundCustomizerModal({
                   <button
                     key={lvl.label}
                     onClick={() => onChangeIntensity(lvl.val)}
-                    className={`py-2 px-2.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                    className={`h-7 px-2 rounded-md text-xs font-medium transition-colors cursor-pointer border ${
                       isAct
-                        ? "bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-sm shadow-cyan-500/20"
-                        : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                        ? "bg-blue-600 text-white font-bold border-blue-500"
+                        : "btn-terminal"
                     }`}
                   >
                     {lvl.label}
@@ -238,7 +242,7 @@ export default function BackgroundCustomizerModal({
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white shadow-lg shadow-cyan-500/20 active:scale-95 transition-all cursor-pointer"
+            className="btn-primary h-8 px-4 text-xs font-semibold"
           >
             เสร็จสิ้น
           </button>

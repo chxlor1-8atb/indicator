@@ -155,31 +155,31 @@ function HeroExecutionHUD({
   const activeRiskPct = isCent ? customRiskPct.toFixed(1) : stdRiskPctActual;
 
   return (
-    <div className="rounded-2xl border-2 border-indigo-500/40 hover:border-cyan-500/40 transition-colors bg-gradient-to-b from-[#0E131F] via-[#0B0F17] to-[#080B11] p-4 sm:p-5 shadow-2xl space-y-4 relative overflow-hidden backdrop-blur-md">
+    <div className="terminal-card p-4 sm:p-5 space-y-3.5 relative overflow-hidden">
       {/* Glow Ambient Top Bar */}
-      <div className={`absolute top-0 left-0 right-0 h-1.5 ${
-        isBuy ? "bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]" :
-        isSell ? "bg-gradient-to-r from-rose-500 via-red-500 to-amber-500 shadow-[0_0_12px_rgba(244,63,94,0.5)]" :
-        "bg-gradient-to-r from-cyan-500 via-indigo-500 to-slate-500 shadow-[0_0_12px_rgba(6,182,212,0.4)]"
+      <div className={`absolute top-0 left-0 right-0 h-1 ${
+        isBuy ? "bg-emerald-500" :
+        isSell ? "bg-rose-500" :
+        "bg-slate-600"
       }`} />
 
       {/* ─── 1. HERO HEADER: Order Type & R:R Ratio ─── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3.5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3.5">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-inner">
-            <Smartphone className="w-5 h-5 text-indigo-400" />
+          <div className="p-2 rounded-md bg-surface-50 text-slate-300 border border-slate-800 shadow-xs">
+            <Smartphone className="w-5 h-5 text-primary" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-mono font-bold tracking-wider text-indigo-300 uppercase">
+              <span className="text-xs font-mono font-bold tracking-wider text-slate-300 uppercase">
                 Institutional Trade Ticket
               </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-200 border border-indigo-500/30">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-50 text-slate-400 border border-slate-800">
                 AI Signal Alert • Telegram Ready
               </span>
               {analysis.timestamp && (
                 <span
-                  className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-mono text-slate-300 px-2 py-0.5 rounded-full bg-surface-50 border border-slate-800"
+                  className="hidden sm:inline-flex items-center gap-1 text-[10.5px] font-mono text-slate-400 px-2 py-0.5 rounded-full bg-surface-50 border border-slate-800"
                   title="เวลาที่ AI สร้างแผนนี้"
                 >
                   <Clock className="w-3 h-3 text-slate-400" />
@@ -196,7 +196,7 @@ function HeroExecutionHUD({
 
         {/* Order Type & RR Badges */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-black tracking-wide shadow-md ${
+          <span className={`px-3 py-1 rounded-md border text-xs sm:text-sm font-bold tracking-wide ${
             isFreeze
               ? "bg-rose-500/20 text-rose-300 border-rose-500/50"
               : isWait
@@ -502,10 +502,10 @@ function HeroExecutionHUD({
           {/* 1. Price */}
           <div
             onClick={() => onCopy(`${displayEntryPrice}`, "price")}
-            className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
+            className={`p-3 sm:p-3.5 rounded-md border transition-colors group relative shadow-xs cursor-pointer ${
               isExecutionLocked
-                ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
-                : "bg-surface-50/90 hover:bg-slate-800 border-slate-700 hover:border-amber-400/80 cursor-pointer hover:shadow-amber-500/10 active:scale-95"
+                ? "bg-surface-50/40 hover:bg-surface-100 border-slate-800 opacity-75"
+                : "bg-surface-50 hover:bg-white/[0.04] border-slate-800 hover:border-amber-500/60"
             }`}
           >
             <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
@@ -537,10 +537,10 @@ function HeroExecutionHUD({
           {/* 2. Stop Loss */}
           <div
             onClick={() => onCopy(`${displaySL}`, "sl")}
-            className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
+            className={`p-3 sm:p-3.5 rounded-md border transition-colors group relative shadow-xs cursor-pointer ${
               isExecutionLocked
-                ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
-                : "bg-surface-50/90 hover:bg-slate-800 border-slate-700 hover:border-rose-500/80 cursor-pointer hover:shadow-rose-500/10 active:scale-95"
+                ? "bg-surface-50/40 hover:bg-surface-100 border-slate-800 opacity-75"
+                : "bg-surface-50 hover:bg-white/[0.04] border-slate-800 hover:border-rose-500/60"
             }`}
           >
             <div className="flex items-center justify-between text-[11px] text-rose-400 mb-1">
@@ -568,10 +568,10 @@ function HeroExecutionHUD({
           {/* 3. Take Profit 1 */}
           <div
             onClick={() => onCopy(`${displayTP1}`, "tp1")}
-            className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
+            className={`p-3 sm:p-3.5 rounded-md border transition-colors group relative shadow-xs cursor-pointer ${
               isExecutionLocked
-                ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
-                : "bg-surface-50/90 hover:bg-slate-800 border-slate-700 hover:border-emerald-500/80 cursor-pointer hover:shadow-emerald-500/10 active:scale-95"
+                ? "bg-surface-50/40 hover:bg-surface-100 border-slate-800 opacity-75"
+                : "bg-surface-50 hover:bg-white/[0.04] border-slate-800 hover:border-emerald-500/60"
             }`}
           >
             <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-1">
@@ -599,10 +599,10 @@ function HeroExecutionHUD({
           {/* 4. Take Profit 2 */}
           <div
             onClick={() => onCopy(`${displayTP2}`, "tp2")}
-            className={`p-3 sm:p-3.5 rounded-xl border-2 transition-all group relative shadow-sm ${
+            className={`p-3 sm:p-3.5 rounded-md border transition-colors group relative shadow-xs cursor-pointer ${
               isExecutionLocked
-                ? "bg-surface-50/40 hover:bg-slate-800/60 border-slate-800 hover:border-slate-700 opacity-75 cursor-pointer"
-                : "bg-surface-50/90 hover:bg-slate-800 border-slate-700 hover:border-emerald-500/80 cursor-pointer hover:shadow-emerald-500/10 active:scale-95"
+                ? "bg-surface-50/40 hover:bg-surface-100 border-slate-800 opacity-75"
+                : "bg-surface-50 hover:bg-white/[0.04] border-slate-800 hover:border-emerald-500/60"
             }`}
           >
             <div className="flex items-center justify-between text-[11px] text-emerald-400 mb-1">

@@ -96,12 +96,12 @@ export default function AssetSelector({
   };
 
   return (
-    <div className="bg-surface-100 border border-slate-800 rounded-2xl p-3.5 sm:p-4 shadow-sm relative z-30 w-full min-w-0 max-w-full">
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3.5 sm:gap-4 min-w-0 w-full">
+    <div className="terminal-card p-2.5 sm:p-3 relative z-30 w-full min-w-0 max-w-full">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 sm:gap-3 min-w-0 w-full">
         {/* Left: Category tabs & Searchable Asset Selector */}
-        <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-          {/* Categories */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          {/* Categories Segmented Control */}
+          <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-[#0A0C10] border border-white/[0.08] overflow-x-auto scrollbar-none">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
@@ -110,10 +110,10 @@ export default function AssetSelector({
                   setSearchQuery("");
                   setIsOpen(true);
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                className={`px-2.5 py-1 rounded-[5px] text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
                   activeTab === cat.id
-                    ? "bg-slate-800 text-white shadow-inner"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-surface-50"
+                    ? "bg-white/[0.12] text-white font-semibold border border-white/[0.15]"
+                    : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
                 }`}
               >
                 {cat.label}
@@ -121,29 +121,29 @@ export default function AssetSelector({
             ))}
           </div>
 
-          <div className="hidden sm:block h-5 w-px bg-slate-800"></div>
+          <div className="hidden sm:block h-4 w-px bg-white/[0.08]" />
 
           {/* Searchable Dropdown Picker */}
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="flex items-center justify-between gap-2 px-3 py-1.5 bg-surface-50 hover:bg-slate-800/80 border border-slate-700/80 rounded-lg text-xs font-semibold text-white transition-colors min-w-[210px]"
+              className="btn-terminal h-8 px-2.5 flex items-center justify-between gap-2 text-xs font-medium min-w-[190px]"
             >
               <div className="flex items-center gap-2">
-                <span className="font-mono text-zinc-100 font-bold">{selectedAsset}</span>
-                <span className="text-slate-400 truncate max-w-[120px] font-normal">
+                <span className="font-mono text-white font-bold">{selectedAsset}</span>
+                <span className="text-zinc-400 truncate max-w-[110px] font-normal">
                   {currentAssetInfo.name.split("(")[0]}
                 </span>
               </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
             </button>
 
             {/* Dropdown Menu */}
             {isOpen && (
-              <div className="absolute top-full left-0 mt-1.5 w-80 bg-surface-100 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 animate-fadeIn">
+              <div className="absolute top-full left-0 mt-1 w-80 terminal-card-elevated shadow-2xl p-2 z-50 animate-fadeIn">
                 {/* Search Input */}
                 <form onSubmit={handleCustomTickerSubmit} className="relative mb-2">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2.5" />
                   <input
                     id="asset-selector-search"
                     name="assetSearch"
@@ -152,7 +152,7 @@ export default function AssetSelector({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     autoFocus
-                    className="w-full pl-8 pr-3 py-1.5 bg-surface-50 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-zinc-500"
+                    className="w-full pl-8 pr-3 py-1.5 bg-white/[0.04] border border-white/[0.1] rounded-md text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                   />
                 </form>
 
@@ -160,7 +160,7 @@ export default function AssetSelector({
                 <div className="max-h-80 overflow-y-auto space-y-0.5 pr-1">
                   {filteredAssets.length === 0 ? (
                     <div className="p-3 text-center">
-                      <p className="text-xs text-slate-400">No preset match for &quot;{searchQuery}&quot;</p>
+                      <p className="text-xs text-zinc-400">No preset match for &quot;{searchQuery}&quot;</p>
                       {searchQuery && (
                         <button
                           type="button"
@@ -170,7 +170,7 @@ export default function AssetSelector({
                             setIsOpen(false);
                             setSearchQuery("");
                           }}
-                          className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700 border border-zinc-700 text-xs font-semibold"
+                          className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-500 text-xs font-semibold"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>Load & Analyze &quot;{searchQuery.toUpperCase()}&quot;</span>
@@ -186,17 +186,17 @@ export default function AssetSelector({
                           setIsOpen(false);
                           setSearchQuery("");
                         }}
-                        className={`w-full flex items-center justify-between p-2 rounded-lg text-left text-xs transition-colors ${
+                        className={`w-full flex items-center justify-between p-2 rounded-md text-left text-xs transition-colors ${
                           selectedAsset === asset.symbol
-                            ? "bg-zinc-700/60 text-zinc-100 font-bold border border-zinc-600/50"
-                            : "text-slate-300 hover:bg-surface-50 hover:text-white"
+                            ? "bg-white/[0.1] text-white font-bold border border-white/[0.15]"
+                            : "text-zinc-300 hover:bg-white/[0.04] hover:text-white"
                         }`}
                       >
                         <div>
                           <span className="font-mono font-bold block">{asset.symbol}</span>
-                          <span className="text-[10px] text-slate-500 font-normal">{asset.name}</span>
+                          <span className="text-[10px] text-zinc-500 font-normal">{asset.name}</span>
                         </div>
-                        {selectedAsset === asset.symbol && <Check className="w-4 h-4 text-zinc-200" />}
+                        {selectedAsset === asset.symbol && <Check className="w-4 h-4 text-white" />}
                       </button>
                     ))
                   )}
@@ -207,18 +207,18 @@ export default function AssetSelector({
 
           {/* Quick Price Badge with Loading Skeleton */}
           {isLoadingPrice || !currentPrice || currentPrice <= 0 ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-50 rounded-lg border border-slate-800 text-xs animate-pulse">
-              <div className="h-4 w-20 bg-slate-700/60 rounded" />
-              <div className="h-3.5 w-12 bg-slate-800 rounded" />
+            <div className="flex items-center gap-2 h-8 px-2.5 bg-white/[0.03] rounded-md border border-white/[0.06] text-xs animate-pulse">
+              <div className="h-4 w-16 bg-white/[0.08] rounded" />
+              <div className="h-3 w-10 bg-white/[0.05] rounded" />
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-50 rounded-lg border border-slate-800 text-xs">
-              <span className="font-mono font-bold text-white">
+            <div className="flex items-center gap-2 h-8 px-2.5 bg-white/[0.03] rounded-md border border-white/[0.06] text-xs font-mono">
+              <span className="font-bold text-white">
                 ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: currentAssetInfo?.precision || 2 })}
               </span>
               <span
-                className={`flex items-center font-mono text-[11px] font-semibold ${
-                  priceChangePercent >= 0 ? "text-brand-green" : "text-brand-red"
+                className={`flex items-center text-[11px] font-semibold ${
+                  priceChangePercent >= 0 ? "text-emerald-400" : "text-rose-400"
                 }`}
               >
                 {priceChangePercent >= 0 ? (
@@ -231,7 +231,7 @@ export default function AssetSelector({
               </span>
               {lastPriceUpdate && (
                 <span
-                  className="hidden sm:inline text-[10px] text-slate-500 font-mono pl-1.5 border-l border-slate-700/80"
+                  className="hidden sm:inline text-[10px] text-zinc-500 font-mono pl-1.5 border-l border-white/[0.08]"
                   title="เวลาอัปเดตราคาล่าสุด"
                 >
                   {new Date(lastPriceUpdate).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
@@ -242,9 +242,9 @@ export default function AssetSelector({
         </div>
 
         {/* Right: Timeframes & AI Trigger Button */}
-        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2">
           {/* Timeframe Chips with MT4/MT5 Standards */}
-          <div className="flex items-center gap-1 bg-surface-50 p-1 rounded-xl border border-slate-800 overflow-x-auto max-w-full scrollbar-none">
+          <div className="flex items-center gap-0.5 bg-[#0A0C10] p-0.5 rounded-md border border-white/[0.08] overflow-x-auto max-w-full scrollbar-none">
             {TIMEFRAMES.map((tf) => {
               const isSelected = selectedTimeframe === tf.id;
               return (
@@ -252,10 +252,10 @@ export default function AssetSelector({
                   key={tf.id}
                   onClick={() => onSelectTimeframe(tf.id)}
                   title={`${tf.label} (${tf.id}) - ${tf.tooltip}`}
-                  className={`px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold font-mono transition-all relative shrink-0 flex items-center gap-1 ${
+                  className={`h-7 px-2.5 rounded-[5px] text-xs font-mono font-medium transition-colors relative shrink-0 flex items-center gap-1 cursor-pointer ${
                     isSelected
-                      ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-500/30 border border-indigo-400/50"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-surface-100"
+                      ? "bg-blue-600 text-white font-bold border border-blue-500"
+                      : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
                   }`}
                 >
                   <span>{tf.label}</span>
@@ -271,10 +271,10 @@ export default function AssetSelector({
           <button
             onClick={onRunAnalysis}
             disabled={isAnalyzing}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-xs font-bold text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50"
+            className="btn-primary h-7 px-3 flex items-center gap-1.5 text-xs font-medium disabled:opacity-50"
           >
             <Sparkles className={`w-3.5 h-3.5 ${isAnalyzing ? "animate-spin" : ""}`} />
-            <span>{isAnalyzing ? "Analyzing Market & News..." : "AI Synthesize"}</span>
+            <span>{isAnalyzing ? "Analyzing..." : "AI Synthesize"}</span>
           </button>
         </div>
       </div>

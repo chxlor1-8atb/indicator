@@ -278,14 +278,14 @@ export default function DashboardPage() {
     // This is a free live reference price and does not invoke a Vercel Function.
     const isGoldReferenceStream = selectedAsset === "XAUUSD" || selectedAsset === "GOLD";
 
-    if (isInstitutionalAsset && !isGoldReferenceStream) {
-      // Direct TradingView Institutional OANDA/Interbank Feed Polling (paused when inactive / 30s interval)
-      const pollLiveTicker = async () => {
+    let fallbackPollingInterval: NodeJS.Timeout | null = null;
+    let wsWatchdogTimeout: NodeJS.Timeout | null = null;
+
+    const startPollingFallback = () => {
+      if (fallbackPollingInterval || !isMounted) return;
+      const pollFallback = async () => {
         if (!isMounted) return;
-        // If tab is in background, pause polling completely to conserve CPU and Vercel quota
-        if (typeof document !== "undefined" && document.hidden) {
-          return;
-        }
+        if (typeof document !== "undefined" && document.hidden) return;
         try {
           const res = await fetch(`/api/live-ticker?symbol=${selectedAsset}`);
           if (res.ok) {
@@ -304,10 +304,17 @@ export default function DashboardPage() {
                 return newCandles;
               });
 
-              setIndicators((prev) => ({
-                ...prev,
-                currentPrice: livePrice,
-              }));
+              setIndicators((prev) => {
+                const firstPrice = candles[0]?.open || candles[0]?.close || livePrice;
+                const chg24h = Number((livePrice - firstPrice).toFixed(4));
+                const chgPct = firstPrice > 0 ? Number(((chg24h / firstPrice) * 100).toFixed(2)) : 0;
+                return {
+                  ...prev,
+                  currentPrice: livePrice,
+                  priceChange24h: chg24h,
+                  priceChangePercent24h: chgPct,
+                };
+              });
             }
           }
         } catch {
@@ -315,12 +322,56 @@ export default function DashboardPage() {
         }
       };
 
-      // Low-frequency polling (30s) + paused when inactive to protect Vercel usage.
+      pollFallback();
+      fallbackPollingInterval = setInterval(pollFallback, 3500);
+    };
+
+    if (isInstitutionalAsset && !isGoldReferenceStream) {
+      // Direct TradingView Institutional OANDA/Interbank Feed Polling (3.5s high frequency)
+      const pollLiveTicker = async () => {
+        if (!isMounted) return;
+        if (typeof document !== "undefined" && document.hidden) return;
+        try {
+          const res = await fetch(`/api/live-ticker?symbol=${selectedAsset}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && typeof data.price === "number" && data.price > 0 && isMounted) {
+              const livePrice = data.price;
+              setLiveTickLastUpdated(data.timestamp || Date.now());
+              setCandles((prevCandles) => {
+                if (prevCandles.length === 0) return prevCandles;
+                const newCandles = [...prevCandles];
+                const last = { ...newCandles[newCandles.length - 1] };
+                last.close = livePrice;
+                last.high = Math.max(last.high, livePrice);
+                last.low = Math.min(last.low, livePrice);
+                newCandles[newCandles.length - 1] = last;
+                return newCandles;
+              });
+
+              setIndicators((prev) => {
+                const firstPrice = candles[0]?.open || candles[0]?.close || livePrice;
+                const chg24h = Number((livePrice - firstPrice).toFixed(4));
+                const chgPct = firstPrice > 0 ? Number(((chg24h / firstPrice) * 100).toFixed(2)) : 0;
+                return {
+                  ...prev,
+                  currentPrice: livePrice,
+                  priceChange24h: chg24h,
+                  priceChangePercent24h: chgPct,
+                };
+              });
+            }
+          }
+        } catch {
+          // ignore transient poll error
+        }
+      };
+
       pollLiveTicker();
-      tickerInterval = setInterval(pollLiveTicker, 30000);
+      tickerInterval = setInterval(pollLiveTicker, 3500);
     } else {
       // Map crypto assets, plus XAUUSD's PAXG gold reference, to Binance's
-      // public live-trade WebSocket. This connection is browser -> Binance.
+      // public live-trade WebSocket.
       let wsSymbol: string | null = null;
       if (isGoldReferenceStream) {
         wsSymbol = "paxgusdt";
@@ -329,6 +380,11 @@ export default function DashboardPage() {
       } else if (["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE"].some((c) => selectedAsset.startsWith(c))) {
         wsSymbol = `${selectedAsset.toLowerCase()}usdt`;
       }
+
+      // Watchdog: If WebSocket does not produce a tick in 3.5s, trigger polling fallback
+      wsWatchdogTimeout = setTimeout(() => {
+        startPollingFallback();
+      }, 3500);
 
       const connectWebSocket = () => {
         if (!wsSymbol || !isMounted) return;
@@ -341,10 +397,6 @@ export default function DashboardPage() {
             reconnectDelay = 1000;
           };
 
-          // ─── RAF Throttle: batch WebSocket ticks to ~60fps to prevent re-render storm ───
-          // High-volume pairs (BTC, ETH) can fire 5-15 messages/second.
-          // We buffer the latest price and flush it on the next animation frame,
-          // reducing React setState calls from ~10/s to ~60/s (frame-aligned).
           let _rafId: number | null = null;
           let _pendingPrice: number | null = null;
 
@@ -353,6 +405,13 @@ export default function DashboardPage() {
             if (_pendingPrice === null || !isMounted) return;
             const formattedPrice = _pendingPrice;
             _pendingPrice = null;
+
+            // Clear polling fallback if websocket is actively feeding
+            if (fallbackPollingInterval) {
+              clearInterval(fallbackPollingInterval);
+              fallbackPollingInterval = null;
+            }
+
             setCandles((prevCandles) => {
               if (prevCandles.length === 0) return prevCandles;
               const newCandles = [...prevCandles];
@@ -363,7 +422,17 @@ export default function DashboardPage() {
               newCandles[newCandles.length - 1] = last;
               return newCandles;
             });
-            setIndicators((prev) => ({ ...prev, currentPrice: formattedPrice }));
+            setIndicators((prev) => {
+              const firstPrice = candles[0]?.open || candles[0]?.close || formattedPrice;
+              const chg24h = Number((formattedPrice - firstPrice).toFixed(4));
+              const chgPct = firstPrice > 0 ? Number(((chg24h / firstPrice) * 100).toFixed(2)) : 0;
+              return {
+                ...prev,
+                currentPrice: formattedPrice,
+                priceChange24h: chg24h,
+                priceChangePercent24h: chgPct,
+              };
+            });
             setLiveTickLastUpdated(Date.now());
           };
 
@@ -375,7 +444,6 @@ export default function DashboardPage() {
               if (livePrice && !isNaN(livePrice)) {
                 const dec = livePrice < 0.001 ? 6 : livePrice < 1 ? 4 : livePrice < 20 ? 3 : 2;
                 _pendingPrice = Number(livePrice.toFixed(dec));
-                // Schedule flush on next animation frame (cancel any pending one)
                 if (_rafId !== null) cancelAnimationFrame(_rafId);
                 _rafId = requestAnimationFrame(_flushTick);
               }
@@ -386,6 +454,7 @@ export default function DashboardPage() {
 
           ws.onclose = () => {
             if (_rafId !== null) { cancelAnimationFrame(_rafId); _rafId = null; }
+            startPollingFallback();
             if (isMounted) {
               reconnectTimeout = setTimeout(() => {
                 reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
@@ -395,15 +464,19 @@ export default function DashboardPage() {
           };
 
           ws.onerror = () => {
+            startPollingFallback();
             ws.close();
           };
         } catch (e) {
-          console.warn("WebSocket stream error:", e);
+          console.warn("WebSocket stream error, starting polling fallback:", e);
+          startPollingFallback();
         }
       };
 
       if (wsSymbol) {
         connectWebSocket();
+      } else {
+        startPollingFallback();
       }
     }
 
@@ -426,6 +499,8 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
       if (tickerInterval) clearInterval(tickerInterval);
+      if (fallbackPollingInterval) clearInterval(fallbackPollingInterval);
+      if (wsWatchdogTimeout) clearTimeout(wsWatchdogTimeout);
       clearInterval(pollInterval);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisChangeChart);
@@ -549,142 +624,140 @@ export default function DashboardPage() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 w-full max-w-full min-w-0 overflow-x-hidden px-3 sm:px-6 lg:px-8 py-3 sm:py-4 lg:py-6 space-y-3 sm:space-y-4 pb-24 md:pb-8">
-        {/* AI Autonomous Auto-Pilot Live HUD Banner (Compact Institutional Telemetry Bar) */}
-        <div className="w-full bg-[#0B0F17]/75 border border-white/[0.08] hover:border-cyan-500/40 transition-all rounded-2xl p-3 sm:p-3.5 shadow-2xl shadow-black/40 backdrop-blur-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+      <main className="flex-1 w-full max-w-full min-w-0 overflow-x-hidden relative z-10 px-3 sm:px-6 lg:px-8 py-3 space-y-3 pb-24 md:pb-8">
+        {/* AI Autonomous Auto-Pilot Live HUD (Compact Executive Telemetry Strip) */}
+        <div className="terminal-card px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div
-              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all ${
+              className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 border transition-colors ${
                 isAutoPilot
-                  ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400 shadow-md shadow-emerald-500/20"
-                  : "bg-slate-800/80 border-slate-700 text-slate-400"
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                  : "bg-white/[0.04] border-white/[0.08] text-zinc-500"
               }`}
             >
-              <Bot className={`w-5 h-5 ${isAutoPilot ? "animate-pulse" : ""}`} />
+              <Bot className="w-4 h-4" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1.5 tracking-tight">
-                  AI Autonomous Decision Pilot
-                  {isAutoPilot && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 shadow-sm shadow-emerald-500/10">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      LIVE SYNC
-                    </span>
-                  )}
-                </span>
-                <span className="text-[10px] sm:text-[11px] text-slate-400 font-mono">
-                  ({lastSyncTime})
-                </span>
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-300 truncate max-w-xl flex items-center gap-1.5 mt-0.5">
-                <Radio className={`w-3.5 h-3.5 shrink-0 ${isAutoPilot ? "text-cyan-400 animate-spin" : "text-slate-500"}`} />
+            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-xs text-white flex items-center gap-1.5 tracking-tight">
+                AI Autonomous Pilot
+                {isAutoPilot && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    LIVE
+                  </span>
+                )}
+              </span>
+              <span className="text-[11px] text-zinc-400 font-mono hidden md:inline">
+                ({lastSyncTime})
+              </span>
+              <span className="text-zinc-600 hidden md:inline">•</span>
+              <p className="text-[11px] text-zinc-300 truncate max-w-md lg:max-w-xl flex items-center gap-1.5">
+                <Radio className={`w-3 h-3 shrink-0 ${isAutoPilot ? "text-blue-400" : "text-zinc-500"}`} />
                 <span className="truncate">{latestTelemetry}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-2.5 self-end md:self-center shrink-0">
+          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
             {/* Telegram Signals Live Badge */}
-            <div className="px-2.5 py-1 rounded-xl bg-surface-50/80 border border-slate-800 flex items-center gap-1.5 text-xs font-mono shadow-sm">
-              <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400/20" />
-              <span className="text-slate-400 hidden sm:inline">Telegram:</span>
-              <span className="font-bold text-white text-[11px] sm:text-xs">Broadcast สด</span>
+            <div className="h-7 px-2 rounded-md bg-white/[0.03] border border-white/[0.06] flex items-center gap-1.5 text-[11px] font-mono text-zinc-300">
+              <Zap className="w-3 h-3 text-amber-400" />
+              <span className="text-zinc-400 hidden sm:inline">TG:</span>
+              <span className="font-medium text-white">Live Broadcast</span>
             </div>
 
             {/* Auto-Pilot Toggle Button */}
             <button
               onClick={handleToggleAutoPilot}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-sm active:scale-95 cursor-pointer ${
+              className={`h-7 px-2.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors border cursor-pointer ${
                 isAutoPilot
-                  ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border-emerald-400/40 shadow-emerald-500/20"
-                  : "bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700"
+                  ? "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30"
+                  : "bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 border-white/[0.08]"
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${isAutoPilot ? "bg-white animate-pulse" : "bg-slate-500"}`} />
-              <span className="hidden sm:inline">{isAutoPilot ? "ตัดสินใจอัตโนมัติ: เปิด" : "ตัดสินใจอัตโนมัติ: ปิด"}</span>
-              <span className="sm:hidden">{isAutoPilot ? "ออโต้: เปิด" : "ออโต้: ปิด"}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isAutoPilot ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"}`} />
+              <span>{isAutoPilot ? "Auto-Pilot: ON" : "Auto-Pilot: OFF"}</span>
             </button>
           </div>
         </div>
 
-        {/* ─── DESKTOP VIEW SELECTOR (แถบเมนูสลับหน้าจอสำหรับ Desktop/Tablet) ─── */}
+        {/* ─── DESKTOP VIEW SELECTOR (Precision Segmented Control) ─── */}
         <div className="hidden md:flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5">
-          <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#0E131F]/80 border border-white/[0.08] backdrop-blur-xl shrink-0 shadow-inner">
+          <div className="flex items-center gap-1 p-0.5 rounded-md bg-[#0A0C10] border border-white/[0.08] shrink-0">
             <button
               onClick={() => setActiveTab("SIGNALS")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-xs font-medium transition-colors cursor-pointer ${
                 activeTab === "SIGNALS"
-                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "bg-white/[0.12] text-white border border-white/[0.15]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
               }`}
             >
-              <Target className="w-3.5 h-3.5" />
+              <Target className="w-3.5 h-3.5 text-blue-400" />
               <span>สัญญาณเทรด</span>
             </button>
 
             <button
               onClick={() => setActiveTab("CHART")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-xs font-medium transition-colors cursor-pointer ${
                 activeTab === "CHART"
-                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "bg-white/[0.12] text-white border border-white/[0.15]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
               }`}
             >
-              <BarChart3 className="w-3.5 h-3.5" />
+              <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
               <span>กราฟสด</span>
             </button>
 
             <button
               onClick={() => setActiveTab("RADAR")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-xs font-medium transition-colors cursor-pointer ${
                 activeTab === "RADAR"
-                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "bg-white/[0.12] text-white border border-white/[0.15]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
               }`}
             >
-              <Radio className="w-3.5 h-3.5" />
+              <Radio className="w-3.5 h-3.5 text-blue-400" />
               <span>เรดาร์ตลาด</span>
             </button>
 
             <button
               onClick={() => setActiveTab("NEWS")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-xs font-medium transition-colors cursor-pointer ${
                 activeTab === "NEWS"
-                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "bg-white/[0.12] text-white border border-white/[0.15]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
               }`}
             >
-              <Newspaper className="w-3.5 h-3.5" />
+              <Newspaper className="w-3.5 h-3.5 text-blue-400" />
               <span>ข่าวเศรษฐกิจ</span>
             </button>
 
             <button
               onClick={() => setActiveTab("JOURNAL")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-xs font-medium transition-colors cursor-pointer ${
                 activeTab === "JOURNAL"
-                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "bg-white/[0.12] text-white border border-white/[0.15]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
               }`}
             >
-              <BookOpen className="w-3.5 h-3.5" />
+              <BookOpen className="w-3.5 h-3.5 text-blue-400" />
               <span>บันทึกสถิติ</span>
             </button>
 
             <button
               onClick={() => setActiveTab("ALL")}
-              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-[5px] text-xs font-medium transition-colors cursor-pointer ${
                 activeTab === "ALL"
-                  ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "bg-white/[0.12] text-white border border-white/[0.15]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.04] border border-transparent"
               }`}
             >
-              <Layers className="w-3.5 h-3.5" />
+              <Layers className="w-3.5 h-3.5 text-blue-400" />
               <span>รวมทั้งหมด</span>
             </button>
           </div>
 
-          <span className="text-[11px] text-slate-500 hidden lg:inline font-mono">
+          <span className="text-[11px] text-zinc-500 hidden lg:inline font-mono">
             {selectedAsset} • {selectedTimeframe.toUpperCase()}
           </span>
         </div>
@@ -711,16 +784,16 @@ export default function DashboardPage() {
               onSelectTimeframe={setSelectedTimeframe}
               onRunAnalysis={runAnalysis}
               isAnalyzing={isAnalyzing}
-              currentPrice={indicators.currentPrice}
+              currentPrice={indicators.currentPrice || (candles.length > 0 ? candles[candles.length - 1].close : 0)}
               priceChangePercent={indicators.priceChangePercent24h}
-              isLoadingPrice={isLoadingMarket || !indicators.currentPrice || indicators.currentPrice <= 0}
+              isLoadingPrice={isLoadingMarket && (!candles || candles.length === 0)}
               lastPriceUpdate={liveTickLastUpdated || marketLastUpdated}
             />
 
             {/* 2-Column Responsive Grid Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 2xl:grid-cols-12 gap-4 lg:gap-6 w-full items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-12 2xl:grid-cols-12 gap-3 sm:gap-3.5 w-full items-start">
               {/* Left Column: Chart & AI Analysis & Signal Journal (8 cols on lg, 9 cols on 2xl) */}
-              <div className="lg:col-span-8 2xl:col-span-9 space-y-4 lg:space-y-6 min-w-0">
+              <div className="lg:col-span-8 2xl:col-span-9 space-y-3 sm:space-y-3.5 min-w-0">
                 <MarketChart
                   candles={candles}
                   indicators={indicators}
@@ -730,6 +803,7 @@ export default function DashboardPage() {
                   optimizedConfig={analysis?.optimizedConfig}
                   lastTickTime={liveTickLastUpdated || marketLastUpdated}
                   priceFeedLabel={selectedAsset === "XAUUSD" || selectedAsset === "GOLD" ? "PAXG LIVE" : "LIVE TICK"}
+                  livePrice={indicators.currentPrice}
                 />
 
                 <AnalysisCard
@@ -767,9 +841,9 @@ export default function DashboardPage() {
                 onSelectTimeframe={setSelectedTimeframe}
                 onRunAnalysis={runAnalysis}
                 isAnalyzing={isAnalyzing}
-                currentPrice={indicators.currentPrice}
+                currentPrice={indicators.currentPrice || (candles.length > 0 ? candles[candles.length - 1].close : 0)}
                 priceChangePercent={indicators.priceChangePercent24h}
-                isLoadingPrice={isLoadingMarket || !indicators.currentPrice || indicators.currentPrice <= 0}
+                isLoadingPrice={isLoadingMarket && (!candles || candles.length === 0)}
                 lastPriceUpdate={liveTickLastUpdated || marketLastUpdated}
               />
             )}
@@ -786,6 +860,7 @@ export default function DashboardPage() {
                   optimizedConfig={analysis?.optimizedConfig}
                   lastTickTime={liveTickLastUpdated || marketLastUpdated}
                   priceFeedLabel={selectedAsset === "XAUUSD" || selectedAsset === "GOLD" ? "PAXG LIVE" : "LIVE TICK"}
+                  livePrice={indicators.currentPrice}
                 />
                 <AnalysisCard
                   analysis={analysis}
@@ -809,6 +884,7 @@ export default function DashboardPage() {
                   optimizedConfig={analysis?.optimizedConfig}
                   lastTickTime={liveTickLastUpdated || marketLastUpdated}
                   priceFeedLabel={selectedAsset === "XAUUSD" || selectedAsset === "GOLD" ? "PAXG LIVE" : "LIVE TICK"}
+                  livePrice={indicators.currentPrice}
                 />
               </div>
             )}
@@ -851,77 +927,77 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {/* ─── MOBILE PWA BOTTOM NAVIGATION BAR (แถบเมนูด้านล่างสำหรับมือถือ สไตล์แอปแท้ ปราศจากเมนูซ้ำซ้อน) ─── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17]/85 backdrop-blur-2xl border-t border-white/[0.08] md:hidden px-2 py-2 flex items-center justify-around shadow-2xl shadow-black pb-[max(0.6rem,env(safe-area-inset-bottom))]">
+      {/* ─── MOBILE PWA BOTTOM NAVIGATION BAR (Precision Segmented Bottom Bar) ─── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0A0C10]/95 backdrop-blur-2xl border-t border-white/[0.08] md:hidden px-2 py-1.5 flex items-center justify-around shadow-2xl shadow-black pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <button
           onClick={() => setActiveTab("ALL")}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-md transition-colors ${
             activeTab === "ALL"
-              ? "text-cyan-400 font-bold bg-cyan-500/15 border border-cyan-500/30 shadow-sm shadow-cyan-500/10"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
+              ? "text-white font-semibold bg-white/[0.1] border border-white/[0.15]"
+              : "text-zinc-400 hover:text-white border border-transparent"
           }`}
         >
-          <Layers className="w-5 h-5" />
+          <Layers className="w-4 h-4 text-blue-400" />
           <span className="text-[10px]">ทั้งหมด</span>
         </button>
 
         <button
           onClick={() => setActiveTab("SIGNALS")}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-md transition-colors ${
             activeTab === "SIGNALS"
-              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
+              ? "text-white font-semibold bg-white/[0.1] border border-white/[0.15]"
+              : "text-zinc-400 hover:text-white border border-transparent"
           }`}
         >
-          <Target className="w-5 h-5" />
+          <Target className="w-4 h-4 text-blue-400" />
           <span className="text-[10px]">สัญญาณ</span>
         </button>
 
         <button
           onClick={() => setActiveTab("CHART")}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-md transition-colors ${
             activeTab === "CHART"
-              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
+              ? "text-white font-semibold bg-white/[0.1] border border-white/[0.15]"
+              : "text-zinc-400 hover:text-white border border-transparent"
           }`}
         >
-          <BarChart3 className="w-5 h-5" />
+          <BarChart3 className="w-4 h-4 text-blue-400" />
           <span className="text-[10px]">กราฟ</span>
         </button>
 
         <button
           onClick={() => setActiveTab("RADAR")}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-md transition-colors ${
             activeTab === "RADAR"
-              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
+              ? "text-white font-semibold bg-white/[0.1] border border-white/[0.15]"
+              : "text-zinc-400 hover:text-white border border-transparent"
           }`}
         >
-          <Radio className="w-5 h-5" />
+          <Radio className="w-4 h-4 text-blue-400" />
           <span className="text-[10px]">เรดาร์</span>
         </button>
 
         <button
           onClick={() => setActiveTab("NEWS")}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-md transition-colors ${
             activeTab === "NEWS"
-              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
+              ? "text-white font-semibold bg-white/[0.1] border border-white/[0.15]"
+              : "text-zinc-400 hover:text-white border border-transparent"
           }`}
         >
-          <Newspaper className="w-5 h-5" />
+          <Newspaper className="w-4 h-4 text-blue-400" />
           <span className="text-[10px]">ข่าว</span>
         </button>
 
         <button
           onClick={() => setActiveTab("JOURNAL")}
-          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-md transition-colors ${
             activeTab === "JOURNAL"
-              ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
-              : "text-slate-400 hover:text-slate-200 border border-transparent"
+              ? "text-white font-semibold bg-white/[0.1] border border-white/[0.15]"
+              : "text-zinc-400 hover:text-white border border-transparent"
           }`}
         >
-          <BookOpen className="w-5 h-5" />
+          <BookOpen className="w-4 h-4 text-blue-400" />
           <span className="text-[10px]">บันทึก</span>
         </button>
       </nav>

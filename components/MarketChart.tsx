@@ -13,6 +13,7 @@ interface MarketChartProps {
   optimizedConfig?: OptimizedConfig;
   lastTickTime?: number | null;
   priceFeedLabel?: string;
+  livePrice?: number;
 }
 
 function MarketChart({
@@ -23,6 +24,7 @@ function MarketChart({
   optimizedConfig,
   lastTickTime,
   priceFeedLabel = "LIVE TICK",
+  livePrice,
 }: MarketChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -542,10 +544,14 @@ function MarketChart({
     }
 
     // ─── 7. Draw Live Price Line & Pulsing Tag ───
-    const currentPrice = candles[candles.length - 1].close;
+    const currentPrice = (livePrice && livePrice > 0)
+      ? livePrice
+      : (indicators.currentPrice && indicators.currentPrice > 0)
+      ? indicators.currentPrice
+      : candles[candles.length - 1].close;
     const currentPriceY = getY(currentPrice);
     const lastCandleX = getX(candles.length - 1);
-    const isCurrentUp = candles[candles.length - 1].close >= candles[candles.length - 1].open;
+    const isCurrentUp = currentPrice >= candles[candles.length - 1].open;
     const liveColor = isCurrentUp ? "#089981" : "#f23645";
 
     ctx.strokeStyle = liveColor;
@@ -656,6 +662,34 @@ function MarketChart({
       const haTag = showHeikinAshi ? " [HA Smoothed]" : "";
       const stats = `[${dt}]${haTag} O: ${c.open.toFixed(assetPrecision)} H: ${c.high.toFixed(assetPrecision)} L: ${c.low.toFixed(assetPrecision)} C: ${c.close.toFixed(assetPrecision)} Vol: ${c.volume.toLocaleString()}${vwapTag}${anomalyTag}`;
       ctx.fillText(stats, padding.left + 5, padding.top - 8);
+    } else if (candles.length > 0) {
+      // ─── Continuous Live Bar Stats (Always visible when not hovering) ───
+      const last = candles[candles.length - 1];
+      const livePriceVal = (livePrice && livePrice > 0)
+        ? livePrice
+        : (indicators.currentPrice && indicators.currentPrice > 0)
+        ? indicators.currentPrice
+        : last.close;
+      const isUp = livePriceVal >= last.open;
+      const vwapVal = indicators.vwap?.[candles.length - 1]?.vwap;
+      const vwapTag = showVWAP && vwapVal ? ` VWAP: ${vwapVal.toFixed(assetPrecision)}` : "";
+      const haTag = showHeikinAshi ? " [HA]" : "";
+
+      ctx.font = "11px monospace";
+      ctx.textAlign = "left";
+
+      // Live indicator dot & label
+      ctx.fillStyle = isUp ? "#34d399" : "#f87171";
+      ctx.fillText(`● LIVE [${timeframe.toUpperCase()}]`, padding.left + 5, padding.top - 8);
+
+      ctx.fillStyle = "#94a3b8";
+      const openStats = ` O: ${last.open.toFixed(assetPrecision)} H: ${last.high.toFixed(assetPrecision)} L: ${last.low.toFixed(assetPrecision)}`;
+      ctx.fillText(openStats, padding.left + 82, padding.top - 8);
+
+      const openWidth = ctx.measureText(openStats).width;
+      ctx.fillStyle = isUp ? "#34d399" : "#f87171";
+      const closeStats = ` C: ${livePriceVal.toFixed(assetPrecision)} (${isUp ? "▲" : "▼"})${haTag}${vwapTag} Vol: ${last.volume.toLocaleString()}`;
+      ctx.fillText(closeStats, padding.left + 82 + openWidth, padding.top - 8);
     }
 
     ctx.restore();
@@ -663,7 +697,7 @@ function MarketChart({
 
   animId = requestAnimationFrame(render);
   return () => cancelAnimationFrame(animId);
-}, [candles, indicators, showSuperTrend, showBollinger, showEMA, showVWAP, showHeikinAshi, showSR, showRSI, hoverIndex, mousePos, optimizedConfig, containerWidth]);
+}, [candles, indicators, showSuperTrend, showBollinger, showEMA, showVWAP, showHeikinAshi, showSR, showRSI, hoverIndex, mousePos, optimizedConfig, containerWidth, livePrice]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -693,7 +727,13 @@ function MarketChart({
   };
 
   const lastCandle = candles[candles.length - 1];
-  const liveClose = lastCandle ? lastCandle.close : indicators.currentPrice;
+  const liveClose = (livePrice && livePrice > 0)
+    ? livePrice
+    : (indicators.currentPrice && indicators.currentPrice > 0)
+    ? indicators.currentPrice
+    : lastCandle
+    ? lastCandle.close
+    : 0;
   const firstCandle = candles[0];
   const baselinePrice = firstCandle ? firstCandle.open : liveClose;
   const priceChange = liveClose - baselinePrice;
@@ -728,14 +768,14 @@ function MarketChart({
   } : null);
 
   return (
-    <div className="bg-surface-100 border border-slate-800 rounded-2xl overflow-hidden shadow-sm" ref={containerRef}>
+    <div className="terminal-card overflow-hidden" ref={containerRef}>
       {/* ─── Institutional Live Price Header Banner ─── */}
-      <div className="px-4 py-3 bg-surface-150 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+      <div className="px-3.5 py-2.5 bg-[#14171F] border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-3">
         {/* Left: Symbol, Big Live Price, and Change Pill */}
         <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-base sm:text-lg font-bold text-white tracking-wide">{symbol}</span>
-            <span className="text-[11px] px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-mono font-bold">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/25 text-blue-400 font-mono font-bold">
               {timeframe === "1m" ? "M1" : timeframe === "5m" ? "M5" : timeframe === "15m" ? "M15" : timeframe === "30m" ? "M30" : timeframe === "1h" ? "H1" : timeframe === "4h" ? "H4" : timeframe === "1D" ? "D1" : timeframe === "1W" ? "W1" : timeframe.toUpperCase()}
             </span>
           </div>
@@ -747,11 +787,11 @@ function MarketChart({
             }`}>
               {liveClose > 0 ? liveClose.toLocaleString(undefined, { minimumFractionDigits: assetPrecision, maximumFractionDigits: assetPrecision }) : "-"}
             </span>
-            <span className="text-xs text-slate-500 font-bold">USD</span>
+            <span className="text-[10px] text-zinc-500 font-mono font-bold">USD</span>
           </div>
 
           {/* Real-time 24h Change Pill */}
-          <div className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-bold ${
+          <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-bold ${
             isPositive
               ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
               : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
@@ -763,29 +803,29 @@ function MarketChart({
         </div>
 
         {/* Right: 24h High, 24h Low, Volume, Live Tick Badge */}
-        <div className="flex items-center gap-3 sm:gap-5 text-xs font-mono">
+        <div className="flex items-center gap-3 sm:gap-4 text-xs font-mono">
           <div className="hidden xs:block">
-            <div className="text-[10px] uppercase text-slate-500 font-medium">24h High</div>
-            <div className="text-slate-200 font-bold">{high24h > -Infinity ? high24h.toFixed(assetPrecision) : "-"}</div>
+            <div className="text-[10px] uppercase text-zinc-500 font-medium">24h High</div>
+            <div className="text-zinc-200 font-bold">{high24h > -Infinity ? high24h.toFixed(assetPrecision) : "-"}</div>
           </div>
           <div className="hidden xs:block">
-            <div className="text-[10px] uppercase text-slate-500 font-medium">24h Low</div>
-            <div className="text-slate-200 font-bold">{low24h < Infinity ? low24h.toFixed(assetPrecision) : "-"}</div>
+            <div className="text-[10px] uppercase text-zinc-500 font-medium">24h Low</div>
+            <div className="text-zinc-200 font-bold">{low24h < Infinity ? low24h.toFixed(assetPrecision) : "-"}</div>
           </div>
           <div className="hidden sm:block">
-            <div className="text-[10px] uppercase text-slate-500 font-medium">Volume</div>
-            <div className="text-slate-200 font-bold">{totalVolume.toLocaleString()}</div>
+            <div className="text-[10px] uppercase text-zinc-500 font-medium">Volume</div>
+            <div className="text-zinc-200 font-bold">{totalVolume.toLocaleString()}</div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-bold text-emerald-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-bold text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="font-sans">{priceFeedLabel}</span>
             </div>
             <div
-              className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-surface-50 border border-slate-800 text-[10.5px] text-slate-300 font-mono"
+              className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.03] border border-white/[0.06] text-[10.5px] text-zinc-400 font-mono"
               title="เวลาอัปเดตราคาล่าสุด"
             >
-              <Clock className="w-3 h-3 text-slate-400" />
+              <Clock className="w-3 h-3 text-zinc-400" />
               <span>
                 {lastTickTime
                   ? new Date(lastTickTime).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -799,15 +839,17 @@ function MarketChart({
       </div>
 
       {/* Chart Control Toolbar */}
-      <div className="px-4 py-2 border-b border-slate-800/80 bg-surface-200/50 flex flex-wrap items-center justify-between gap-2">
+      <div className="px-3 py-1.5 border-b border-white/[0.08] bg-[#0E1015] flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Indicator Suite Toggles (SuperTrend, Bollinger, EMA Ribbon, S/R) */}
+          {/* Indicator Suite Toggles (Unified Monochrome Precision Chips) */}
           <div className="flex flex-wrap items-center gap-1">
             <button
               onClick={() => setShowSuperTrend(!showSuperTrend)}
               title="SuperTrend: เส้นเขียว=เทรนด์ขาขึ้น, เส้นแดง=เทรนด์ขาลง"
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                showSuperTrend ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "text-slate-500 hover:text-slate-300"
+              className={`h-6 px-2 rounded-[5px] text-[11px] font-mono font-medium transition-colors cursor-pointer border ${
+                showSuperTrend
+                  ? "bg-white/[0.12] text-white border-white/[0.22]"
+                  : "bg-transparent text-zinc-400 border-transparent hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               SuperTrend
@@ -815,8 +857,10 @@ function MarketChart({
             <button
               onClick={() => setShowBollinger(!showBollinger)}
               title="Bollinger Bands: กรอบความผันผวนราคา"
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                showBollinger ? "bg-sky-500/20 text-sky-300 border border-sky-500/40" : "text-slate-500 hover:text-slate-300"
+              className={`h-6 px-2 rounded-[5px] text-[11px] font-mono font-medium transition-colors cursor-pointer border ${
+                showBollinger
+                  ? "bg-white/[0.12] text-white border-white/[0.22]"
+                  : "bg-transparent text-zinc-400 border-transparent hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               Bollinger Bands
@@ -824,26 +868,32 @@ function MarketChart({
             <button
               onClick={() => setShowEMA(!showEMA)}
               title="EMA Ribbon: เส้นค่าเฉลี่ยแนวโน้มราคา"
-              className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-all ${
-                showEMA ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300"
+              className={`h-6 px-2 rounded-[5px] text-[11px] font-mono font-medium transition-colors cursor-pointer border ${
+                showEMA
+                  ? "bg-white/[0.12] text-white border-white/[0.22]"
+                  : "bg-transparent text-zinc-400 border-transparent hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               {emaFastLabel}/{emaSlowLabel}
             </button>
             <button
               onClick={() => setShowVWAP(!showVWAP)}
-              title="VWAP: Volume-Weighted Average Price + กรอบเบี่ยงเบนมาตรฐาน ±2σ [แผน 2]"
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                showVWAP ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/10" : "text-slate-500 hover:text-slate-300"
+              title="VWAP: Volume-Weighted Average Price + กรอบเบี่ยงเบนมาตรฐาน ±2σ"
+              className={`h-6 px-2 rounded-[5px] text-[11px] font-mono font-medium transition-colors cursor-pointer border ${
+                showVWAP
+                  ? "bg-white/[0.12] text-white border-white/[0.22]"
+                  : "bg-transparent text-zinc-400 border-transparent hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               VWAP ±2σ
             </button>
             <button
               onClick={() => setShowHeikinAshi(!showHeikinAshi)}
-              title="Heikin-Ashi: แท่งเทียนเฉลี่ยกรองความผันผวนหลอก [แผน 1]"
-              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
-                showHeikinAshi ? "bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-sm shadow-teal-500/10" : "text-slate-500 hover:text-slate-300"
+              title="Heikin-Ashi: แท่งเทียนเฉลี่ยกรองความผันผวนหลอก"
+              className={`h-6 px-2 rounded-[5px] text-[11px] font-mono font-medium transition-colors cursor-pointer border ${
+                showHeikinAshi
+                  ? "bg-white/[0.12] text-white border-white/[0.22]"
+                  : "bg-transparent text-zinc-400 border-transparent hover:text-white hover:bg-white/[0.04]"
               }`}
             >
               Heikin-Ashi
@@ -851,27 +901,29 @@ function MarketChart({
             <button
               onClick={() => setShowSR(!showSR)}
               title="Support & Resistance: เส้นประเขียว=แนวรับ, เส้นประแดง=แนวต้าน"
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
-                showSR ? "bg-purple-500/20 text-purple-300 border border-purple-500/40" : "text-slate-500 hover:text-slate-300"
+              className={`h-6 px-2 rounded-[5px] text-[11px] font-mono font-medium transition-colors cursor-pointer border ${
+                showSR
+                  ? "bg-white/[0.12] text-white border-white/[0.22]"
+                  : "bg-transparent text-zinc-400 border-transparent hover:text-white hover:bg-white/[0.04]"
               }`}
             >
-              แนวรับ-ต้าน (S/R)
+              S/R Levels
             </button>
           </div>
 
           {/* Mini Legend Guide (คำอธิบายสีเส้น) */}
-          <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-700/60 text-[10.5px] font-medium">
+          <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-white/[0.08] text-[10.5px] font-mono font-medium">
             <span className="flex items-center gap-1 text-emerald-400">
-              <span className="w-2 h-0.5 bg-emerald-400 inline-block border-t border-dashed border-emerald-400"></span>
-              <span>เขียว = แนวรับ</span>
+              <span className="w-2 h-0.5 bg-emerald-400 inline-block border-t border-dashed border-emerald-400" />
+              <span>รับ</span>
             </span>
             <span className="flex items-center gap-1 text-rose-400">
-              <span className="w-2 h-0.5 bg-rose-400 inline-block border-t border-dashed border-rose-400"></span>
-              <span>แดง = แนวต้าน</span>
+              <span className="w-2 h-0.5 bg-rose-400 inline-block border-t border-dashed border-rose-400" />
+              <span>ต้าน</span>
             </span>
             <span className="flex items-center gap-1 text-amber-400">
-              <span className="w-2 h-0.5 bg-amber-400 inline-block"></span>
-              <span>ทอง = VWAP</span>
+              <span className="w-2 h-0.5 bg-amber-400 inline-block" />
+              <span>VWAP</span>
             </span>
           </div>
         </div>
@@ -879,8 +931,8 @@ function MarketChart({
         {/* RSI Subpane Toggle */}
         <button
           onClick={() => setShowRSI(!showRSI)}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
-            showRSI ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/30" : "bg-surface-50 text-slate-400 border-slate-800"
+          className={`h-6 px-2 rounded-[5px] flex items-center gap-1 text-xs font-mono font-medium transition-colors cursor-pointer border ${
+            showRSI ? "bg-blue-600/15 text-blue-400 border-blue-500/30" : "btn-terminal"
           }`}
         >
           <Activity className="w-3.5 h-3.5" />
@@ -890,42 +942,59 @@ function MarketChart({
 
       {/* Canvas chart */}
       <div className="relative w-full p-2 bg-surface-200">
-        {/* TradingView-Style On-Chart Legend: Classic Trio (MA 20 • MA 50 • RSI 14) */}
-        {trioData && (
-          <div className="absolute top-4 left-4 z-10 flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950/85 backdrop-blur-md border border-slate-700/60 shadow-xl text-[11px] font-mono pointer-events-none select-none">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-              <span className="text-cyan-300 font-bold">MA(20): {trioData.ma20}</span>
-            </div>
-            <span className="text-slate-600">•</span>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-              <span className="text-amber-300 font-bold">MA(50): {trioData.ma50}</span>
-            </div>
-            <span className="text-slate-600">•</span>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-              <span className="text-purple-300 font-bold">RSI(14): {trioData.rsi14}</span>
-            </div>
-            <div className="pl-1 border-l border-slate-700/80">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                trioData.alignment === "FULL_BULLISH_TRIO"
-                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                  : trioData.alignment === "FULL_BEARISH_TRIO"
-                  ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                  : trioData.alignment === "PULLBACK_RETEST"
-                  ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
-                  : "bg-slate-800 text-slate-400 border border-slate-700"
-              }`}>
-                {trioData.alignment === "FULL_BULLISH_TRIO"
-                  ? "✓ TRIO BULLISH (+7.5% WR)"
-                  : trioData.alignment === "FULL_BEARISH_TRIO"
-                  ? "✓ TRIO BEARISH (+7.5% WR)"
-                  : trioData.alignment === "PULLBACK_RETEST"
-                  ? "↻ TRIO RETEST (+5.0% WR)"
-                  : "TRIO DIVERGENT"}
+        {/* TradingView-Style On-Chart Legend: Live Running Price & Classic Trio */}
+        {(liveClose > 0 || trioData) && (
+          <div className="absolute top-4 left-4 z-10 flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950/90 backdrop-blur-md border border-slate-700/70 shadow-2xl text-[11px] font-mono pointer-events-none select-none">
+            {/* Live Symbol & Real-Time Running Price Badge */}
+            <div className="flex items-center gap-1.5 pr-2 border-r border-slate-700/80">
+              <span className={`w-2 h-2 rounded-full animate-ping shrink-0 ${isPositive ? "bg-emerald-400" : "bg-rose-400"}`} />
+              <span className="font-bold text-white tracking-wide">{symbol}</span>
+              <span className="text-[10px] text-slate-400 font-medium">({timeframe === "1m" ? "M1" : timeframe === "5m" ? "M5" : timeframe === "15m" ? "M15" : timeframe === "30m" ? "M30" : timeframe === "1h" ? "H1" : timeframe === "4h" ? "H4" : timeframe === "1D" ? "D1" : timeframe === "1W" ? "W1" : timeframe.toUpperCase()})</span>
+              <span className={`font-black text-xs sm:text-sm tracking-tight transition-colors duration-150 ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                {liveClose > 0 ? liveClose.toLocaleString(undefined, { minimumFractionDigits: assetPrecision, maximumFractionDigits: assetPrecision }) : "-"}
+              </span>
+              <span className={`text-[9.5px] font-bold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                {isPositive ? "▲+" : "▼"}{priceChangePct.toFixed(2)}%
               </span>
             </div>
+
+            {trioData && (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                  <span className="text-cyan-300 font-bold">MA(20): {trioData.ma20}</span>
+                </div>
+                <span className="text-slate-600">•</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  <span className="text-amber-300 font-bold">MA(50): {trioData.ma50}</span>
+                </div>
+                <span className="text-slate-600">•</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                  <span className="text-purple-300 font-bold">RSI(14): {trioData.rsi14}</span>
+                </div>
+                <div className="pl-1 border-l border-slate-700/80">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    trioData.alignment === "FULL_BULLISH_TRIO"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                      : trioData.alignment === "FULL_BEARISH_TRIO"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                      : trioData.alignment === "PULLBACK_RETEST"
+                      ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                      : "bg-slate-800 text-slate-400 border border-slate-700"
+                  }`}>
+                    {trioData.alignment === "FULL_BULLISH_TRIO"
+                      ? "✓ TRIO BULLISH (+7.5% WR)"
+                      : trioData.alignment === "FULL_BEARISH_TRIO"
+                      ? "✓ TRIO BEARISH (+7.5% WR)"
+                      : trioData.alignment === "PULLBACK_RETEST"
+                      ? "↻ TRIO RETEST (+5.0% WR)"
+                      : "TRIO DIVERGENT"}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         )}
 

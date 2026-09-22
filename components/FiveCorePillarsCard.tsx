@@ -47,44 +47,44 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
   };
 
   return (
-    <div className="rounded-2xl border-2 border-indigo-500/40 bg-gradient-to-b from-slate-900 via-surface-100 to-surface-50 p-4 sm:p-5 shadow-xl space-y-4 relative overflow-hidden">
-      {/* Top Ambient Glow */}
+    <div className="terminal-card p-4 sm:p-5 space-y-3.5 relative overflow-hidden">
+      {/* Top Ambient Bar */}
       <div
-        className={`absolute top-0 left-0 right-0 h-1.5 ${
+        className={`absolute top-0 left-0 right-0 h-1 ${
           dominantBias === "BUY"
-            ? "bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500"
+            ? "bg-emerald-500"
             : dominantBias === "SELL"
-            ? "bg-gradient-to-r from-rose-500 via-red-500 to-amber-500"
-            : "bg-gradient-to-r from-amber-500 via-yellow-400 to-slate-500"
+            ? "bg-rose-500"
+            : "bg-amber-500"
         }`}
       />
 
       {/* ─── 1. HEADER: 5 Core Practical Pillars Banner ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-inner">
-            <Target className="w-5 h-5 text-indigo-400" />
+          <div className="p-2 rounded-md bg-surface-50 text-slate-300 border border-slate-800 shadow-xs">
+            <Target className="w-5 h-5 text-primary" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-mono font-bold tracking-wider text-indigo-300 uppercase">
+              <span className="text-xs font-mono font-bold tracking-wider text-slate-300 uppercase">
                 5 Core Trading Pillars
               </span>
               <span
                 className={`text-[10px] font-mono px-2 py-0.5 rounded-full border font-bold ${
                   isConfluenceApproved
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 animate-pulse"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                     : "bg-amber-500/15 text-amber-300 border-amber-500/30"
                 }`}
               >
                 {isConfluenceApproved ? `🎯 ผ่านเกณฑ์ ${passedCount}/5 เสาหลัก (Actionable Signal)` : `⏳ รอคอนเฟิร์ม ${passedCount}/5 เสาหลัก`}
               </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-200 border border-cyan-500/30 flex items-center gap-1">
-                <Send className="w-2.5 h-2.5" />
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-50 text-slate-400 border border-slate-800 flex items-center gap-1">
+                <Send className="w-2.5 h-2.5 text-primary" />
                 Telegram Signal System
               </span>
             </div>
-            <h4 className="text-sm sm:text-base font-black text-white flex items-center gap-2 mt-0.5">
+            <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2 mt-0.5">
               <span>5 เสาหลักเทรดจริง (Practical Trading Pillars)</span>
               <span className="text-xs font-normal text-slate-400 hidden sm:inline">
                 • คัดกรองแม่นยำ ไม่ขัดแย้งกันเอง
@@ -96,7 +96,7 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Dominant Bias & Quick Actions */}
         <div className="flex items-center gap-2 self-end sm:self-center">
           <div
-            className={`px-3 py-1.5 rounded-xl border text-xs font-black tracking-wide flex items-center gap-1.5 ${
+            className={`px-3 py-1 rounded-md border text-xs font-bold tracking-wide flex items-center gap-1.5 ${
               dominantBias === "BUY"
                 ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                 : dominantBias === "SELL"
@@ -124,7 +124,7 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
 
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1.5 rounded-lg bg-surface-50 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition-all"
+            className="btn-terminal p-1.5 rounded-md text-slate-400 hover:text-white"
             title={isExpanded ? "ย่อรายละเอียด" : "ขยายรายละเอียด"}
           >
             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -137,10 +137,10 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Pillar 1: Pivot Points */}
         <div
           onClick={() => setActiveTab(activeTab === "PIVOTS" ? "ALL" : "PIVOTS")}
-          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+          className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
             fcp?.pillar3_PivotPoints?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
-              : "bg-surface-50/80 border-slate-800 hover:border-slate-700"
+              : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
           <div className="flex items-center justify-between text-[11px] font-bold">
@@ -159,10 +159,10 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Pillar 2: Auto Clustered S&R */}
         <div
           onClick={() => setActiveTab(activeTab === "SR" ? "ALL" : "SR")}
-          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+          className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
             fcp?.pillar4_ClusteredSR?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
-              : "bg-surface-50/80 border-slate-800 hover:border-slate-700"
+              : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
           <div className="flex items-center justify-between text-[11px] font-bold">
@@ -183,10 +183,10 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Pillar 3: Auto Fibonacci Retracement */}
         <div
           onClick={() => setActiveTab(activeTab === "FIB" ? "ALL" : "FIB")}
-          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+          className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
             fcp?.pillar2_AutoFib?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
-              : "bg-surface-50/80 border-slate-800 hover:border-slate-700"
+              : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
           <div className="flex items-center justify-between text-[11px] font-bold">
@@ -207,10 +207,10 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Pillar 4: Dynamic Bands */}
         <div
           onClick={() => setActiveTab(activeTab === "BANDS" ? "ALL" : "BANDS")}
-          className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+          className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
             fcp?.pillar5_DynamicBands?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
-              : "bg-surface-50/80 border-slate-800 hover:border-slate-700"
+              : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
           <div className="flex items-center justify-between text-[11px] font-bold">
@@ -231,12 +231,13 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Pillar 5: SMC Footprint */}
         <div
           onClick={() => setActiveTab(activeTab === "SMC" ? "ALL" : "SMC")}
-          className={`p-2.5 rounded-xl border transition-all cursor-pointer col-span-2 sm:col-span-1 ${
+          className={`p-2.5 rounded-md border transition-colors cursor-pointer col-span-2 sm:col-span-1 ${
             fcp?.pillar1_SMC?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
-              : "bg-surface-50/80 border-slate-800 hover:border-slate-700"
+              : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
+
           <div className="flex items-center justify-between text-[11px] font-bold">
             <span className="text-slate-300">5. SMC Footprint</span>
             {fcp?.pillar1_SMC?.passed ? (

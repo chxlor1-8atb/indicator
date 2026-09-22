@@ -81,12 +81,12 @@ function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime }: NewsFeedProp
   };
 
   return (
-    <div className="bg-[#0B0F17]/95 border border-slate-800/80 rounded-2xl p-4 shadow-xl shadow-black/25 backdrop-blur-md flex flex-col h-full">
+    <div className="terminal-card p-4 flex flex-col h-full">
       {/* Header with Mode Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-800/80">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-800">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 text-cyan-400 border border-cyan-500/30 shadow-sm">
-            {viewMode === "NEWS" ? <Newspaper className="w-4 h-4" /> : <Calendar className="w-4 h-4 text-amber-400" />}
+          <div className="p-1.5 rounded-md bg-surface-50 text-slate-300 border border-slate-800 shadow-xs">
+            {viewMode === "NEWS" ? <Newspaper className="w-4 h-4 text-primary" /> : <Calendar className="w-4 h-4 text-amber-400" />}
           </div>
           <div>
             <h3 className="text-sm font-semibold text-white tracking-tight">
@@ -104,19 +104,19 @@ function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime }: NewsFeedProp
         </div>
 
         {/* View Mode Toggle Buttons */}
-        <div className="flex items-center gap-1 bg-[#0E131F] p-1 rounded-xl border border-slate-800 text-xs shadow-inner">
+        <div className="flex items-center gap-1 bg-surface-50 p-0.5 rounded-md border border-slate-800 text-xs">
           <button
             onClick={() => setViewMode("NEWS")}
-            className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
-              viewMode === "NEWS" ? "bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/20 font-bold" : "text-slate-400 hover:text-slate-200"
+            className={`px-2.5 py-1 rounded-[5px] font-semibold transition-colors cursor-pointer ${
+              viewMode === "NEWS" ? "bg-primary text-white shadow-xs" : "text-slate-400 hover:text-slate-200"
             }`}
           >
             📰 ข่าวสารทันเหตุการณ์
           </button>
           <button
             onClick={() => setViewMode("CALENDAR")}
-            className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
-              viewMode === "CALENDAR" ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-500/20 font-bold" : "text-slate-400 hover:text-slate-200"
+            className={`px-2.5 py-1 rounded-[5px] font-semibold transition-colors cursor-pointer ${
+              viewMode === "CALENDAR" ? "bg-primary text-white shadow-xs" : "text-slate-400 hover:text-slate-200"
             }`}
           >
             📅 ปฏิทิน 4 กล่องข่าว
@@ -373,7 +373,7 @@ function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime }: NewsFeedProp
                   <button
                     onClick={(e) => handleCopyNewsLink(e, item)}
                     title="คัดลอกลิงก์ข่าวต้นทาง"
-                    className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-surface-100 hover:bg-slate-700/80 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-all active:scale-95"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-surface-100 hover:bg-white/[0.08] border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-colors"
                   >
                     {copiedId === item.id ? (
                       <>
