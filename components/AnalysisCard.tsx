@@ -69,7 +69,7 @@ function AnalysisCard({
   const [customRiskPct, setCustomRiskPct] = useState<number>(2);
   const [accountType, setAccountType] = useState<"STANDARD" | "CENT">("STANDARD");
   const [activeQuantLayer, setActiveQuantLayer] = useState<1 | 2 | 3 | 4 | 5>(3);
-  const [activeCardTab, setActiveCardTab] = useState<"NONE" | "STRATEGY" | "DEEP_QUANT">("NONE");
+  const [activeCardTab, setActiveCardTab] = useState<"NONE" | "STRATEGY" | "DEEP_QUANT">("STRATEGY");
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -435,6 +435,51 @@ function AnalysisCard({
           </button>
         </div>
       </div>
+
+      {/* 🧠 1.5. AI INSTITUTIONAL SYNTHESIZE & RATIONALE (บทวิเคราะห์สรุป AI สถาบัน) */}
+      {analysis.summary && (
+        <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-[#0C101A] via-surface-100 to-indigo-950/20 p-4 shadow-xl space-y-2.5 relative overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30 shadow-sm">
+                <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5">
+                    <span>AI Institutional Synthesize</span>
+                    <span className="text-xs text-slate-400 font-normal">บทวิเคราะห์กลยุทธ์สถาบัน</span>
+                  </h4>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                    Gemini AI • Confluence Engine
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => copyToClipboard(analysis.summary, "ai_summary")}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-50 hover:bg-slate-800 border border-slate-700/80 text-[11px] font-semibold text-slate-300 hover:text-white transition-all active:scale-95 cursor-pointer"
+            >
+              {copiedKey === "ai_summary" ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400">คัดลอกแล้ว</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-slate-400" />
+                  <span>คัดลอกบทวิเคราะห์</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="text-xs sm:text-[13px] text-slate-200 leading-relaxed font-sans whitespace-pre-line bg-surface-50/60 p-3 rounded-xl border border-slate-800/80">
+            {analysis.summary}
+          </div>
+        </div>
+      )}
 
       {/* 🌟 2. HERO TRADE EXECUTION COCKPIT (แผงควบคุมการเข้าเทรดเด่นชัดที่สุด - สะดุดตาทันที) */}
       <HeroExecutionHUD

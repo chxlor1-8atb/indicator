@@ -257,6 +257,7 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
           {/* Detailed Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {/* ─── CARD 1: PIVOT POINTS (Floor & Fibonacci) ─── */}
+            {(activeTab === "ALL" || activeTab === "PIVOTS") && (
             <div className="p-3.5 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div className="flex items-center gap-2">
@@ -315,8 +316,10 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
                 <p className="text-xs text-slate-400">กำลังประมวลผล Pivot Points...</p>
               )}
             </div>
+            )}
 
             {/* ─── CARD 2: AUTO SUPPORT & RESISTANCE (Clustered Price Action) ─── */}
+            {(activeTab === "ALL" || activeTab === "SR") && (
             <div className="p-3.5 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div className="flex items-center gap-2">
@@ -385,8 +388,10 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
                 <p className="text-xs text-slate-400">กำลังวิเคราะห์ Multi-Touch Price Action...</p>
               )}
             </div>
+            )}
 
             {/* ─── CARD 3: AUTO FIBONACCI RETRACEMENT ─── */}
+            {(activeTab === "ALL" || activeTab === "FIB") && (
             <div className="p-3.5 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div className="flex items-center gap-2">
@@ -441,8 +446,10 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
                 <p className="text-xs text-slate-400">กำลังคำนวณ Fibonacci Levels...</p>
               )}
             </div>
+            )}
 
             {/* ─── CARD 4: DYNAMIC BANDS (Donchian & Volatility Channels) ─── */}
+            {(activeTab === "ALL" || activeTab === "BANDS") && (
             <div className="p-3.5 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div className="flex items-center gap-2">
@@ -486,6 +493,84 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
                 </p>
               </div>
             </div>
+            )}
+
+            {/* ─── CARD 5: SMC FOOTPRINT (Order Blocks, FVG Mitigation & Liquidity Sweeps) ─── */}
+            {(activeTab === "ALL" || activeTab === "SMC") && (
+            <div className="p-3.5 rounded-xl bg-surface-50/90 border border-slate-800 space-y-2.5 md:col-span-2">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="p-1 rounded bg-indigo-500/20 text-indigo-300 text-xs font-bold">P5</span>
+                  <h5 className="text-xs font-bold text-white">Smart Money Concepts (SMC Footprint & Order Flow)</h5>
+                </div>
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                  fcp?.pillar1_SMC?.passed
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                    : "bg-surface-100 text-slate-400 border-slate-700"
+                }`}>
+                  {fcp?.pillar1_SMC?.passed ? "✅ SMC CONVICTION PASS" : "⏳ SMC ACCUMULATION"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono">
+                {/* Nearest Order Block */}
+                <div className="p-2 rounded-lg bg-surface-100/70 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[10px]">Institutional Order Block (OB)</span>
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                      ob?.nearestBlock?.type === "BULLISH_OB" ? "bg-emerald-500/20 text-emerald-300" : ob?.nearestBlock?.type === "BEARISH_OB" ? "bg-rose-500/20 text-rose-300" : "bg-slate-800 text-slate-400"
+                    }`}>
+                      {ob?.nearestBlock?.type || "DETECTING"}
+                    </span>
+                  </div>
+                  <div className="text-white text-xs font-bold">
+                    {ob?.nearestBlock ? `${formatPrice(ob.nearestBlock.priceMin)} - ${formatPrice(ob.nearestBlock.priceMax)}` : "กำลังคำนวณ OB..."}
+                  </div>
+                  <span className="text-[10px] text-slate-400 block truncate">
+                    {ob?.nearestBlock ? `${ob.nearestBlock.isMitigated ? "Mitigated" : "Fresh Unmitigated"} | CE 50%: ${formatPrice(((ob.nearestBlock.priceMin + ob.nearestBlock.priceMax) / 2))}` : "สแกนรอยเท้าสถาบัน"}
+                  </span>
+                </div>
+
+                {/* Fair Value Gap (FVG) Mitigation */}
+                <div className="p-2 rounded-lg bg-surface-100/70 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[10px]">Fair Value Gap (FVG C.E. 50%)</span>
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                      fvg && fvg.unmitigatedCount > 0 ? "bg-amber-500/20 text-amber-300" : "bg-slate-800 text-slate-400"
+                    }`}>
+                      {fvg ? `${fvg.unmitigatedCount} Gaps` : "0 Gaps"}
+                    </span>
+                  </div>
+                  <div className="text-amber-300 text-xs font-bold">
+                    {fvg?.recommendedEntryLimit ? `C.E. ${formatPrice(fvg.recommendedEntryLimit)}` : "Mitigated / Equilibrium"}
+                  </div>
+                  <span className="text-[10px] text-slate-400 block truncate">
+                    {fvg ? `${fvg.bias} | ${fvg.description || "ช่องว่างราคารอเติมเต็ม"}` : "ตรวจเช็คสภาพคล่อง"}
+                  </span>
+                </div>
+
+                {/* Liquidity Sweep & Institutional Dealing */}
+                <div className="p-2 rounded-lg bg-surface-100/70 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 text-[10px]">Liquidity Sweep & Traps</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 font-bold">
+                      {analysis.tradeSetup?.sessionSweep?.sweepType || "NORMAL"}
+                    </span>
+                  </div>
+                  <div className="text-cyan-300 text-xs font-bold truncate">
+                    {analysis.tradeSetup?.sessionSweep?.sweptSession ? `กวาดสภาพคล่อง ${analysis.tradeSetup.sessionSweep.sweptSession}` : "ไม่มีการกระชากหลอก"}
+                  </div>
+                  <span className="text-[10px] text-slate-400 block truncate">
+                    {analysis.tradeSetup?.dealingRangeZone ? `โซนราคา: ${analysis.tradeSetup.dealingRangeZone}` : "Institutional Dealing Matrix"}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-[10.5px] text-slate-300 leading-relaxed bg-surface-100/50 p-2 rounded border border-slate-800">
+                💡 <strong>SMC Execution Rule:</strong> ดักเข้าออเดอร์ในโซน Discount สำหรับฝั่ง Buy หรือโซน Premium สำหรับฝั่ง Sell โดยอาศัยรอยเท้าสถาบัน Order Block และ FVG เติมเต็ม 50%
+              </p>
+            </div>
+            )}
           </div>
 
           {/* ─── 4. ALIGNED TRADE SETUP DERIVATION CALLOUT (ชี้ให้เห็นว่าแผนเทรดคำนวณจาก 5 เสาหลักอย่างไร) ─── */}

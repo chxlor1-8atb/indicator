@@ -130,12 +130,10 @@ export default function DashboardPage() {
   const [isLoadingScanner, setIsLoadingScanner] = useState<boolean>(true);
 
   // ─── PWA Mobile & Responsive Workspace View State ───
-  const [activeTab, setActiveTab] = useState<"SIGNALS" | "CHART" | "RADAR" | "NEWS" | "JOURNAL" | "ALL">("SIGNALS");
+  const [activeTab, setActiveTab] = useState<"SIGNALS" | "CHART" | "RADAR" | "NEWS" | "JOURNAL" | "ALL">("ALL");
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth >= 1024) {
-      setActiveTab("ALL");
-    }
+    // Keep default as ALL across all screen sizes for complete view, allow switching on mobile/desktop
   }, []);
 
   const loadMarketData = useCallback(async (symbol: string, tf: string, isSilent = false) => {
@@ -779,6 +777,16 @@ export default function DashboardPage() {
             {/* TAB: SIGNALS (Fast 1-Click Execution & 5 Core Pillars) */}
             {activeTab === "SIGNALS" && (
               <div className="space-y-4">
+                <MarketChart
+                  candles={candles}
+                  indicators={indicators}
+                  symbol={selectedAsset}
+                  timeframe={selectedTimeframe}
+                  isLiveUpdating={true}
+                  optimizedConfig={analysis?.optimizedConfig}
+                  lastTickTime={liveTickLastUpdated || marketLastUpdated}
+                  priceFeedLabel={selectedAsset === "XAUUSD" || selectedAsset === "GOLD" ? "PAXG LIVE" : "LIVE TICK"}
+                />
                 <AnalysisCard
                   analysis={analysis}
                   isLoading={isAnalyzing}
@@ -846,8 +854,20 @@ export default function DashboardPage() {
       {/* ─── MOBILE PWA BOTTOM NAVIGATION BAR (แถบเมนูด้านล่างสำหรับมือถือ สไตล์แอปแท้ ปราศจากเมนูซ้ำซ้อน) ─── */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F17]/85 backdrop-blur-2xl border-t border-white/[0.08] md:hidden px-2 py-2 flex items-center justify-around shadow-2xl shadow-black pb-[max(0.6rem,env(safe-area-inset-bottom))]">
         <button
+          onClick={() => setActiveTab("ALL")}
+          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
+            activeTab === "ALL"
+              ? "text-cyan-400 font-bold bg-cyan-500/15 border border-cyan-500/30 shadow-sm shadow-cyan-500/10"
+              : "text-slate-400 hover:text-slate-200 border border-transparent"
+          }`}
+        >
+          <Layers className="w-5 h-5" />
+          <span className="text-[10px]">ทั้งหมด</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("SIGNALS")}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
             activeTab === "SIGNALS"
               ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
               : "text-slate-400 hover:text-slate-200 border border-transparent"
@@ -859,7 +879,7 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setActiveTab("CHART")}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
             activeTab === "CHART"
               ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
               : "text-slate-400 hover:text-slate-200 border border-transparent"
@@ -871,7 +891,7 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setActiveTab("RADAR")}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
             activeTab === "RADAR"
               ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
               : "text-slate-400 hover:text-slate-200 border border-transparent"
@@ -883,7 +903,7 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setActiveTab("NEWS")}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
             activeTab === "NEWS"
               ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
               : "text-slate-400 hover:text-slate-200 border border-transparent"
@@ -895,7 +915,7 @@ export default function DashboardPage() {
 
         <button
           onClick={() => setActiveTab("JOURNAL")}
-          className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all active:scale-95 ${
+          className={`flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all active:scale-95 ${
             activeTab === "JOURNAL"
               ? "text-indigo-400 font-bold bg-indigo-500/15 border border-indigo-500/30 shadow-sm shadow-indigo-500/10"
               : "text-slate-400 hover:text-slate-200 border border-transparent"
