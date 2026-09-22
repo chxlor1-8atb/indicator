@@ -391,6 +391,94 @@ function HeroExecutionHUD({
         </div>
       </div>
 
+      {/* ─── 1.2 8-IMAGE BREAKOUT & FALSE BREAKOUT MATRIX HUD ─── */}
+      {ts.breakoutConfirmation && (
+        <div className={`p-3 rounded-xl border transition-all ${
+          ts.breakoutConfirmation.breakoutType === "VALID_BREAKOUT"
+            ? "bg-emerald-950/30 border-emerald-500/40 shadow-xs shadow-emerald-500/10"
+            : ts.breakoutConfirmation.breakoutType === "FALSE_BREAKOUT_TRAP"
+            ? "bg-rose-950/30 border-rose-500/40 shadow-xs shadow-rose-500/10"
+            : "bg-slate-900/40 border-slate-800"
+        }`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Flame className={`w-4 h-4 ${
+                ts.breakoutConfirmation.breakoutType === "VALID_BREAKOUT" ? "text-emerald-400" :
+                ts.breakoutConfirmation.breakoutType === "FALSE_BREAKOUT_TRAP" ? "text-rose-400" :
+                "text-amber-400"
+              }`} />
+              <span className="text-xs font-mono font-bold text-white">
+                Breakout & False Breakout Matrix (8-Image Engine)
+              </span>
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
+                ts.breakoutConfirmation.breakoutType === "VALID_BREAKOUT"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                  : ts.breakoutConfirmation.breakoutType === "FALSE_BREAKOUT_TRAP"
+                  ? "bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse"
+                  : "bg-slate-800 text-slate-300 border-slate-700"
+              }`}>
+                {ts.breakoutConfirmation.breakoutType === "VALID_BREAKOUT" ? "✅ เบรกจริง (Valid Breakout)" :
+                 ts.breakoutConfirmation.breakoutType === "FALSE_BREAKOUT_TRAP" ? "❌ เบรกหลอก (False Breakout Trap!)" :
+                 ts.breakoutConfirmation.requiresConfirmation ? "⏳ รอยืนยันแท่งเทียนปิด" : "⚪ แกว่งตัวในกรอบปกติ"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] font-mono flex-wrap">
+              <span className="text-slate-400">อัตราความน่าจะเป็น:</span>
+              <span className={`font-bold ${
+                (ts.breakoutConfirmation.winProbability || 50) >= 70 ? "text-emerald-400" :
+                (ts.breakoutConfirmation.winProbability || 50) <= 30 ? "text-rose-400" : "text-amber-400"
+              }`}>
+                {ts.breakoutConfirmation.winProbability || 50}% Win-Rate
+              </span>
+              {ts.breakoutConfirmation.checklistScore !== undefined && (
+                <span className="px-1.5 py-0.5 rounded bg-surface-50 text-slate-300 border border-slate-700 text-[10px]">
+                  เช็กลิสต์ {ts.breakoutConfirmation.checklistScore}/7 ข้อ
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-[11px] font-mono">
+            <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
+              <span className="text-[10px] text-slate-400 block">Volume Ratio:</span>
+              <span className={`font-bold ${ts.breakoutConfirmation.isVolumeSurge ? "text-emerald-400" : "text-amber-400"}`}>
+                {ts.breakoutConfirmation.volumeRatio ?? 1.0}x {ts.breakoutConfirmation.isVolumeSurge ? "(≥ 1.5x ผ่าน)" : "(< 1.5x)"}
+              </span>
+            </div>
+            <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
+              <span className="text-[10px] text-slate-400 block">Rejection Wick:</span>
+              <span className={`font-bold ${(ts.breakoutConfirmation.oppositeWickRatio ?? 0) <= 0.35 ? "text-emerald-400" : "text-rose-400"}`}>
+                {((ts.breakoutConfirmation.oppositeWickRatio ?? 0) * 100).toFixed(0)}% {(ts.breakoutConfirmation.oppositeWickRatio ?? 0) > 0.35 ? "(ไส้ยาวต้าน)" : "(เนื้อแน่น)"}
+              </span>
+            </div>
+            <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
+              <span className="text-[10px] text-slate-400 block">S/R Flip Retest:</span>
+              <span className={`font-bold ${
+                ts.breakoutConfirmation.retestState === "RETEST_BOUNCED" ? "text-emerald-400" :
+                ts.breakoutConfirmation.retestState === "RETEST_FAILED" ? "text-rose-400" : "text-slate-300"
+              }`}>
+                {ts.breakoutConfirmation.retestState === "RETEST_BOUNCED" ? "✅ Retest เด้งสำเร็จ" :
+                 ts.breakoutConfirmation.retestState === "RETEST_FAILED" ? "❌ หลุดกลับเข้ากรอบ" :
+                 ts.breakoutConfirmation.retestState === "RETESTING" ? "⏳ กำลังทดสอบแนว" : "ตรงไปตามแนวโน้ม"}
+              </span>
+            </div>
+            <div className="p-1.5 rounded-lg bg-surface-50 border border-slate-800">
+              <span className="text-[10px] text-slate-400 block">ระดับแนวรับ-ต้าน:</span>
+              <span className="font-bold text-slate-200">
+                {ts.breakoutConfirmation.breakoutLevel?.toFixed(2) || "-"}
+              </span>
+            </div>
+          </div>
+
+          {ts.breakoutConfirmation.tacticalAdvice && (
+            <div className="mt-2 text-[11px] font-mono text-slate-300 flex items-center gap-1.5 bg-surface-50/50 p-1.5 rounded-lg border border-slate-800/80">
+              <span className="text-primary font-bold shrink-0">คำแนะนำ:</span>
+              <span className="truncate">{ts.breakoutConfirmation.tacticalAdvice}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ─── 1.2 POST-NEWS SNIPER MODE ACTIVE CALLOUT ─── */}
       {isPostNewsSniper && (
         <div className="p-3 rounded-xl border border-teal-500/60 bg-gradient-to-r from-teal-950/60 via-emerald-950/40 to-slate-900 shadow-lg glow-teal flex items-start gap-2.5">
