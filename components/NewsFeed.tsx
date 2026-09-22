@@ -94,32 +94,29 @@ function NewsFeed({ news, isLoading, selectedAsset, lastNewsTime }: NewsFeedProp
             </h3>
             <p className="text-[11px] text-slate-400">
               {viewMode === "NEWS" ? "เกาะติดพาดหัวข่าวสำคัญระดับโลกแบบ Real-time" : "กล่องแดง 🔴 ส้ม 🟠 เหลือง 🟡 เทา ⚪ (เวลาไทย GMT+7)"}
-              {lastNewsTime && (
-                <span className="text-[10px] text-slate-500 font-mono ml-1.5 border-l border-slate-700 pl-1.5">
-                  ดึงข่าว: {new Date(lastNewsTime).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                </span>
-              )}
             </p>
           </div>
         </div>
 
         {/* View Mode Toggle Buttons */}
-        <div className="flex items-center gap-1 bg-surface-50 p-0.5 rounded-md border border-slate-800 text-xs">
+        <div className="flex items-center gap-1 bg-surface-50 p-0.5 rounded-md border border-slate-800 text-xs self-start sm:self-center shrink-0">
           <button
             onClick={() => setViewMode("NEWS")}
-            className={`px-2.5 py-1 rounded-[5px] font-semibold transition-colors cursor-pointer ${
+            className={`px-2 sm:px-2.5 py-1 rounded-[5px] text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
               viewMode === "NEWS" ? "bg-primary text-white shadow-xs" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            📰 ข่าวสารทันเหตุการณ์
+            <span>📰 ข่าวสาร</span>
+            <span className="hidden md:inline">ทันเหตุการณ์</span>
           </button>
           <button
             onClick={() => setViewMode("CALENDAR")}
-            className={`px-2.5 py-1 rounded-[5px] font-semibold transition-colors cursor-pointer ${
+            className={`px-2 sm:px-2.5 py-1 rounded-[5px] text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
               viewMode === "CALENDAR" ? "bg-primary text-white shadow-xs" : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            📅 ปฏิทิน 4 กล่องข่าว
+            <span>📅 ปฏิทิน</span>
+            <span className="hidden md:inline">4 กล่องข่าว</span>
           </button>
         </div>
       </div>

@@ -32,7 +32,6 @@ function MarketOpportunityRadar({
   summaries,
   selectedAsset,
   onSelectAsset,
-  lastSyncTime = "เพิ่งอัปเดต",
   isLoading = false,
 }: MarketOpportunityRadarProps) {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
@@ -176,7 +175,7 @@ function MarketOpportunityRadar({
               )}
             </div>
             <p className="text-[11px] text-zinc-400 truncate max-w-xl">
-              สแกน Confluence, OTE โซนเข้าเทรดสถาบัน และตรวจจับข่าวกล่องแดง (ซิงค์ {lastSyncTime})
+              สแกน Confluence, OTE โซนเข้าเทรดสถาบัน และตรวจจับข่าวกล่องแดงอัตโนมัติ
             </p>
           </div>
         </div>
@@ -216,7 +215,7 @@ function MarketOpportunityRadar({
           {/* Filter Bar & Search */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 min-w-0 w-full">
             {/* Category Tabs (Segmented Control) */}
-            <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-[#0A0C10] border border-white/[0.08] overflow-x-auto scrollbar-none min-w-0">
+            <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-[#0A0C10] border border-white/[0.08] overflow-x-auto scrollbar-none min-w-0 max-w-full flex-nowrap">
               {[
                 { id: "ALL", label: `ทั้งหมด (${summaries.length})` },
                 { id: "ACTIONABLE", label: `พร้อมเทรด (${actionableCount})` },
@@ -227,7 +226,7 @@ function MarketOpportunityRadar({
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-2.5 py-1 rounded-[5px] text-[11px] font-medium whitespace-nowrap transition-colors border cursor-pointer ${
+                  className={`px-2 sm:px-2.5 py-1 rounded-[5px] text-[10.5px] sm:text-[11px] font-medium whitespace-nowrap transition-colors border cursor-pointer shrink-0 ${
                     activeTab === tab.id
                       ? "bg-white/[0.12] text-white border-white/[0.2]"
                       : "bg-transparent text-zinc-400 border-transparent hover:text-white hover:bg-white/[0.04]"
@@ -239,16 +238,16 @@ function MarketOpportunityRadar({
             </div>
 
             {/* Search Input */}
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 w-full sm:w-52">
               <Search className="w-3 h-3 text-zinc-400 absolute left-2.5 top-2.5" />
               <input
                 id="radar-symbol-search"
                 name="radarSearch"
                 type="text"
-                placeholder="ค้นหาคู่เงิน (XAU, EUR, BTC)..."
+                placeholder="ค้นหาคู่เงิน (XAU, EUR)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-7 pr-3 py-1 bg-white/[0.04] border border-white/[0.1] rounded-md text-[11px] text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 w-full sm:w-52 transition-colors"
+                className="pl-7 pr-3 py-1 bg-white/[0.04] border border-white/[0.1] rounded-md text-[11px] text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 w-full transition-colors"
               />
             </div>
           </div>

@@ -154,8 +154,8 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-lg bg-[#0E1015] border border-slate-800 rounded-lg shadow-2xl p-5 sm:p-6 overflow-hidden max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
+      <div className="relative w-full max-w-lg bg-[#0E1015] border border-slate-800 rounded-lg shadow-2xl p-4 sm:p-6 overflow-hidden max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
@@ -441,29 +441,29 @@ export default function TelegramSettingsModal({ isOpen, onClose, onSave }: Teleg
         </div>
 
         {/* Footer Actions */}
-        <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
+        <div className="mt-6 pt-4 border-t border-slate-800 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
           <button
             type="button"
             onClick={handleTestTelegram}
             disabled={isTesting || !botToken || !chatId}
-            className="btn-terminal flex items-center gap-1.5 h-8 px-3 text-xs font-medium disabled:opacity-40"
+            className="btn-terminal flex items-center justify-center gap-1.5 h-8 px-3 text-xs font-medium disabled:opacity-40 w-full sm:w-auto"
           >
             <Send className={`w-3.5 h-3.5 ${isTesting ? "animate-spin" : ""}`} />
             <span>{isTesting ? "Testing..." : "Test Telegram Alert"}</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               type="button"
               onClick={onClose}
-              className="h-8 px-3 rounded-md bg-transparent hover:bg-surface-50 text-xs font-medium text-slate-300 transition-colors"
+              className="h-8 px-3 rounded-md bg-transparent hover:bg-surface-50 text-xs font-medium text-slate-300 transition-colors flex-1 sm:flex-initial text-center justify-center"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="btn-primary h-8 px-4 text-xs font-semibold"
+              className="btn-primary h-8 px-4 text-xs font-semibold flex-1 sm:flex-initial text-center justify-center"
             >
               Save Settings
             </button>

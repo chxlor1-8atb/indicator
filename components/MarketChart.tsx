@@ -822,24 +822,9 @@ function MarketChart({
             <div className="text-[10px] uppercase text-zinc-500 font-medium">Volume</div>
             <div className="text-zinc-200 font-bold">{totalVolume.toLocaleString()}</div>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] sm:text-[11px] font-bold text-emerald-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="font-sans">{priceFeedLabel}</span>
-            </div>
-            <div
-              className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.03] border border-white/[0.06] text-[10.5px] text-zinc-400 font-mono"
-              title="เวลาอัปเดตราคาล่าสุด"
-            >
-              <Clock className="w-3 h-3 text-zinc-400" />
-              <span>
-                {lastTickTime
-                  ? new Date(lastTickTime).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-                  : candles.length > 0 && candles[candles.length - 1].time
-                  ? new Date(candles[candles.length - 1].time * 1000).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-                  : "เรียลไทม์"}
-              </span>
-            </div>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] sm:text-[11px] font-bold text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-sans">{priceFeedLabel}</span>
           </div>
         </div>
       </div>

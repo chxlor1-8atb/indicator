@@ -357,14 +357,14 @@ function AnalysisCard({
   return (
     <div className="terminal-card p-3.5 sm:p-4 space-y-3 sm:space-y-3.5">
       {/* 1. Header Signal & Actions Banner */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3 rounded-md bg-[#14171F] border border-white/[0.08]">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className={`px-3 py-1 rounded-md border text-xs font-mono font-black tracking-wide ${signalConfig.bg} ${signalConfig.glow} shadow-sm`}>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-md bg-[#14171F] border border-white/[0.08]">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          <div className={`px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-md border text-[11px] sm:text-xs font-mono font-black tracking-wide ${signalConfig.bg} ${signalConfig.glow} shadow-sm`}>
             {signalConfig.label}
           </div>
 
           {/* Setup Grade */}
-          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs font-mono font-medium shadow-sm ${getGradeBadge(analysis.setupGrade)}`}>
+          <div className={`flex items-center gap-1.5 px-2 py-0.5 sm:py-1 rounded-md border text-[11px] sm:text-xs font-mono font-medium shadow-sm ${getGradeBadge(analysis.setupGrade)}`}>
             <Award className="w-3.5 h-3.5" />
             <span>Grade: {analysis.setupGrade || "A"} Setup</span>
           </div>
@@ -372,7 +372,7 @@ function AnalysisCard({
           {/* Analysis Timestamp */}
           {analysis.timestamp && (
             <div
-              className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] border border-white/[0.06] text-xs font-mono text-zinc-400"
+              className="flex items-center gap-1.5 px-2 py-0.5 sm:py-1 rounded-md bg-white/[0.03] border border-white/[0.06] text-[10px] sm:text-xs font-mono text-zinc-400"
               title="เวลาที่ระบบรันการสังเคราะห์ AI ล่าสุด"
             >
               <Clock className="w-3.5 h-3.5 text-zinc-400" />
@@ -385,10 +385,10 @@ function AnalysisCard({
           {/* Confluence Score Gauge */}
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-medium text-zinc-400">Master Confluence</span>
-              <span className="text-xs font-mono font-bold text-white">{mc?.totalScore || analysis.confidence}%</span>
+              <span className="text-[10px] sm:text-[11px] font-medium text-zinc-400">Master Confluence</span>
+              <span className="text-[11px] sm:text-xs font-mono font-bold text-white">{mc?.totalScore || analysis.confidence}%</span>
             </div>
-            <div className="w-32 h-1.5 bg-white/[0.08] rounded-full overflow-hidden mt-1">
+            <div className="w-24 xs:w-28 sm:w-32 h-1.5 bg-white/[0.08] rounded-full overflow-hidden mt-1">
               <div
                 className={`h-full rounded-full transition-all duration-500 ${
                   (mc?.totalScore || analysis.confidence) >= 85
@@ -406,10 +406,10 @@ function AnalysisCard({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={handleCopyFullPlan}
-            className="btn-terminal h-8 px-3 text-xs font-medium flex items-center gap-1.5"
+            className="btn-terminal flex-1 sm:flex-initial h-7 sm:h-8 px-2 sm:px-3 text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5"
             title="Copy trade setup to clipboard"
           >
             {copiedKey === "full_plan" ? (
@@ -428,7 +428,7 @@ function AnalysisCard({
           <button
             onClick={onSendTelegram}
             disabled={isSendingTelegram}
-            className="btn-primary h-8 px-3.5 text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
+            className="btn-primary flex-1 sm:flex-initial h-7 sm:h-8 px-2.5 sm:px-3.5 text-[11px] sm:text-xs font-medium flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             <Send className={`w-3.5 h-3.5 ${isSendingTelegram ? "animate-spin" : ""}`} />
             <span>{isSendingTelegram ? "Sending..." : "Send to Telegram"}</span>

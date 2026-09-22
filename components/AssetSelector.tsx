@@ -230,14 +230,6 @@ export default function AssetSelector({
                 {priceChangePercent > 0 ? "+" : ""}
                 {priceChangePercent.toFixed(2)}%
               </span>
-              {lastPriceUpdate && (
-                <span
-                  className="hidden sm:inline text-[10px] text-zinc-500 font-mono pl-1.5 border-l border-white/[0.08]"
-                  title="เวลาอัปเดตราคาล่าสุด"
-                >
-                  {new Date(lastPriceUpdate).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                </span>
-              )}
             </div>
           )}
         </div>

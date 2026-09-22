@@ -133,25 +133,26 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
       </div>
 
       {/* ─── 2. 5 PILLARS STATUS CHECKLIST (สรุป 5 เสาหลักในแถวเดียว) ─── */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      {/* ─── 2. 5 PILLARS STATUS CHECKLIST (สรุป 5 เสาหลักในแถวเดียว) ─── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 sm:gap-2">
         {/* Pillar 1: Pivot Points */}
         <div
           onClick={() => setActiveTab(activeTab === "PIVOTS" ? "ALL" : "PIVOTS")}
-          className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
+          className={`p-2 sm:p-2.5 rounded-md border transition-colors cursor-pointer ${
             fcp?.pillar3_PivotPoints?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
               : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
-          <div className="flex items-center justify-between text-[11px] font-bold">
-            <span className="text-slate-300">1. Pivot Points</span>
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold">
+            <span className="text-slate-300 truncate pr-1">1. Pivot Points</span>
             {fcp?.pillar3_PivotPoints?.passed ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             ) : (
               <XCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             )}
           </div>
-          <p className="text-[10px] text-slate-400 truncate mt-1">
+          <p className="text-[9.5px] sm:text-[10px] text-slate-400 truncate mt-1">
             {pivots ? `${pivots.marketPosition === "ABOVE_PIVOT_BULLISH" ? "เหนือ Pivot (Bull)" : pivots.marketPosition === "BELOW_PIVOT_BEARISH" ? "ใต้ Pivot (Bear)" : "ที่ Pivot"} (${pivots.nearestLevelName})` : "กำลังคำนวณ..."}
           </p>
         </div>
@@ -159,21 +160,21 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Pillar 2: Auto Clustered S&R */}
         <div
           onClick={() => setActiveTab(activeTab === "SR" ? "ALL" : "SR")}
-          className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
+          className={`p-2 sm:p-2.5 rounded-md border transition-colors cursor-pointer ${
             fcp?.pillar4_ClusteredSR?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
               : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
-          <div className="flex items-center justify-between text-[11px] font-bold">
-            <span className="text-slate-300">2. Auto S&R Levels</span>
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold">
+            <span className="text-slate-300 truncate pr-1">2. Auto S&R</span>
             {fcp?.pillar4_ClusteredSR?.passed ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             ) : (
               <XCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             )}
           </div>
-          <p className="text-[10px] text-slate-400 truncate mt-1">
+          <p className="text-[9.5px] sm:text-[10px] text-slate-400 truncate mt-1">
             {sr?.nearestSupport || sr?.nearestResistance
               ? `รับ ${formatPrice(sr.nearestSupport?.price)} / ต้าน ${formatPrice(sr.nearestResistance?.price)}`
               : "Multi-Touch Cluster"}
@@ -183,45 +184,45 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Pillar 3: Auto Fibonacci Retracement */}
         <div
           onClick={() => setActiveTab(activeTab === "FIB" ? "ALL" : "FIB")}
-          className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
+          className={`p-2 sm:p-2.5 rounded-md border transition-colors cursor-pointer ${
             fcp?.pillar2_AutoFib?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
               : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
-          <div className="flex items-center justify-between text-[11px] font-bold">
-            <span className="text-slate-300">3. Auto Fibonacci</span>
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold">
+            <span className="text-slate-300 truncate pr-1">3. Fibonacci</span>
             {fcp?.pillar2_AutoFib?.passed ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             ) : (
               <XCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             )}
           </div>
-          <p className="text-[10px] text-slate-400 truncate mt-1">
+          <p className="text-[9.5px] sm:text-[10px] text-slate-400 truncate mt-1">
             {fib
               ? `${fib.currentZone === "GOLDEN_POCKET_50_618" ? "Golden 50-61.8%" : fib.currentZone === "DEEP_PULLBACK_786" ? "Deep 78.6%" : fib.trendDirection}`
-              : "Swing High/Low Fibs"}
+              : "Swing Fibs"}
           </p>
         </div>
 
         {/* Pillar 4: Dynamic Bands */}
         <div
           onClick={() => setActiveTab(activeTab === "BANDS" ? "ALL" : "BANDS")}
-          className={`p-2.5 rounded-md border transition-colors cursor-pointer ${
+          className={`p-2 sm:p-2.5 rounded-md border transition-colors cursor-pointer ${
             fcp?.pillar5_DynamicBands?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
               : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
-          <div className="flex items-center justify-between text-[11px] font-bold">
-            <span className="text-slate-300">4. Dynamic Bands</span>
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold">
+            <span className="text-slate-300 truncate pr-1">4. Bands</span>
             {fcp?.pillar5_DynamicBands?.passed ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             ) : (
               <XCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             )}
           </div>
-          <p className="text-[10px] text-slate-400 truncate mt-1">
+          <p className="text-[9.5px] sm:text-[10px] text-slate-400 truncate mt-1">
             {donchian
               ? `Donchian (${formatPrice(donchian.middle)})`
               : "Donchian / Bollinger"}
@@ -231,22 +232,21 @@ function FiveCorePillarsCard({ analysis }: FiveCorePillarsCardProps) {
         {/* Pillar 5: SMC Footprint */}
         <div
           onClick={() => setActiveTab(activeTab === "SMC" ? "ALL" : "SMC")}
-          className={`p-2.5 rounded-md border transition-colors cursor-pointer col-span-2 sm:col-span-1 ${
+          className={`p-2 sm:p-2.5 rounded-md border transition-colors cursor-pointer col-span-2 sm:col-span-2 lg:col-span-1 ${
             fcp?.pillar1_SMC?.passed
               ? "bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-400"
               : "bg-surface-50 border-slate-800 hover:border-slate-700"
           }`}
         >
-
-          <div className="flex items-center justify-between text-[11px] font-bold">
-            <span className="text-slate-300">5. SMC Footprint</span>
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold">
+            <span className="text-slate-300 truncate pr-1">5. SMC Footprint</span>
             {fcp?.pillar1_SMC?.passed ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             ) : (
               <XCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             )}
           </div>
-          <p className="text-[10px] text-slate-400 truncate mt-1">
+          <p className="text-[9.5px] sm:text-[10px] text-slate-400 truncate mt-1">
             {ob?.nearestBlock ? `${ob.nearestBlock.type} OB` : (fvg && fvg.unmitigatedCount > 0) ? "FVG Active" : "Order Blocks & FVG"}
           </p>
         </div>

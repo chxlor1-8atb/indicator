@@ -49,7 +49,6 @@ function SignalJournalCard() {
   const [seedMessage, setSeedMessage] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
   const hasAutoTriggeredRef = useRef(false);
   const cancelScanRef = useRef(false);
 
@@ -196,10 +195,6 @@ function SignalJournalCard() {
           setSignals(data.signals || []);
           setStats(data.stats);
           if (data.analytics) setAnalytics(data.analytics);
-          const now = new Date();
-          setLastSyncedTime(
-            now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-          );
           if (data.perSymbolStats) {
             setPerSymbolStats(data.perSymbolStats);
           }
@@ -591,81 +586,58 @@ function SignalJournalCard() {
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-50 text-slate-400 border border-slate-800">
                 Neon Postgres
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                <span>Live Realtime Sync</span>
-              </span>
             </h3>
             <p className="text-[11px] text-slate-400">
-              บันทึกประวัติสัญญาณเทรดจริง & ตรวจสอบผลลัพธ์ย้อนหลังอย่างโปร่งใส (อัปเดตอัตโนมัติตลอดเวลา)
+              บันทึกประวัติสัญญาณเทรดจริง & ตรวจสอบผลลัพธ์ย้อนหลังอย่างโปร่งใส (ระบบบันทึกอัตโนมัติ)
             </p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {lastSyncedTime && (
-            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-50 border border-slate-800 text-[10.5px] font-mono text-slate-400">
-              <Clock className="w-3 h-3 text-slate-400" />
-              <span>ซิงค์ล่าสุด: {lastSyncedTime}</span>
-            </span>
-          )}
-
-          <button
-            onClick={() => fetchSignals(selectedSymbol !== "ALL" ? selectedSymbol : undefined)}
-            disabled={isLoading}
-            className="btn-terminal h-8 px-2.5 rounded-md text-xs flex items-center gap-1.5"
-            title="รีเฟรชข้อมูลล่าสุด"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-primary" : ""}`} />
-            <span className="hidden xs:inline text-[11px]">อัปเดต</span>
-          </button>
         </div>
       </div>
 
       {/* 4 Performance KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5 text-center">
         {/* 1. Win Rate */}
-        <div className="p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
-          <span className="text-[10px] text-slate-400 block font-medium">Win Rate สะสม</span>
-          <span className="text-base sm:text-lg font-mono font-black text-emerald-400 block">
+        <div className="p-2 sm:p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
+          <span className="text-[9.5px] sm:text-[10px] text-slate-400 block font-medium truncate">Win Rate สะสม</span>
+          <span className="text-sm sm:text-base md:text-lg font-mono font-black text-emerald-400 block">
             {stats.resolvedCount > 0 ? `${stats.winRatePct}%` : "0.0%"}
           </span>
-          <span className="text-[10px] text-slate-500 font-mono block truncate">
-            {stats.resolvedCount > 0 ? "เป้าสถาบัน > 75%" : stats.activeCount > 0 ? `รอสรุปผล (${stats.activeCount} ไม้เปิด)` : "ยังไม่มีไม้ที่ปิดผล"}
+          <span className="text-[9px] sm:text-[10px] text-slate-500 font-mono block truncate">
+            {stats.resolvedCount > 0 ? "เป้า > 75%" : stats.activeCount > 0 ? `รอสรุป (${stats.activeCount} ไม้)` : "ยังไม่มีไม้ปิด"}
           </span>
         </div>
 
         {/* 2. Total PnL Pips */}
-        <div className="p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
-          <span className="text-[10px] text-slate-400 block font-medium">กำไรสุทธิสะสม</span>
-          <span className={`text-base sm:text-lg font-mono font-black block ${stats.netPips >= 0 ? "text-emerald-300" : "text-rose-400"}`}>
-            {stats.netPips >= 0 ? `+${stats.netPips}` : stats.netPips} <span className="text-xs font-sans text-slate-400 font-normal">pips</span>
+        <div className="p-2 sm:p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
+          <span className="text-[9.5px] sm:text-[10px] text-slate-400 block font-medium truncate">กำไรสุทธิสะสม</span>
+          <span className={`text-sm sm:text-base md:text-lg font-mono font-black block ${stats.netPips >= 0 ? "text-emerald-300" : "text-rose-400"}`}>
+            {stats.netPips >= 0 ? `+${stats.netPips}` : stats.netPips} <span className="text-[10px] sm:text-xs font-sans text-slate-400 font-normal">pips</span>
           </span>
-          <span className="text-[10px] text-slate-500 font-mono block truncate">
+          <span className="text-[9px] sm:text-[10px] text-slate-500 font-mono block truncate">
             (Pips สะสมจริง)
           </span>
         </div>
 
         {/* 3. Win / Loss Count */}
-        <div className="p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
-          <span className="text-[10px] text-slate-400 block font-medium">สถิติ ชนะ / แพ้</span>
-          <span className="text-base sm:text-lg font-mono font-black text-slate-100 block">
+        <div className="p-2 sm:p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
+          <span className="text-[9.5px] sm:text-[10px] text-slate-400 block font-medium truncate">สถิติ ชนะ / แพ้</span>
+          <span className="text-sm sm:text-base md:text-lg font-mono font-black text-slate-100 block">
             <span className="text-emerald-400">{stats.winCount}</span>
             <span className="text-slate-500 mx-1">/</span>
             <span className="text-rose-400">{stats.lossCount}</span>
           </span>
-          <span className="text-[10px] text-slate-500 font-mono block truncate">
+          <span className="text-[9px] sm:text-[10px] text-slate-500 font-mono block truncate">
             จากทั้งหมด {stats.totalSignals} ไม้
           </span>
         </div>
 
         {/* 4. Active Signals */}
-        <div className="p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
-          <span className="text-[10px] text-slate-400 block font-medium">ออเดอร์เปิดอยู่</span>
-          <span className="text-base sm:text-lg font-mono font-black text-amber-300 block">
+        <div className="p-2 sm:p-2.5 rounded-xl bg-[#0E131F]/90 border border-slate-800/80 hover:border-slate-700/90 transition-colors shadow-inner space-y-0.5">
+          <span className="text-[9.5px] sm:text-[10px] text-slate-400 block font-medium truncate">ออเดอร์เปิดอยู่</span>
+          <span className="text-sm sm:text-base md:text-lg font-mono font-black text-amber-300 block">
             {stats.activeCount}
           </span>
-          <span className="text-[10px] text-slate-500 font-mono block truncate">
+          <span className="text-[9px] sm:text-[10px] text-slate-500 font-mono block truncate">
             (Active Signals)
           </span>
         </div>
@@ -809,7 +781,7 @@ function SignalJournalCard() {
             <div className="w-8 h-8 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center mx-auto">
               <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
             </div>
-            <h5 className="text-xs font-bold text-white">กำลังซิงค์สถิติย้อนหลัง 500 แท่งให้อัตโนมัติ...</h5>
+            <h5 className="text-xs font-bold text-white">กำลังประมวลผลสถิติย้อนหลัง 500 แท่ง...</h5>
             <p className="text-[11px] text-slate-400 max-w-md mx-auto">
               ระบบกำลังประมวลผลย้อนหลัง 500 แท่งและบันทึกประวัติ Win Rate ลงระบบอัตโนมัติในพื้นหลัง
             </p>
@@ -821,7 +793,7 @@ function SignalJournalCard() {
             </div>
             <h5 className="text-xs font-bold text-white">กำลังเตรียมข้อมูลสถิติย้อนหลัง...</h5>
             <p className="text-[11px] text-slate-400 max-w-md mx-auto">
-              ระบบกำลังดึงข้อมูลสถิติ หรือกดปุ่ม <strong>&quot;สแกน Forex 39 คู่&quot;</strong> ด้านบนเพื่อซิงค์ทันที
+              ระบบกำลังดึงข้อมูลสถิติ หรือกดปุ่ม <strong>&quot;สแกน Forex 39 คู่&quot;</strong> ด้านบนเพื่อเริ่มสแกน
             </p>
           </div>
         )

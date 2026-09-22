@@ -125,7 +125,6 @@ export default function DashboardPage() {
   const [isAutoPilot, setIsAutoPilot] = useState<boolean>(true);
   const [activeBridgeOrders, setActiveBridgeOrders] = useState<any[]>([]);
   const [latestTelemetry, setLatestTelemetry] = useState<string>("ระบบ AI ตรวจจับ 5 เสาหลัก & พร้อมส่งสัญญาณแจ้งเตือน Telegram เรียลไทม์ 100%");
-  const [lastSyncTime, setLastSyncTime] = useState<string>("เพิ่งอัปเดต");
   const [scannerSummaries, setScannerSummaries] = useState<AssetScannerSummary[]>([]);
   const [isLoadingScanner, setIsLoadingScanner] = useState<boolean>(true);
 
@@ -485,7 +484,7 @@ export default function DashboardPage() {
     const pollInterval = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       loadMarketData(selectedAsset, selectedTimeframe, true);
-    }, 60000);
+    }, 30000);
 
     const onVisChangeChart = () => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
@@ -536,8 +535,6 @@ export default function DashboardPage() {
             if (data.telemetryLogs && data.telemetryLogs.length > 0) {
               setLatestTelemetry(data.telemetryLogs[0].message);
             }
-            const now = new Date();
-            setLastSyncTime(now.toTimeString().split(" ")[0]);
             setIsLoadingScanner(false);
           }
         }
@@ -599,12 +596,6 @@ export default function DashboardPage() {
     return () => clearTimeout(timer);
   }, [selectedAsset, selectedTimeframe, runAnalysis]);
 
-  const handleRefreshAll = () => {
-    loadMarketData(selectedAsset, selectedTimeframe);
-    loadNews(selectedAsset);
-    runAnalysis();
-  };
-
   return (
     <div className="min-h-screen flex flex-col text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200 relative overflow-x-hidden">
       {/* Dynamic Multi-Layer Ambient Background with Parallax Scroll */}
@@ -616,18 +607,16 @@ export default function DashboardPage() {
 
       {/* Top Navigation */}
       <Header
-        onRefreshAll={handleRefreshAll}
         isLoading={isLoadingMarket || isLoadingNews || isAnalyzing}
         onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
         onOpenBackgroundModal={() => setIsBackgroundModalOpen(true)}
-        lastSyncTimestamp={liveTickLastUpdated || marketLastUpdated}
       />
 
       {/* Main Container */}
       <main className="flex-1 w-full max-w-full min-w-0 overflow-x-hidden relative z-10 px-3 sm:px-6 lg:px-8 py-3 space-y-3 pb-24 md:pb-8">
         {/* AI Autonomous Auto-Pilot Live HUD (Compact Executive Telemetry Strip) */}
         <div className="terminal-card px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 w-full sm:w-auto">
             <div
               className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 border transition-colors ${
                 isAutoPilot
@@ -637,7 +626,7 @@ export default function DashboardPage() {
             >
               <Bot className="w-4 h-4" />
             </div>
-            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+            <div className="min-w-0 flex items-center gap-1.5 sm:gap-2 flex-wrap">
               <span className="font-semibold text-xs text-white flex items-center gap-1.5 tracking-tight">
                 AI Autonomous Pilot
                 {isAutoPilot && (
@@ -647,36 +636,34 @@ export default function DashboardPage() {
                   </span>
                 )}
               </span>
-              <span className="text-[11px] text-zinc-400 font-mono hidden md:inline">
-                ({lastSyncTime})
-              </span>
-              <span className="text-zinc-600 hidden md:inline">•</span>
-              <p className="text-[11px] text-zinc-300 truncate max-w-md lg:max-w-xl flex items-center gap-1.5">
+              <p className="text-[10px] sm:text-[11px] text-zinc-300 truncate max-w-[200px] xs:max-w-xs sm:max-w-sm md:max-w-md lg:max-w-xl flex items-center gap-1.5">
                 <Radio className={`w-3 h-3 shrink-0 ${isAutoPilot ? "text-blue-400" : "text-zinc-500"}`} />
                 <span className="truncate">{latestTelemetry}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+          <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto shrink-0">
             {/* Telegram Signals Live Badge */}
-            <div className="h-7 px-2 rounded-md bg-white/[0.03] border border-white/[0.06] flex items-center gap-1.5 text-[11px] font-mono text-zinc-300">
+            <div className="h-7 px-2 rounded-md bg-white/[0.03] border border-white/[0.06] flex items-center gap-1.5 text-[10px] sm:text-[11px] font-mono text-zinc-300">
               <Zap className="w-3 h-3 text-amber-400" />
-              <span className="text-zinc-400 hidden sm:inline">TG:</span>
-              <span className="font-medium text-white">Live Broadcast</span>
+              <span className="text-zinc-400 hidden xs:inline">TG:</span>
+              <span className="font-medium text-white hidden xs:inline">Live Broadcast</span>
+              <span className="font-medium text-white xs:hidden">Live</span>
             </div>
 
             {/* Auto-Pilot Toggle Button */}
             <button
               onClick={handleToggleAutoPilot}
-              className={`h-7 px-2.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors border cursor-pointer ${
+              className={`h-7 px-2 sm:px-2.5 rounded-md text-[11px] sm:text-xs font-medium flex items-center gap-1.5 transition-colors border cursor-pointer ${
                 isAutoPilot
                   ? "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30"
                   : "bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 border-white/[0.08]"
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${isAutoPilot ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"}`} />
-              <span>{isAutoPilot ? "Auto-Pilot: ON" : "Auto-Pilot: OFF"}</span>
+              <span className="hidden xs:inline">{isAutoPilot ? "Auto-Pilot: ON" : "Auto-Pilot: OFF"}</span>
+              <span className="xs:hidden">{isAutoPilot ? "Pilot: ON" : "Pilot: OFF"}</span>
             </button>
           </div>
         </div>
@@ -772,7 +759,6 @@ export default function DashboardPage() {
               onSelectAsset={(sym) => {
                 setSelectedAsset(sym);
               }}
-              lastSyncTime={lastSyncTime}
               isLoading={isLoadingScanner && scannerSummaries.length === 0}
             />
 
@@ -899,7 +885,6 @@ export default function DashboardPage() {
                     setSelectedAsset(sym);
                     setActiveTab("SIGNALS");
                   }}
-                  lastSyncTime={lastSyncTime}
                   isLoading={isLoadingScanner && scannerSummaries.length === 0}
                 />
               </div>
