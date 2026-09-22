@@ -5,12 +5,22 @@ import { fetchLiveNews } from "@/lib/newsService";
 import { analyzeWithGemini } from "@/lib/geminiService";
 import {
   sendTelegramMessage,
+  deleteTelegramMessage,
   isSymbolAllowedForAlert,
   DEFAULT_TELEGRAM_BOT_TOKEN,
   DEFAULT_TELEGRAM_CHAT_ID,
 } from "@/lib/telegramService";
 
-import { resolveOpenSignals, saveAiSignal, saveBacktestResults, BacktestTrade, resilientQuery, SaveAiSignalResult } from "@/lib/db";
+import {
+  resolveOpenSignals,
+  saveAiSignal,
+  saveBacktestResults,
+  BacktestTrade,
+  resilientQuery,
+  SaveAiSignalResult,
+  getAndClearPreviousResultMessages,
+  updateSignalTelegramMessages,
+} from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -113,16 +123,52 @@ export async function GET(request: NextRequest) {
             (analysis.masterConfluence?.totalScore ?? 0) >= 65;
 
           if (botToken && saveRes.saved && saveRes.signalId && isConfluenceEligible && subscribersMap.size > 0) {
+            // ── Auto-delete: ลบข้อความผลลัพธ์ TP/SL เดิมใน Telegram ก่อนส่งออเดอร์ใหม่ ──
+            try {
+              const previousResults = await getAndClearPreviousResultMessages();
+              if (previousResults && previousResults.length > 0) {
+                for (const prev of previousResults) {
+                  if (prev.chatId && prev.messageId) {
+                    deleteTelegramMessage({
+                      botToken,
+                      chatId: prev.chatId,
+                      messageId: prev.messageId,
+                    }).catch(() => {});
+                  }
+                }
+              }
+            } catch (delErr) {
+              console.warn("Cron: could not clear previous result messages:", delErr);
+            }
+
+            const sentMessages: Array<{ chatId: string; messageId: number }> = [];
+            const sendPromises: Promise<unknown>[] = [];
+
             subscribersMap.forEach((filter, targetChatId) => {
               if (isSymbolAllowedForAlert(analysis.symbol, filter)) {
-                sendTelegramMessage({
-                  botToken,
-                  chatId: targetChatId,
-                  analysis,
-                  orderId: saveRes.signalId,
-                }).catch(() => {});
+                sendPromises.push(
+                  sendTelegramMessage({
+                    botToken,
+                    chatId: targetChatId,
+                    analysis,
+                    orderId: saveRes.signalId,
+                    dailyOrderNumber: saveRes.dailyOrderNumber,
+                  })
+                    .then((res) => {
+                      if (res.success && res.messageId) {
+                        sentMessages.push({ chatId: targetChatId, messageId: res.messageId });
+                      }
+                    })
+                    .catch(() => {})
+                );
               }
             });
+
+            await Promise.allSettled(sendPromises);
+
+            if (saveRes.signalId && sentMessages.length > 0) {
+              await updateSignalTelegramMessages(saveRes.signalId, sentMessages);
+            }
           }
         }
 

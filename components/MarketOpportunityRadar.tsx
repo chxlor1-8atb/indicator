@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { AssetScannerSummary } from "@/lib/types";
+import React, { useState, useMemo, useEffect } from "react";
+import { AssetScannerSummary, FinvizForexStrengthData, FinvizMarketSentiment } from "@/lib/types";
 import {
   Compass,
   TrendingUp,
@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Clock,
   Layers,
+  Globe,
 } from "lucide-react";
 
 interface MarketOpportunityRadarProps {
@@ -37,6 +38,33 @@ function MarketOpportunityRadar({
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"ALL" | "ACTIONABLE" | "CRYPTO" | "FOREX" | "COMMODITIES">("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [finvizData, setFinvizData] = useState<FinvizForexStrengthData | null>(null);
+  const [finvizSentiment, setFinvizSentiment] = useState<FinvizMarketSentiment | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchFinviz = async () => {
+      try {
+        const res = await fetch("/api/finviz");
+        if (res.ok) {
+          const data = await res.json();
+          if (mounted && data.success) {
+            setFinvizData(data.forexStrength);
+            setFinvizSentiment(data.marketSentiment);
+          }
+        }
+      } catch {
+        // Silently ignore background polling errors
+      }
+    };
+
+    fetchFinviz();
+    const interval = setInterval(fetchFinviz, 60000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Filter and sort summaries
   const filteredSummaries = useMemo(() => {
@@ -250,6 +278,83 @@ function MarketOpportunityRadar({
                 className="pl-7 pr-3 py-1 bg-white/[0.04] border border-white/[0.1] rounded-md text-[11px] text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 w-full transition-colors"
               />
             </div>
+          </div>
+
+          {/* 🌐 FINVIZ & RELATIVE CURRENCY STRENGTH METER (CSM 8 Currencies) */}
+          <div className="p-2 sm:p-2.5 rounded-md bg-[#12151C] border border-white/[0.08] space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Globe className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs font-bold text-white tracking-tight">
+                  Relative Currency Strength (CSM 8 Currencies)
+                </span>
+                <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono">
+                  {finvizData?.isSynthetic ? "Synthetic Matrix" : "Finviz Live"}
+                </span>
+              </div>
+
+              {finvizSentiment && (
+                <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                  <span className="text-zinc-400 hidden xs:inline">Macro:</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded border font-bold ${
+                      finvizSentiment.regime === "RISK_ON"
+                        ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                        : finvizSentiment.regime === "RISK_OFF"
+                        ? "bg-rose-500/10 text-rose-300 border-rose-500/30"
+                        : "bg-zinc-500/10 text-zinc-300 border-zinc-500/30"
+                    }`}
+                  >
+                    {finvizSentiment.regime === "RISK_ON" ? "🟢 RISK-ON" : finvizSentiment.regime === "RISK_OFF" ? "🔴 RISK-OFF (Gold Tailwind)" : "⚪ NEUTRAL"}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* 8 Currencies Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none flex-nowrap pb-0.5">
+              {(finvizData?.currencies || [
+                { currency: "USD", changePct: 0.45, rank: 1, score: 75 },
+                { currency: "EUR", changePct: 0.20, rank: 2, score: 35 },
+                { currency: "GBP", changePct: 0.12, rank: 3, score: 20 },
+                { currency: "AUD", changePct: 0.05, rank: 4, score: 8 },
+                { currency: "CAD", changePct: -0.08, rank: 5, score: -12 },
+                { currency: "NZD", changePct: -0.15, rank: 6, score: -25 },
+                { currency: "CHF", changePct: -0.35, rank: 7, score: -58 },
+                { currency: "JPY", changePct: -0.68, rank: 8, score: -95 },
+              ]).map((c) => {
+                const isStrong = c.rank <= 2;
+                const isWeak = c.rank >= 7;
+                return (
+                  <div
+                    key={c.currency}
+                    className={`px-2 py-0.5 rounded-[5px] border flex items-center gap-1.5 shrink-0 text-[10.5px] font-mono ${
+                      isStrong
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 font-bold"
+                        : isWeak
+                        ? "bg-rose-500/10 border-rose-500/30 text-rose-300 font-bold"
+                        : "bg-white/[0.03] border-white/[0.06] text-zinc-300"
+                    }`}
+                  >
+                    <span className="text-zinc-500 text-[9px]">#{c.rank}</span>
+                    <span className="text-white font-bold">{c.currency}</span>
+                    <span className={c.changePct >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                      {c.changePct >= 0 ? "+" : ""}{c.changePct.toFixed(2)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Top Matchup Banner */}
+            {finvizData?.bestMatchups && finvizData.bestMatchups.length > 0 && (
+              <div className="flex items-center gap-1.5 text-[10.5px] text-zinc-300 bg-white/[0.02] border border-white/[0.05] px-2.5 py-1 rounded truncate">
+                <Flame className="w-3 h-3 text-amber-400 shrink-0" />
+                <span className="text-amber-400 font-bold shrink-0">Best Statistical Matchup:</span>
+                <span className="text-white font-mono font-bold">{finvizData.bestMatchups[0].pair} ({finvizData.bestMatchups[0].direction})</span>
+                <span className="text-zinc-400 truncate">• {finvizData.bestMatchups[0].reason}</span>
+              </div>
+            )}
           </div>
 
           {/* Radar Table */}

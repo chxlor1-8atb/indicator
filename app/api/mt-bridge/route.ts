@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       // TICKET_ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS,REMAINING_LOTS,STATUS,TRAILING_SL
       const lines = orders.map(
         (o) =>
-          `${o.id},${o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize},${o.remainingLots ?? o.lotSize},${o.status},${o.trailingSlPrice ?? o.stopLoss}`
+          `${o.id},${o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize},${o.remainingLots ?? o.lotSize},${o.status},${o.trailingSlPrice ?? o.stopLoss},${o.emergencyDefenseReason ?? "NONE"}`
       );
       return new NextResponse(lines.join("\n"), {
         status: 200,

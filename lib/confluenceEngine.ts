@@ -1,4 +1,4 @@
-import { Candle, IndicatorData, MasterConfluenceScore } from "./types";
+import { Candle, IndicatorData, MasterConfluenceScore, PairDivergenceResult, CalendarSafetyStatus } from "./types";
 
 export interface AdaptivePillarWeightsInput {
   trendWeight?: number;
@@ -9,11 +9,17 @@ export interface AdaptivePillarWeightsInput {
   isSelfTuned?: boolean;
 }
 
+export interface ConfluenceContextOptions {
+  currencyDivergence?: PairDivergenceResult;
+  calendarSafety?: CalendarSafetyStatus;
+}
+
 export function evaluateMasterConfluence(
   candles: Candle[],
   indicators: IndicatorData,
   bias: "BULLISH" | "BEARISH" | "NEUTRAL",
-  adaptiveWeights?: AdaptivePillarWeightsInput
+  adaptiveWeights?: AdaptivePillarWeightsInput,
+  contextOptions?: ConfluenceContextOptions
 ): MasterConfluenceScore {
   const wTrend = adaptiveWeights?.trendWeight ?? 25;
   const wMom = adaptiveWeights?.momentumWeight ?? 20;
@@ -329,8 +335,27 @@ export function evaluateMasterConfluence(
   const p4Scaled = Math.min(wVol, Math.round((p4Score / 15) * wVol));
   const p5Scaled = Math.min(wSmc, Math.round((p5Score / 20) * wSmc));
 
-  // Total Confluence Score
-  const totalScore = Math.min(100, Math.max(20, p1Scaled + p2Scaled + p3Scaled + p4Scaled + p5Scaled));
+  // ─── MACRO & RELATIVE CURRENCY STRENGTH (FINVIZ CSM) ───
+  let macroScoreDelta = 0;
+  const csm = contextOptions?.currencyDivergence;
+  if (csm) {
+    if (bias === "BULLISH") {
+      if (csm.alignment === "STRONG_BULLISH") macroScoreDelta += 6;
+      else if (csm.alignment === "MODERATE_BULLISH") macroScoreDelta += 3;
+      else if (csm.alignment === "STRONG_BEARISH") macroScoreDelta -= 10;
+      else if (csm.alignment === "MODERATE_BEARISH") macroScoreDelta -= 5;
+      else if (csm.alignment === "NEUTRAL") macroScoreDelta -= 2;
+    } else if (bias === "BEARISH") {
+      if (csm.alignment === "STRONG_BEARISH") macroScoreDelta += 6;
+      else if (csm.alignment === "MODERATE_BEARISH") macroScoreDelta += 3;
+      else if (csm.alignment === "STRONG_BULLISH") macroScoreDelta -= 10;
+      else if (csm.alignment === "MODERATE_BULLISH") macroScoreDelta -= 5;
+      else if (csm.alignment === "NEUTRAL") macroScoreDelta -= 2;
+    }
+  }
+
+  // Total Confluence Score (Bounded 20-100)
+  let totalScore = Math.min(100, Math.max(20, p1Scaled + p2Scaled + p3Scaled + p4Scaled + p5Scaled + macroScoreDelta));
 
   let grade: MasterConfluenceScore["grade"] = "C (Wait)";
   let verdict = "คะแนนสัญญาณต่ำกว่าเกณฑ์ความปลอดภัย แนะนำให้ WAIT / ถือเงินสด";
@@ -352,6 +377,17 @@ export function evaluateMasterConfluence(
       grade = "B";
     }
     verdict = `🛡️ HTF Conflict Guard: สัญญาณขัดแย้งกับโครงสร้างระดับใหญ่ (${mtf.htfTrend}) - แนะนำชะลอการเข้าออเดอร์เพื่อป้องกัน False Breakout`;
+  }
+
+  // Forex Factory Red Folder Safety Freeze
+  if (contextOptions?.calendarSafety && !contextOptions.calendarSafety.tradeAllowed) {
+    totalScore = Math.min(totalScore, 50);
+    grade = "C (Wait)";
+    verdict = `🔴 Forex Factory Shield: ตลาดติดข่าวกล่องแดงแรงสูง (${contextOptions.calendarSafety.badgeText}) - ระงับคำสั่งอัตโนมัติเพื่อป้องกันสเปรดถ่าง`;
+  }
+
+  if (csm && (csm.alignment === "STRONG_BULLISH" || csm.alignment === "STRONG_BEARISH")) {
+    verdict += ` • 🌐 Finviz Macro: ${csm.description.slice(0, 65)}...`;
   }
 
   if (isSelfTuned) {

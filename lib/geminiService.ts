@@ -223,6 +223,7 @@ import { evaluateMasterConfluence } from "./confluenceEngine";
 import { classifyMarketRegime } from "./regimeClassifier";
 import { getMarketSessionStatus } from "./sessionEngine";
 import { getNewsSafetyShieldStatus } from "./calendarEngine";
+import { getCachedPairDivergence, getCachedMarketSentiment } from "./finvizService";
 import { getRecentLessons, getAdaptiveWeights, AdaptiveWeightsConfig, getCachedCandles } from "./db";
 import { getAssetPipMultiplier } from "./telegramService";
 import { extractFeatureVector24D } from "./featureEngineering";
@@ -247,6 +248,8 @@ export function generateRuleBasedAnalysis(
   const regimeInfo = classifyMarketRegime(candles, indicators);
   const sessionStatus = getMarketSessionStatus(symbol, undefined, candles);
   const calendarSafety = getNewsSafetyShieldStatus(symbol);
+  const currencyDivergence = getCachedPairDivergence(symbol);
+  const finvizSentiment = getCachedMarketSentiment();
 
   // Determine asset precision dynamically (Forex = 4, Crypto under $10 = 4, JPY/Gold/Stocks = 2)
   const sym = symbol.toUpperCase();
@@ -424,7 +427,10 @@ export function generateRuleBasedAnalysis(
     ema200: adaptiveTrendList,
     rsi14: adaptiveRsiList,
   };
-  const masterConfluence = evaluateMasterConfluence(candles, adaptiveIndicators, tier1Bias, adaptiveConfig);
+  const masterConfluence = evaluateMasterConfluence(candles, adaptiveIndicators, tier1Bias, adaptiveConfig, {
+    currencyDivergence,
+    calendarSafety,
+  });
 
   // ─── NEWS HALLUCINATION GUARD ───
   // วิเคราะห์ข่าวแบบ confidence-weighted เพื่อป้องกันการตีความข่าวผิดส่งผลต่อ confluence
@@ -1909,6 +1915,8 @@ export function generateRuleBasedAnalysis(
     regimeInfo,
     sessionStatus,
     calendarSafety,
+    finvizStrength: currencyDivergence,
+    finvizSentiment,
     sniperMicroSL,
     oteZone,
     volumeDelta,

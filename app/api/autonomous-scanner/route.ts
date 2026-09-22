@@ -16,6 +16,7 @@ import {
   getTelegramSubscribers,
   getScannerCacheFromDb,
   saveScannerCacheToDb,
+  getAndClearPreviousResultMessages,
 } from "@/lib/db";
 import {
   sendTelegramMessage,
@@ -100,7 +101,14 @@ export async function GET(request: NextRequest) {
           subscribersMap.set(sub.chat_id, sub.alert_symbol || "ALL");
         }
 
-        // 1. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram (AWAITED ป้องกัน Serverless kill)
+        // 1. ตรวจสอบสถานะออเดอร์ที่เปิดค้างไว้ (ACTIVE / HIT_TP1) กับราคาตลาดล่าสุด (AWAITED เพื่อส่ง Order Result และลบ Alert จุดเข้าเก่าทันที)
+        if (scanResult.summaries && scanResult.summaries.length > 0) {
+          await Promise.allSettled(
+            scanResult.summaries.map((s) => resolveOpenSignals(s.symbol, s.price))
+          );
+        }
+
+        // 2. บันทึก Actionable AI Signals ลงฐานข้อมูล และส่งแจ้งเตือน Telegram (AWAITED ป้องกัน Serverless kill)
         if (scanResult.actionableAnalyses && scanResult.actionableAnalyses.length > 0) {
           // เรียงลำดับตามคะแนนความแม่นยำสูงสุดก่อนเสมอ
           const sortedAnalyses = [...scanResult.actionableAnalyses].sort(
@@ -156,6 +164,24 @@ export async function GET(request: NextRequest) {
               preWarningMessagesMap.delete(analysis.symbol);
             }
 
+            // ── Auto-delete: ลบข้อความแจ้งเตือนผลลัพธ์ TP/SL เก่าที่เคยส่งไว้ เพื่อไม่ให้แชทรกตาเมื่อมีออเดอร์ใหม่เข้ามา ──
+            try {
+              const previousResults = await getAndClearPreviousResultMessages();
+              if (previousResults && previousResults.length > 0) {
+                for (const prevResult of previousResults) {
+                  if (prevResult.chatId && prevResult.messageId) {
+                    deleteTelegramMessage({
+                      botToken,
+                      chatId: prevResult.chatId,
+                      messageId: prevResult.messageId,
+                    }).catch(() => {});
+                  }
+                }
+              }
+            } catch (delErr) {
+              console.warn("Could not clean up previous result messages:", delErr);
+            }
+
             if (botToken && DEFAULT_PILOT_CONFIG.autoDispatchTelegram && subscribersMap.size > 0) {
               const sentMessages: Array<{ chatId: string; messageId: number }> = [];
               const sendPromises: Promise<unknown>[] = [];
@@ -168,6 +194,7 @@ export async function GET(request: NextRequest) {
                       chatId: targetChatId,
                       analysis,
                       orderId: saveRes.signalId,
+                      dailyOrderNumber: saveRes.dailyOrderNumber,
                     })
                       .then((res) => {
                         if (res.success && res.messageId) {
@@ -191,7 +218,7 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // 2. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) (AWAITED ป้องกัน Serverless kill)
+        // 3. ส่งการแจ้งเตือนเตือนล่วงหน้า (Pre-Warning Radar Alert 15-30 นาที) (AWAITED ป้องกัน Serverless kill)
         if (scanResult.preWarningAnalyses && scanResult.preWarningAnalyses.length > 0) {
           await Promise.allSettled(
             scanResult.preWarningAnalyses.map(async (analysis: AnalysisResult) => {
@@ -245,13 +272,6 @@ export async function GET(request: NextRequest) {
                 }
               }
             })
-          );
-        }
-
-        // 3. ตรวจสอบสถานะออเดอร์ที่เปิดค้างไว้ (ACTIVE / HIT_TP1) กับราคาตลาดล่าสุด (AWAITED เพื่อส่ง Order Result และลบ Alert เก่า)
-        if (scanResult.summaries && scanResult.summaries.length > 0) {
-          await Promise.allSettled(
-            scanResult.summaries.map((s) => resolveOpenSignals(s.symbol, s.price))
           );
         }
       }

@@ -95,10 +95,12 @@ export interface DbAiSignal {
   take_profit2: number;
   confluence_score: number;
   setup_grade: string;
-  status: "ACTIVE" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCELLED";
+  status: "ACTIVE" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCELLED" | "CLOSED_BE";
   pnl_pips: number;
   notes: string | null;
   telegram_messages?: Array<{ chatId: string; messageId: number }>;
+  result_telegram_messages?: Array<{ chatId: string; messageId: number }>;
+  daily_order_number?: number;
   created_at: string;
   resolved_at: string | null;
 }
@@ -141,13 +143,14 @@ export async function initDatabase(): Promise<{ success: boolean; message: strin
       )
     `);
 
-    // Auto-migration for existing tables with smaller columns
+    // Auto-migration for existing tables with smaller columns or new features
     try {
-      await sql.query(`
-        ALTER TABLE ai_signals ALTER COLUMN action TYPE VARCHAR(30);
-        ALTER TABLE ai_signals ALTER COLUMN setup_grade TYPE VARCHAR(30);
-        ALTER TABLE ai_signals ALTER COLUMN order_type TYPE VARCHAR(50);
-      `);
+      await sql.query(`ALTER TABLE ai_signals ALTER COLUMN action TYPE VARCHAR(30);`);
+      await sql.query(`ALTER TABLE ai_signals ALTER COLUMN setup_grade TYPE VARCHAR(30);`);
+      await sql.query(`ALTER TABLE ai_signals ALTER COLUMN order_type TYPE VARCHAR(50);`);
+      await sql.query(`ALTER TABLE ai_signals ADD COLUMN IF NOT EXISTS telegram_messages JSONB;`);
+      await sql.query(`ALTER TABLE ai_signals ADD COLUMN IF NOT EXISTS result_telegram_messages JSONB;`);
+      await sql.query(`ALTER TABLE ai_signals ADD COLUMN IF NOT EXISTS daily_order_number INT;`);
     } catch {
       // Ignored if already altered or no permission
     }
@@ -473,6 +476,7 @@ export interface SaveAiSignalResult {
   saved: boolean;
   reason?: string;
   signalId?: number;
+  dailyOrderNumber?: number;
   previousMessages?: Array<{ chatId: string; messageId: number }>;
 }
 
@@ -565,13 +569,29 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<SaveAiSign
       }
     }
 
+    // Calculate daily order sequence number for today in Bangkok Time (GMT+7)
+    // Automatically resets to 1 at 00:00:00 Bangkok Time every day
+    let dailyOrderNumber = 1;
+    try {
+      const dailySeqRows = await resilientQuery<Array<{ next_order: number }>>(
+        `SELECT COALESCE(MAX(daily_order_number), 0) + 1 AS next_order
+         FROM ai_signals
+         WHERE created_at >= ((NOW() AT TIME ZONE 'Asia/Bangkok')::date || ' 00:00:00 Asia/Bangkok')::timestamptz;`
+      );
+      if (dailySeqRows && dailySeqRows[0]?.next_order) {
+        dailyOrderNumber = Number(dailySeqRows[0].next_order);
+      }
+    } catch {
+      dailyOrderNumber = 1;
+    }
+
     const insertResult = await resilientQuery<Array<{ id: number }>>(
       `
       INSERT INTO ai_signals (
         symbol, timeframe, action, order_type, entry_price, 
         stop_loss, take_profit1, take_profit2, confluence_score, 
-        setup_grade, notes, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ACTIVE')
+        setup_grade, notes, status, daily_order_number
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ACTIVE', $12)
       RETURNING id;
       `,
       [
@@ -586,12 +606,13 @@ export async function saveAiSignal(analysis: AnalysisResult): Promise<SaveAiSign
         masterConfluence?.totalScore || 0,
         String(setupGrade || "B").substring(0, 30),
         analysis.summary?.substring(0, 300) || "",
+        dailyOrderNumber,
       ]
     );
 
     const signalId = insertResult && insertResult.length > 0 ? insertResult[0].id : undefined;
 
-    return { saved: true, signalId, previousMessages };
+    return { saved: true, signalId, dailyOrderNumber, previousMessages };
   } catch (err) {
     console.error("Error saving AI signal to Neon:", err);
     return { saved: false, reason: String(err) };
@@ -805,6 +826,19 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
           }
         }
 
+        // ลบข้อความแจ้งเตือนผลลัพธ์เก่าของออเดอร์นี้ (ถ้ามี เช่น เคยส่ง TP1 แล้วตอนนี้ชน TP2 หรือ BE)
+        if (sig.result_telegram_messages && Array.isArray(sig.result_telegram_messages)) {
+          for (const msg of sig.result_telegram_messages) {
+            if (msg && msg.chatId && msg.messageId) {
+              deleteTelegramMessage({
+                botToken,
+                chatId: msg.chatId,
+                messageId: msg.messageId,
+              }).catch(() => {});
+            }
+          }
+        }
+
         if (lesson) {
           updates.push(
             resilientQuery(
@@ -819,6 +853,7 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
         if (botToken) {
           const resultPayload = {
             id: sig.id,
+            dailyOrderNumber: sig.daily_order_number,
             symbol: sig.symbol,
             timeframe: sig.timeframe,
             action: sig.action,
@@ -832,6 +867,8 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
             setupGrade: sig.setup_grade,
             confluenceScore: sig.confluence_score,
           };
+
+          const sentResultMessages: Array<{ chatId: string; messageId: number }> = [];
 
           // ดึงค่า filter จาก database subscriber หรือใช้ environment variable เป็นค่า fallback
           let primaryFilter = process.env.TELEGRAM_ALERT_SYMBOLS || "ALL";
@@ -848,29 +885,52 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
           }
           
           if (mainChatId && isSymbolAllowedForAlert(sig.symbol, primaryFilter)) {
-            sendTelegramMessage({
-              botToken,
-              chatId: mainChatId,
-              orderResult: resultPayload,
-            }).catch((err) => console.warn("[Telegram Result] Primary dispatch note:", err));
+            try {
+              const res = await sendTelegramMessage({
+                botToken,
+                chatId: mainChatId,
+                orderResult: resultPayload,
+              });
+              if (res && res.success && res.messageId) {
+                sentResultMessages.push({ chatId: mainChatId, messageId: res.messageId });
+              }
+            } catch (err) {
+              console.warn("[Telegram Result] Primary dispatch note:", err);
+            }
           }
 
           // Broadcast to active database subscribers respecting each subscriber's filter preference
-          resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
-            `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
-          ).then((subs) => {
+          try {
+            const subs = await resilientQuery<{ chat_id: string; alert_symbol: string }[]>(
+              `SELECT chat_id, alert_symbol FROM telegram_subscribers WHERE is_active = TRUE`
+            );
             if (subs && subs.length > 0) {
               for (const s of subs) {
                 if (s.chat_id !== mainChatId && isSymbolAllowedForAlert(sig.symbol, s.alert_symbol)) {
-                  sendTelegramMessage({
-                    botToken,
-                    chatId: s.chat_id,
-                    orderResult: resultPayload,
-                  }).catch(() => {});
+                  try {
+                    const subRes = await sendTelegramMessage({
+                      botToken,
+                      chatId: s.chat_id,
+                      orderResult: resultPayload,
+                    });
+                    if (subRes && subRes.success && subRes.messageId) {
+                      sentResultMessages.push({ chatId: s.chat_id, messageId: subRes.messageId });
+                    }
+                  } catch {}
                 }
               }
             }
-          }).catch(() => {});
+          } catch {}
+
+          // บันทึก Message ID ของผลลัพธ์ TP/SL ลงใน DB เพื่อให้ออเดอร์ถัดไปลบทิ้งอัตโนมัติ
+          if (sentResultMessages.length > 0) {
+            updates.push(
+              resilientQuery(
+                `UPDATE ai_signals SET result_telegram_messages = $1::jsonb WHERE id = $2`,
+                [JSON.stringify(sentResultMessages), sig.id]
+              )
+            );
+          }
         }
       }
     }
@@ -883,6 +943,52 @@ export async function resolveOpenSignals(symbol: string, currentPrice: number) {
     runDataHygiene().catch((err) => console.warn("[Neon Hygiene] Background note:", (err as Error)?.message || err));
   } catch (err) {
     console.warn("[Neon Resolver] Note resolving open signals:", (err as Error)?.message || err);
+  }
+}
+
+/**
+ * Fetches all uncleaned result_telegram_messages from recent signals and clears the column,
+ * returning the list of { chatId, messageId } to be deleted from Telegram when a new order arrives.
+ * Keeps Telegram channel completely clean and uncluttered (at most 1 active message at a time).
+ */
+export async function getAndClearPreviousResultMessages(): Promise<Array<{ chatId: string; messageId: number }>> {
+  if (!sql) return [];
+  try {
+    const rows = await resilientQuery<Array<{ id: number; result_telegram_messages: Array<{ chatId: string; messageId: number }> }>>(
+      `SELECT id, result_telegram_messages 
+       FROM ai_signals 
+       WHERE result_telegram_messages IS NOT NULL 
+         AND jsonb_array_length(result_telegram_messages) > 0
+       ORDER BY id DESC
+       LIMIT 10;`
+    );
+    if (!rows || rows.length === 0) return [];
+    
+    const messagesToDelete: Array<{ chatId: string; messageId: number }> = [];
+    const idsToClear: number[] = [];
+
+    for (const r of rows) {
+      if (Array.isArray(r.result_telegram_messages)) {
+        for (const msg of r.result_telegram_messages) {
+          if (msg && msg.chatId && msg.messageId) {
+            messagesToDelete.push(msg);
+          }
+        }
+        idsToClear.push(r.id);
+      }
+    }
+
+    if (idsToClear.length > 0) {
+      await resilientQuery(
+        `UPDATE ai_signals SET result_telegram_messages = NULL WHERE id = ANY($1::int[])`,
+        [idsToClear]
+      );
+    }
+
+    return messagesToDelete;
+  } catch (err) {
+    console.warn("Could not get/clear previous result messages:", err);
+    return [];
   }
 }
 

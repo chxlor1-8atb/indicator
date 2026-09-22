@@ -1253,6 +1253,9 @@ export interface AnalysisResult {
       guardReason?: string;
     };
   };
+  finvizStrength?: PairDivergenceResult;
+  finvizSentiment?: FinvizMarketSentiment;
+  emergencyDefense?: EmergencyDefenseInfo;
   technicalAnalysis: {
     trend: "STRONG_UPTREND" | "UPTREND" | "SIDEWAYS" | "DOWNTREND" | "STRONG_DOWNTREND";
     rsiStatus: string;
@@ -2214,6 +2217,53 @@ export interface SovereignSingularityAlphaInfo {
   description: string;
 }
 
+// ─── FINVIZ & RELATIVE CURRENCY STRENGTH INTERFACES ───
+export interface CurrencyStrengthItem {
+  currency: string;
+  changePct: number;
+  rank: number; // 1 (Strongest) to 8 (Weakest)
+  score: number; // -100 to +100 normalized score
+}
+
+export interface FinvizForexStrengthData {
+  currencies: CurrencyStrengthItem[];
+  topStrong: string[]; // Top 2 strongest currencies
+  topWeak: string[]; // Top 2 weakest currencies
+  bestMatchups: { pair: string; direction: "BUY" | "SELL"; reason: string; edgeScore: number }[];
+  updatedAt: number;
+  isSynthetic: boolean;
+}
+
+export interface FinvizMarketSentiment {
+  regime: "RISK_ON" | "RISK_OFF" | "NEUTRAL";
+  vixStatus: string;
+  goldBias: "BULLISH" | "BEARISH" | "NEUTRAL";
+  equityTrend: "BULLISH" | "BEARISH" | "SIDEWAYS";
+  summary: string;
+  updatedAt: number;
+}
+
+export interface PairDivergenceResult {
+  symbol: string;
+  baseCurrency: string;
+  quoteCurrency: string;
+  baseScore: number;
+  quoteScore: number;
+  divergenceScore: number; // Positive = base stronger (Bullish), Negative = quote stronger (Bearish)
+  alignment: "STRONG_BULLISH" | "MODERATE_BULLISH" | "NEUTRAL" | "MODERATE_BEARISH" | "STRONG_BEARISH";
+  confluenceBonus: number; // Points to add/subtract (-10 to +8)
+  description: string;
+}
+
+export interface EmergencyDefenseInfo {
+  isActive: boolean;
+  type: "NONE" | "EMERGENCY_NEWS_CUTLOSS" | "DYNAMIC_MSS_CUTLOSS" | "BREAKEVEN_LOCK" | "DIVERGENCE_REVERSAL";
+  reason: string;
+  triggerPrice?: number;
+  savedPipsOrCapital?: string;
+  timestamp?: number;
+}
+
 // ─── AUTONOMOUS PILOT & MT-BRIDGE INTERFACES ───
 export interface AssetScannerSummary {
   symbol: string;
@@ -2235,6 +2285,13 @@ export interface AssetScannerSummary {
   slPrice?: number;
   tpPrice?: number;
   distancePips: number;
+  currencyDivergence?: {
+    alignment: string;
+    description: string;
+    confluenceBonus: number;
+    baseScore: number;
+    quoteScore: number;
+  };
   updatedAt: number;
 }
 
@@ -2261,7 +2318,7 @@ export interface MtBridgeOrder {
   confluenceScore: number;
   setupGrade: string;
   comment: string;
-  status: "PENDING_HUMAN_APPROVAL" | "PENDING" | "FILLED" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCELLED";
+  status: "PENDING_HUMAN_APPROVAL" | "PENDING" | "FILLED" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCELLED" | "EMERGENCY_CLOSED" | "DEFENSE_BREAKEVEN";
   timestamp: number;
   expiresAt: number;
   /** Flags ที่ AI ตั้งใจให้มนุษย์ตรวจสอบก่อนส่ง order (เช่น "LOW_NEWS_CONFIDENCE", "NEWS_SIGNAL_CONFLICT") */
@@ -2280,6 +2337,7 @@ export interface MtBridgeOrder {
   adaptiveTrailingActive?: boolean;
   trailingSlPrice?: number;
   trailingStage?: number;
+  emergencyDefenseReason?: string;
 }
 
 export interface TelemetryLog {

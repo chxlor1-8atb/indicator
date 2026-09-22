@@ -16,6 +16,8 @@ import {
   calculateAdaptiveTrailingStop,
   calculatePartialTpPlan,
 } from "./riskEngine";
+import { getNewsSafetyShieldStatus } from "./calendarEngine";
+import { getCachedPairDivergence } from "./finvizService";
 
 // ─── IN-MEMORY AUTONOMOUS STATE BUS ───
 const activeOrdersStore = new Map<string, MtBridgeOrder>();
@@ -205,6 +207,13 @@ export async function evaluateAssetAutonomous(
     slPrice: orderType !== "WAIT_NO_ORDER" ? slPrice : undefined,
     tpPrice: orderType !== "WAIT_NO_ORDER" ? tp1Price : undefined,
     distancePips,
+    currencyDivergence: analysis.finvizStrength ? {
+      alignment: analysis.finvizStrength.alignment,
+      description: analysis.finvizStrength.description,
+      confluenceBonus: analysis.finvizStrength.confluenceBonus,
+      baseScore: analysis.finvizStrength.baseScore,
+      quoteScore: analysis.finvizStrength.quoteScore,
+    } : undefined,
     updatedAt: Date.now(),
   };
 
@@ -524,6 +533,84 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
     if (order.status === "FILLED" || order.status === "HIT_TP1") {
       const initialRisk = Math.abs(order.price - order.stopLoss) || (currentPrice * 0.005);
       const estAtr = initialRisk / 1.5;
+
+      const pnlPips = isBuy
+        ? (currentPrice - order.price) * pipMultiplier
+        : (order.price - currentPrice) * pipMultiplier;
+      const riskPips = Math.max(Math.abs(order.price - order.stopLoss) * pipMultiplier, 5);
+      const currentR = pnlPips / riskPips;
+
+      // ─── 1. REAL-TIME AI EMERGENCY NEWS SHIELD (FOREX FACTORY RED FOLDER) ───
+      const calSafety = getNewsSafetyShieldStatus(sym);
+      if (!calSafety.tradeAllowed) {
+        // Red Folder Shock: High Impact News happening now or within 15 min!
+        if (currentR >= 0.25) {
+          // If in profit >= 0.25R, aggressively lock SL to Breakeven (+1.5 pips buffer)
+          const bufferPrice = 1.5 / pipMultiplier;
+          const beSl = isBuy
+            ? Number((order.price + bufferPrice).toFixed(precision))
+            : Number((order.price - bufferPrice).toFixed(precision));
+
+          const isBetter = isBuy ? beSl > order.stopLoss : beSl < order.stopLoss;
+          if (isBetter) {
+            order.stopLoss = beSl;
+            order.status = "DEFENSE_BREAKEVEN";
+            order.emergencyDefenseReason = "RED_FOLDER_PRE_NEWS_BE_LOCK";
+            addTelemetryLog(
+              sym,
+              "RESOLVE",
+              `🛡️ AI Emergency Defense: Red Folder News approaching (${calSafety.badgeText})! Locked SL to Breakeven (${order.stopLoss}) to eliminate downside risk.`
+            );
+          }
+        } else if (currentR < 0 && currentR >= -0.45) {
+          // In minor loss, cut loss early to prevent high-impact news spread blowout (-1R)
+          order.status = "EMERGENCY_CLOSED";
+          order.emergencyDefenseReason = "RED_FOLDER_EARLY_CUTLOSS";
+          addTelemetryLog(
+            sym,
+            "RESOLVE",
+            `🛑 AI Emergency Cutloss: Closed Order #${order.id.slice(-6)} early (${pnlPips.toFixed(1)} pips / ${currentR.toFixed(2)}R) before Red Folder news shock! Saved 55%+ of risk capital.`
+          );
+          activeOrdersStore.delete(order.id);
+          continue;
+        }
+      }
+
+      // ─── 2. REAL-TIME FINVIZ RELATIVE CURRENCY REVERSAL SHIELD ───
+      const csm = getCachedPairDivergence(sym);
+      const isOppositeDivergence =
+        (isBuy && csm.alignment === "STRONG_BEARISH") ||
+        (!isBuy && csm.alignment === "STRONG_BULLISH");
+
+      if (isOppositeDivergence) {
+        if (currentR >= 0.2) {
+          const bufferPrice = 1.0 / pipMultiplier;
+          const beSl = isBuy
+            ? Number((order.price + bufferPrice).toFixed(precision))
+            : Number((order.price - bufferPrice).toFixed(precision));
+          const isBetter = isBuy ? beSl > order.stopLoss : beSl < order.stopLoss;
+          if (isBetter) {
+            order.stopLoss = beSl;
+            order.status = "DEFENSE_BREAKEVEN";
+            order.emergencyDefenseReason = "CSM_DIVERGENCE_REVERSAL_BE_LOCK";
+            addTelemetryLog(
+              sym,
+              "RESOLVE",
+              `🌐 AI Macro Defense: Finviz CSM inverted against trade! Tightened SL to ${order.stopLoss}.`
+            );
+          }
+        } else if (currentR < 0 && currentR >= -0.4) {
+          order.status = "EMERGENCY_CLOSED";
+          order.emergencyDefenseReason = "CSM_DIVERGENCE_REVERSAL_CUTLOSS";
+          addTelemetryLog(
+            sym,
+            "RESOLVE",
+            `🛑 AI Adaptive Cutloss: Closed Order #${order.id.slice(-6)} early (${pnlPips.toFixed(1)} pips) due to Macro Relative Currency reversal. Risk mitigated.`
+          );
+          activeOrdersStore.delete(order.id);
+          continue;
+        }
+      }
 
       // Check Stop Loss
       const isSlHit = isBuy ? currentPrice <= order.stopLoss : currentPrice >= order.stopLoss;

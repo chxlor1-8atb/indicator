@@ -35,7 +35,12 @@ export function getAssetPipMultiplier(symbol: string): number {
   return 10000;
 }
 
-export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentPrice?: number, orderId?: number | string): string {
+export function formatTelegramAnalysisMessage(
+  analysis: AnalysisResult,
+  currentPrice?: number,
+  orderId?: number | string,
+  dailyOrderNumber?: number
+): string {
   const signalBadge = {
     STRONG_BUY: "🟢🟢 <b>STRONG BUY</b>",
     BUY: "🟢 <b>BUY</b>",
@@ -105,7 +110,17 @@ export function formatTelegramAnalysisMessage(analysis: AnalysisResult, currentP
   const adjustedRR = analysis.tradeSetup.dynamicRiskReward?.adjustedRR || analysis.tradeSetup.riskRewardRatio;
   const riskRec = analysis.tradeSetup.dynamicRiskReward?.recommendation || "";
 
-  const orderIdDisplay = orderId ? `🎫 <b>ตั๋วออเดอร์ที่:</b> <code>#${String(orderId).padStart(4, "0")}</code>` : "";
+  const todayStr = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Bangkok",
+  }).format(new Date());
+
+  const orderIdDisplay = dailyOrderNumber
+    ? `🎫 <b>ตั๋วออเดอร์ที่:</b> <code>#${String(dailyOrderNumber).padStart(2, "0")} ของวันนี้ (${todayStr})</code>${orderId ? ` <i>[#${String(orderId).padStart(4, "0")}]</i>` : ""}`
+    : orderId
+    ? `🎫 <b>ตั๋วออเดอร์ที่:</b> <code>#${String(orderId).padStart(4, "0")}</code>`
+    : "";
 
   const lines = [
     `⚡ <b>AI SIGNAL: ${analysis.symbol} (${analysis.timeframe})</b>`,
@@ -187,6 +202,7 @@ export function formatTelegramPreWarningMessage(analysis: AnalysisResult, curren
 
 export interface OrderResultData {
   id?: number | string;
+  dailyOrderNumber?: number;
   symbol: string;
   timeframe: string;
   action: string;
@@ -246,7 +262,18 @@ export function formatTelegramOrderResultMessage(data: OrderResultData): string 
 
   const grade = data.setupGrade || "A";
   const conf = data.confluenceScore || 85;
-  const orderTicketDisplay = data.id ? `🎫 <b>ตั๋วออเดอร์ที่:</b> <code>#${String(data.id).padStart(4, "0")}</code>` : "";
+
+  const todayStr = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Bangkok",
+  }).format(new Date());
+
+  const orderTicketDisplay = data.dailyOrderNumber
+    ? `🎫 <b>ตั๋วออเดอร์ที่:</b> <code>#${String(data.dailyOrderNumber).padStart(2, "0")} ของวันนี้ (${todayStr})</code>${data.id ? ` <i>[#${String(data.id).padStart(4, "0")}]</i>` : ""}`
+    : data.id
+    ? `🎫 <b>ตั๋วออเดอร์ที่:</b> <code>#${String(data.id).padStart(4, "0")}</code>`
+    : "";
 
   const lines = [
     headerTitle,
@@ -277,6 +304,7 @@ export interface SendTelegramOptions {
   rawHtml?: boolean;
   currentPrice?: number;
   orderId?: number | string;
+  dailyOrderNumber?: number;
 }
 
 // ─── DEDUPLICATION DISPATCH SHIELD (60s window per chat + fingerprint) ───
@@ -349,7 +377,7 @@ export async function sendTelegramMessage(options: SendTelegramOptions): Promise
     : analysis
     ? isPreWarning
       ? formatTelegramPreWarningMessage(analysis, currentPrice)
-      : formatTelegramAnalysisMessage(analysis, currentPrice, orderId)
+      : formatTelegramAnalysisMessage(analysis, currentPrice, orderId, options.dailyOrderNumber)
     : rawHtml
     ? message || ""
     : escapeHtml(message || "Test Notification from AI Indicator Bot");

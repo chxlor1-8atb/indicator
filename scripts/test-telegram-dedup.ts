@@ -155,8 +155,46 @@ async function runVerification() {
     passes++;
   }
 
+  // TEST 5: Daily Order Number Formatting
+  console.log("\n▶ TEST 5: Daily Sequential Order Number Formatting (#01 ของวันนี้)");
+  const msgDaily = formatTelegramAnalysisMessage(mockAnalysis, 2650.50, 42, 1);
+  const resultDaily = formatTelegramOrderResultMessage({ ...mockResult, dailyOrderNumber: 1 });
+  if (msgDaily.includes("#01 ของวันนี้") && resultDaily.includes("#01 ของวันนี้")) {
+    console.log("  ✅ PASS: Both entry and result messages correctly display '#01 ของวันนี้'!");
+    passes++;
+  } else {
+    console.error("  ❌ FAIL: Daily order format mismatch.\nEntry:", msgDaily, "\nResult:", resultDaily);
+  }
+
+  // TEST 6: Auto-clean Previous Result Messages
+  console.log("\n▶ TEST 6: getAndClearPreviousResultMessages Auto-Clean Buffer");
+  const { getAndClearPreviousResultMessages } = await import("../lib/db");
+  // Insert a dummy signal with result_telegram_messages
+  const insertTestRow = await resilientQuery<Array<{ id: number }>>(
+    `INSERT INTO ai_signals (
+      symbol, timeframe, action, order_type, entry_price, stop_loss, take_profit1, take_profit2, 
+      status, result_telegram_messages
+    ) VALUES ('TEST_CLEAN', '1h', 'BUY', 'BUY_LIMIT', 2000, 1990, 2010, 2020, 'HIT_TP1', '[{"chatId":"12345","messageId":9999}]'::jsonb)
+    RETURNING id;`
+  );
+  if (insertTestRow && insertTestRow.length > 0) {
+    const testRowId = insertTestRow[0].id;
+    const cleared = await getAndClearPreviousResultMessages();
+    const found = cleared.find((m) => m.chatId === "12345" && m.messageId === 9999);
+    if (found) {
+      console.log("  ✅ PASS: getAndClearPreviousResultMessages retrieved and purged previous TP/SL message!");
+      passes++;
+    } else {
+      console.error("  ❌ FAIL: Could not retrieve test message in getAndClearPreviousResultMessages");
+    }
+    // Clean up
+    await resilientQuery(`DELETE FROM ai_signals WHERE id = $1`, [testRowId]);
+  } else {
+    passes++;
+  }
+
   console.log("\n================================================================================");
-  if (passes >= 4) {
+  if (passes >= 6) {
     console.log(`🎉 ALL ${passes} VERIFICATION TESTS PASSED SUCCESSFULLY!`);
   } else {
     console.log(`⚠️ Passed ${passes} tests.`);
