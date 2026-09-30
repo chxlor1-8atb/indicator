@@ -1770,7 +1770,7 @@ double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice,
 {
    double balance = m_account.Balance();
    if(balance <= 0) balance = m_account.Equity();
-   if(balance < 35.0) return 0.01; // Micro Capital Safe Armor ($10 - $35 strictly 0.01 lot)
+   if(balance < 25.0) return 0.01; // Micro Capital Safe Armor ($10 - $24 strictly 0.01 lot)
 
    double point = SymbolInfoDouble(sym, SYMBOL_POINT);
    double pMult = GetPipMultiplier(sym);
@@ -1804,13 +1804,19 @@ double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice,
    double pipVal = (StringFind(sym, "XAU") >= 0 || StringFind(sym, "GOLD") >= 0 || pMult == 10000.0) ? 10.0 : 1.0;
    double targetLot = dollarRisk / (slPips * pipVal);
 
-   // Tiered Compounding Floor (ensures account scales smoothly from $35 up to institutional size)
-   if(balance >= 35.0 && targetLot < 0.02) targetLot = 0.02;
-   if(balance >= 75.0 && targetLot < 0.03) targetLot = 0.03;
-   if(balance >= 120.0 && targetLot < 0.05) targetLot = 0.05;
-   if(balance >= 250.0 && targetLot < 0.10) targetLot = 0.10;
-   if(balance >= 500.0 && targetLot < 0.20) targetLot = 0.20;
-   if(balance >= 1000.0 && targetLot < 0.40) targetLot = 0.40;
+   // 14-Step Hyper-Growth Staircase Floor ($10 -> $20 -> $30 -> $40 -> $50 -> $60 -> $70 -> $80 -> $90 -> $100 -> $200 -> $300 -> $400 -> $500 -> $600+)
+   if(balance >= 40.0 && targetLot < 0.02) targetLot = 0.02;
+   if(balance >= 60.0 && targetLot < 0.03) targetLot = 0.03;
+   if(balance >= 80.0 && targetLot < 0.04) targetLot = 0.04;
+   if(balance >= 100.0 && targetLot < 0.05) targetLot = 0.05;
+   if(balance >= 150.0 && targetLot < 0.07) targetLot = 0.07;
+   if(balance >= 200.0 && targetLot < 0.10) targetLot = 0.10;
+   if(balance >= 300.0 && targetLot < 0.15) targetLot = 0.15;
+   if(balance >= 400.0 && targetLot < 0.20) targetLot = 0.20;
+   if(balance >= 500.0 && targetLot < 0.25) targetLot = 0.25;
+   if(balance >= 600.0 && targetLot < 0.30) targetLot = 0.30;
+   if(balance >= 800.0 && targetLot < 0.40) targetLot = 0.40;
+   if(balance >= 1000.0 && targetLot < 0.50) targetLot = 0.50;
    if(balance >= 2500.0 && targetLot < 1.00) targetLot = 1.00;
    if(balance >= 5000.0 && targetLot < 2.00) targetLot = 2.00;
    if(balance >= 10000.0 && targetLot < 4.00) targetLot = 4.00;
