@@ -1108,3 +1108,79 @@ export function calculateMicroCompoundPlan(balance: number = 10): MicroCompoundP
     ],
   };
 }
+
+export interface DeltaNeutralHedgeOptions {
+  symbol: string;
+  bias: "BUY" | "SELL";
+  entryPrice: number;
+  currentPrice: number;
+  floatingPnlUSD: number;
+  accountBalance: number;
+  stopLossPrice: number;
+  triggerLossPct?: number; // default 1.5%
+  minAdversePips?: number;  // default 14.0 pips
+  pipMultiplier?: number;
+}
+
+export interface DeltaNeutralHedgeResult {
+  shouldHedge: boolean;
+  hedgeBias: "BUY" | "SELL";
+  adversePips: number;
+  lossPct: number;
+  frozenLossUSD: number;
+  reason: string;
+  statusDescription: string;
+}
+
+/**
+ * Pillar 6: Delta-Neutral Emergency Hedging Engine
+ * Evaluates whether an adverse market excursion threatens excessive drawdown,
+ * and signals an immediate equal-and-opposite hedge order to freeze net portfolio delta.
+ */
+export function evaluateDeltaNeutralHedge(options: DeltaNeutralHedgeOptions): DeltaNeutralHedgeResult {
+  const {
+    symbol,
+    bias,
+    entryPrice,
+    currentPrice,
+    floatingPnlUSD,
+    accountBalance,
+    triggerLossPct = 1.5,
+    minAdversePips = 14.0,
+  } = options;
+
+  const isBuy = bias === "BUY";
+  let pipMult = options.pipMultiplier;
+  if (!pipMult) {
+    const s = symbol.toUpperCase();
+    if (s.includes("XAU") || s.includes("GOLD")) pipMult = 10;
+    else if (s.includes("JPY")) pipMult = 100;
+    else if (s.includes("USDT") || s.includes("BTC") || s.includes("ETH")) pipMult = 1;
+    else pipMult = 10000;
+  }
+
+  const adversePips = isBuy ? (entryPrice - currentPrice) * pipMult : (currentPrice - entryPrice) * pipMult;
+  const lossPct = accountBalance > 0 && floatingPnlUSD < 0 ? (Math.abs(floatingPnlUSD) / accountBalance) * 100 : 0;
+
+  if (lossPct >= triggerLossPct && adversePips >= minAdversePips) {
+    return {
+      shouldHedge: true,
+      hedgeBias: isBuy ? "SELL" : "BUY",
+      adversePips: Number(adversePips.toFixed(1)),
+      lossPct: Number(lossPct.toFixed(2)),
+      frozenLossUSD: Number(Math.abs(floatingPnlUSD).toFixed(2)),
+      reason: `Adverse move of -${adversePips.toFixed(1)} pips (-${lossPct.toFixed(2)}% DD >= ${triggerLossPct}% threshold)`,
+      statusDescription: `🛡️ Delta-Neutral Freeze Triggered: Net floating loss frozen at -$${Math.abs(floatingPnlUSD).toFixed(2)} USD`,
+    };
+  }
+
+  return {
+    shouldHedge: false,
+    hedgeBias: isBuy ? "SELL" : "BUY",
+    adversePips: Math.max(0, Number(adversePips.toFixed(1))),
+    lossPct: Number(lossPct.toFixed(2)),
+    frozenLossUSD: 0,
+    reason: "Normal operating boundaries (Drawdown within safe limits)",
+    statusDescription: "Hedge inactive (risk within normal threshold)",
+  };
+}

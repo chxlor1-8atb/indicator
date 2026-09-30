@@ -128,6 +128,12 @@ input int                InpMaxOpenPositions      = 3;                      // �
 input bool               InpEnableEquityShield    = true;                   // เปิดเกราะ Equity Shield ปิดทุกไม้ทันทีเมื่อ Equity หลุดเส้นแดง
 input double             InpEquityShieldPct       = 8.0;                    // เส้นแดง Equity Shield: หาก Equity ลดลงรวมเกิน N% จากจุดเริ่มต้นวัน ปิดหมดทันที
 
+input group "=== 🛡️ DELTA-NEUTRAL HEDGING & DRAWDOWN FREEZE ==="
+input bool               InpEnableDeltaNeutralHedge = true;                 // เปิดระบบล็อก Drawdown อัตโนมัติ (Delta-Neutral Freeze) เมื่อโดนลาก
+input double             InpHedgeTriggerLossPct    = 1.5;                  // ขาดทุนลอยตัวของไม้ (%) ที่จะเริ่มเปิดออเดอร์ Hedge ตรงข้าม
+input double             InpHedgeMinPips           = 14.0;                 // ระยะลากขั้นต่ำ (Pips) ก่อนเปิด Hedge เพื่อไม่ให้ Hedge ไวเกินไป
+input bool               InpAutoDeHedgeOnReversal  = true;                 // สั่งปิดไม้ Hedge ทำกำไรอัตโนมัติเมื่อเกิดแท่งกลับตัวสถาบัน (Rejection Wick > 40%)
+
 input group "=== ⏰ SESSION & TIME FILTER ==="
 input bool               InpEnableTimeFilter  = true;                   // เปิดตัวกรองเวลาเทรด
 input bool               InpAsianBoxShield    = true;                   // บล็อกการเทรดกรอบ Box ช่วงเอเชียและก่อนเปิดลอนดอน (06:00 - 14:00 น. Win Rate 93.1%)
@@ -178,6 +184,9 @@ input bool               InpEnableAdaptiveSpread    = true;  // ปรับเ�
 input bool               InpEnableJudasSwing        = true;  // ปลดล็อค Judas Swing Reversal ช่วง 12:00-13:59 (เวลาไทย)
 input bool               InpEnableMacroPullbackPass = true;  // อนุญาต Pullback Scalp เข้าหา Macro Equilibrium Zone
 input double             InpFrontRunBufferPips      = 1.0;   // ดักราคาก่อนถึง Limit (Front-Run Buffer) กันตกรถ
+input bool               InpEnableTickVelocityFilter= true;  // ตรวจจับความเร็วการยิง Tick สถาบัน (Tick Velocity Filter)
+input double             InpMinTickVelocity         = 1.5;   // ความเร็วขั้นต่ำ (Ticks/Sec) ยืนยันว่าไม่ใช่ตลาดตายก่อนเข้า Market Order
+input bool               InpEnableAdxBreakoutGuard  = true;  // กรองความชัน ADX ป้องกันเปิดสวนเทรนด์ช่วงกรอบแตก (Trend Re-ignition Guard)
 
 input group "=== 📊 ON-CHART VISUAL LEVELS ==="
 input bool               InpDrawChartLevels   = true;                   // วาดเส้น Entry, SL, TP1, TP2 ลงบนกราฟ
@@ -222,6 +231,7 @@ int            hEMA50 = INVALID_HANDLE;
 int            hATR   = INVALID_HANDLE;
 int            hMtfEMA21 = INVALID_HANDLE;
 int            hMtfEMA55 = INVALID_HANDLE;
+int            hADX   = INVALID_HANDLE;
 
 //--- State Variables
 datetime m_lastPollTime           = 0;
@@ -295,6 +305,17 @@ double   m_basketPeakFloatingPnl = 0.0;
 bool     m_basketLocked          = false;
 string   m_basketLockReason      = "";
 
+// Tick Speed Velocity State
+datetime m_velocityWindowStart   = 0;
+int      m_velocityTickCount     = 0;
+double   m_currentTickVelocity   = 0.0;
+
+// Delta-Neutral Emergency Hedge State
+bool     m_isHedgeActive         = false;
+ulong    m_hedgeTicket           = 0;
+ulong    m_primaryHedgeTicket    = 0;
+double   m_frozenDrawdownUSD     = 0.0;
+
 // GUI Object Name Prefix
 
 #define GUI_PREFIX "AegisHUD_"
@@ -310,6 +331,8 @@ string ResolveBrokerSymbol(string canonicalSym);
 void   NotifyBridgeOrderEvent(string orderId, string action, double execPrice, double profitPips, string sym = "");
 void   ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots, string targetSym = "", string optFlags = "");
 double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice, double fallbackLot);
+void   UpdateTickSpeedVelocity();
+void   CheckDeltaNeutralHedge();
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -360,6 +383,7 @@ int OnInit()
    hATR   = iATR(_Symbol, _Period, 14);
    hMtfEMA21 = iMA(_Symbol, PERIOD_H1, 21, 0, MODE_EMA, PRICE_CLOSE);
    hMtfEMA55 = iMA(_Symbol, PERIOD_H1, 55, 0, MODE_EMA, PRICE_CLOSE);
+   hADX   = iADX(_Symbol, _Period, 14);
 
    if(InpShowGUI)
    {
@@ -383,6 +407,7 @@ void OnDeinit(const int reason)
    if(hATR != INVALID_HANDLE)   { IndicatorRelease(hATR);   hATR = INVALID_HANDLE; }
    if(hMtfEMA21 != INVALID_HANDLE) { IndicatorRelease(hMtfEMA21); hMtfEMA21 = INVALID_HANDLE; }
    if(hMtfEMA55 != INVALID_HANDLE) { IndicatorRelease(hMtfEMA55); hMtfEMA55 = INVALID_HANDLE; }
+   if(hADX != INVALID_HANDLE)   { IndicatorRelease(hADX);   hADX = INVALID_HANDLE; }
    
    ClearChartTradeLevels();
    DestroyDashboardGUI();
@@ -820,6 +845,183 @@ void CheckFlashVolatilitySpike()
 }
 
 //+------------------------------------------------------------------+
+//| Update Rolling Tick Speed Velocity (Ticks / Second)              |
+//+------------------------------------------------------------------+
+void UpdateTickSpeedVelocity()
+{
+   datetime now = TimeCurrent();
+   if(m_velocityWindowStart == 0)
+   {
+      m_velocityWindowStart = now;
+      m_velocityTickCount = 1;
+      return;
+   }
+
+   int elapsed = (int)(now - m_velocityWindowStart);
+   if(elapsed >= 1)
+   {
+      m_currentTickVelocity = (double)m_velocityTickCount / (double)elapsed;
+      m_velocityWindowStart = now;
+      m_velocityTickCount = 1;
+   }
+   else
+   {
+      m_velocityTickCount++;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Pillar 6: Delta-Neutral Emergency Hedging Engine                 |
+//| Freezes portfolio drawdown when an adverse move threatens loss   |
+//+------------------------------------------------------------------+
+void CheckDeltaNeutralHedge()
+{
+   if(!InpEnableDeltaNeutralHedge) return;
+   if(PositionsTotal() == 0)
+   {
+      m_isHedgeActive = false;
+      m_hedgeTicket = 0;
+      m_primaryHedgeTicket = 0;
+      m_frozenDrawdownUSD = 0.0;
+      return;
+   }
+
+   double balance = m_account.Balance();
+   if(balance <= 0) balance = m_account.Equity();
+
+   // 1. Check if we already have an active hedge position
+   bool hasActiveHedge = false;
+   ulong activeHedgeTicket = 0;
+   double hedgeProfit = 0.0;
+   string hedgeSymbol = "";
+   bool hedgeIsBuy = false;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      if(m_position.SelectByIndex(i))
+      {
+         if(m_position.Magic() == InpMagicNumber)
+         {
+            string comm = PositionGetString(POSITION_COMMENT);
+            if(StringFind(comm, "HEDGE") >= 0)
+            {
+               hasActiveHedge = true;
+               activeHedgeTicket = m_position.Ticket();
+               hedgeProfit = m_position.Profit() + m_position.Swap() + m_position.Commission();
+               hedgeSymbol = m_position.Symbol();
+               hedgeIsBuy = (m_position.PositionType() == POSITION_TYPE_BUY);
+               break;
+            }
+         }
+      }
+   }
+
+   // 2. If hedge is active, evaluate De-Hedge Protocol (Exit hedge with profit when market reverses)
+   if(hasActiveHedge && activeHedgeTicket > 0)
+   {
+      m_isHedgeActive = true;
+      m_hedgeTicket = activeHedgeTicket;
+
+      if(InpAutoDeHedgeOnReversal && hedgeProfit > 0)
+      {
+         MqlRates rates[2];
+         if(CopyRates(hedgeSymbol, PERIOD_M5, 0, 2, rates) == 2)
+         {
+            double range = rates[0].high - rates[0].low;
+            if(range > 0)
+            {
+               bool isBullishReversal = (!hedgeIsBuy && ((MathMin(rates[0].open, rates[0].close) - rates[0].low) / range) >= 0.40);
+               bool isBearishReversal = (hedgeIsBuy && ((rates[0].high - MathMax(rates[0].open, rates[0].close)) / range) >= 0.40);
+
+               if(isBullishReversal || isBearishReversal)
+               {
+                  PrintFormat("🛡️ [De-Hedge Protocol] Institutional rejection wick detected! Closing Hedge ticket #%I64d with +$%.2f profit to unfreeze delta.",
+                              activeHedgeTicket, hedgeProfit);
+                  if(m_trade.PositionClose(activeHedgeTicket))
+                  {
+                     m_isHedgeActive = false;
+                     m_hedgeTicket = 0;
+                     m_primaryHedgeTicket = 0;
+                     m_frozenDrawdownUSD = 0.0;
+                     return;
+                  }
+               }
+            }
+         }
+      }
+      return;
+   }
+
+   // 3. If NO hedge is active, scan for positions suffering adverse excursion >= InpHedgeTriggerLossPct
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      if(m_position.SelectByIndex(i))
+      {
+         if(m_position.Magic() == InpMagicNumber)
+         {
+            string posSym = m_position.Symbol();
+            if(posSym != _Symbol && !InpOneChartMultiSymbol) continue;
+
+            string comm = PositionGetString(POSITION_COMMENT);
+            if(StringFind(comm, "HEDGE") >= 0 || StringFind(comm, "PYRAMID") >= 0) continue;
+
+            double floatingPnl = m_position.Profit() + m_position.Swap() + m_position.Commission();
+            double lossPct = (floatingPnl < 0) ? (MathAbs(floatingPnl) / balance) * 100.0 : 0.0;
+
+            double openPrice = m_position.PriceOpen();
+            double curPrice  = m_position.PriceCurrent();
+            bool isBuy       = (m_position.PositionType() == POSITION_TYPE_BUY);
+            double point     = SymbolInfoDouble(posSym, SYMBOL_POINT);
+            double pipMult   = GetPipMultiplier(posSym);
+            double adversePips = isBuy ? (openPrice - curPrice) * pipMult : (curPrice - openPrice) * pipMult;
+
+            // Trigger Delta-Neutral Hedge if loss reaches threshold
+            if(lossPct >= InpHedgeTriggerLossPct && adversePips >= InpHedgeMinPips)
+            {
+               ulong primTicket = m_position.Ticket();
+               double hedgeLot  = m_position.Volume();
+               double ask       = SymbolInfoDouble(posSym, SYMBOL_ASK);
+               double bid       = SymbolInfoDouble(posSym, SYMBOL_BID);
+               double hedgePrice= isBuy ? bid : ask;
+               ENUM_ORDER_TYPE hType = isBuy ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+
+               PrintFormat("🛡️ [Delta-Neutral Hedge Triggered] Primary ticket #%I64d on %s is in -%.1f pips (-%.2f%% DD). Opening %.2f lot %s hedge to freeze drawdown!",
+                           primTicket, posSym, adversePips, lossPct, hedgeLot, EnumToString(hType));
+
+               MqlTradeRequest hReq;
+               MqlTradeResult  hRes;
+               ZeroMemory(hReq);
+               ZeroMemory(hRes);
+               hReq.action       = TRADE_ACTION_DEAL;
+               hReq.symbol       = posSym;
+               hReq.volume       = hedgeLot;
+               hReq.type         = hType;
+               hReq.price        = hedgePrice;
+               hReq.deviation    = InpSlippagePips;
+               hReq.magic        = InpMagicNumber;
+               hReq.comment      = "Aegis-HEDGE";
+               hReq.type_filling = ORDER_FILLING_IOC;
+
+               if(OrderSend(hReq, hRes))
+               {
+                  if(hRes.retcode == TRADE_RETCODE_DONE)
+                  {
+                     m_isHedgeActive = true;
+                     m_hedgeTicket = hRes.order;
+                     m_primaryHedgeTicket = primTicket;
+                     m_frozenDrawdownUSD = MathAbs(floatingPnl);
+                     PrintFormat("✅ [Hedge Frozen] Hedge ticket #%I64d successfully locked net exposure on %s. Net Drawdown Frozen at -$%.2f!",
+                                 hRes.order, posSym, m_frozenDrawdownUSD);
+                     break;
+                  }
+               }
+            }
+         }
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
 //| Timer event handler                                              |
 //+------------------------------------------------------------------+
 void OnTimer()
@@ -842,8 +1044,10 @@ void OnTimer()
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   UpdateTickSpeedVelocity();
    CheckDailyDrawdownGuard();
    CheckFlashVolatilitySpike();
+   CheckDeltaNeutralHedge();
    ManageActivePositions();
    if(InpShowGUI && !m_isMinimized)
    {
@@ -1249,6 +1453,22 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       }
    }
 
+   // 1b2. ADX Trend Re-ignition Expansion Guard (Block Box counter-trend entry if ADX is surging)
+   if(InpEnableAdxBreakoutGuard && hADX != INVALID_HANDLE && (StringFind(typeStr, "BOX") >= 0 || m_lastDefenseReason == "BOX" || StringFind(optFlags, "BOX") >= 0))
+   {
+      double adxValues[2];
+      if(CopyBuffer(hADX, 0, 0, 2, adxValues) == 2)
+      {
+         double adxSlope = adxValues[0] - adxValues[1];
+         if(adxSlope > 1.2 && adxValues[0] > 18.0 && m_setupGrade != "A+")
+         {
+            PrintFormat("🛡️ [ADX Re-ignition Guard] Suppressed Box counter-trend order %s on %s (ADX Slope +%.2f | ADX: %.1f > 18.0) — explosive breakout underway!",
+                        orderId, targetSym, adxSlope, adxValues[0]);
+            return;
+         }
+      }
+   }
+
    // 1c. US Cash Open Volatility Spike Freeze (20:25 - 21:45 Thai Time)
    if(InpEnableScalpSniper && InpUsOpenSpikeFreeze && _Period <= PERIOD_M15)
    {
@@ -1428,6 +1648,16 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
    string comment = "Aegis_" + StringSubstr(orderId, StringLen(orderId)-6);
    double currentMarket = isBuy ? ask : bid;
    double distPips = MathAbs(currentMarket - price) / (targetPoint * pipMult);
+
+   // 5b. Tick Speed Velocity & Slippage Armor:
+   // If market execution requested, but tick velocity indicates a dead-market liquidity vacuum (< InpMinTickVelocity),
+   // convert to Limit order to prevent broker slippage!
+   if(InpEnableTickVelocityFilter && m_currentTickVelocity > 0 && m_currentTickVelocity < InpMinTickVelocity && typeStr != "BUY_LIMIT" && typeStr != "SELL_LIMIT")
+   {
+      PrintFormat("⚡ [Tick Velocity Armor] Low liquidity (%.1f ticks/sec < %.1f threshold). Converting %s on %s to LIMIT order to prevent broker slippage!",
+                  m_currentTickVelocity, InpMinTickVelocity, typeStr, targetSym);
+      typeStr = isBuy ? "BUY_LIMIT" : "SELL_LIMIT";
+   }
 
    // Stealth Virtual SL / TP Preparation (Broker never sees real SL/TP!)
    double brokerSL = sl;
@@ -2733,11 +2963,12 @@ void UpdateDashboardGUI()
 
    // Status & Safeguards Row
    string timeStatus = IsTradingTimeAllowed() ? "OK" : "FREEZE";
-   string statusStr = StringFormat("• Harvest: %s | Time: %s | Retries: %d",
-                                   InpEnableEarlyHarvest ? "ON" : "OFF",
-                                   timeStatus, InpMaxOrderRetries);
+   string hedgeStatus = m_isHedgeActive ? "HEDGE: FROZEN 🛡️" : (InpEnableDeltaNeutralHedge ? "Hedge: ON" : "Hedge: OFF");
+   string statusStr = StringFormat("• %s | Ticks: %.1f/s | %s",
+                                   hedgeStatus, m_currentTickVelocity, timeStatus);
+   color statusClr = m_isHedgeActive ? clrAqua : (IsTradingTimeAllowed() ? clrSilver : clrOrange);
    ObjectSetString(0, GUI_PREFIX + "StatusVal", OBJPROP_TEXT, statusStr);
-   ObjectSetInteger(0, GUI_PREFIX + "StatusVal", OBJPROP_COLOR, IsTradingTimeAllowed() ? clrSilver : clrOrange);
+   ObjectSetInteger(0, GUI_PREFIX + "StatusVal", OBJPROP_COLOR, statusClr);
 
    ChartRedraw();
 }
