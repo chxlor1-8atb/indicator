@@ -34,6 +34,13 @@ enum ENUM_SINGLE_LOT_MODE
    SINGLE_LOT_RUNNER_TRAIL  = 1  // ขยับ SL ไป Breakeven (+1.5 pips) แล้วปล่อยรันไป TP2
 };
 
+enum ENUM_GUI_THEME
+{
+   THEME_DARK_CYBER     = 0, // Dark Cyber (Obsidian Black + Neon Emerald/Cyan)
+   THEME_STEALTH_SLATE  = 1, // Stealth Slate (Deep Slate + Royal Blue + Gold)
+   THEME_MIDNIGHT_NAVY  = 2  // Midnight Navy (Navy Blue + Electric Violet + Aqua)
+};
+
 //--- Input Parameters
 input group "=== 🌐 BRIDGE & SERVER SETTINGS ==="
 input string             InpServerUrl         = "http://localhost:3000"; // Server URL (อย่าใส่ / ต่อท้าย)
@@ -51,6 +58,7 @@ input group "=== 🎨 ON-CHART GUI DASHBOARD ==="
 input bool               InpShowGUI           = true;                    // เปิดแสดงหน้าต่าง Dashboard บนกราฟ
 input int                InpGuiX              = 20;                      // ตำแหน่งแกน X (พิกเซล)
 input int                InpGuiY              = 35;                      // ตำแหน่งแกน Y (พิกเซล)
+input ENUM_GUI_THEME     InpGuiTheme          = THEME_DARK_CYBER;        // ธีมสีหน้าต่าง (Dark Cyber / Stealth Slate / Midnight Navy)
 
 input group "=== 🔔 NOTIFICATIONS ==="
 input bool               InpSoundAlerts       = true;                    // เสียงแจ้งเตือน
@@ -1312,49 +1320,94 @@ void CreateDashboardGUI()
 {
    int x = InpGuiX;
    int y = InpGuiY;
-   int w = 270;
-   int h = 355;
+   int w = 285;
+   int h = 352;
 
-   // Main Background Panel (Dark Glassmorphism)
-   CreatePanel("BG", x, y, w, h, C'13,17,23', C'30,41,59', 2);
+   // Color Palette according to InpGuiTheme
+   color bgMain, borderMain, bgHeader, borderHeader;
+   color bgBoxNews, borderBoxNews, bgBoxConf, borderBoxConf, bgBoxRisk, borderBoxRisk;
+
+   if(InpGuiTheme == THEME_STEALTH_SLATE)
+   {
+      bgMain        = C'15,23,42';   // Slate 900
+      borderMain    = C'51,65,85';   // Slate 700
+      bgHeader      = C'30,41,59';   // Slate 800
+      borderHeader  = C'71,85,105';  // Slate 600
+      bgBoxNews     = C'24,33,47';   // Card 1
+      borderBoxNews = C'59,130,246';  // Blue
+      bgBoxConf     = C'24,33,47';   // Card 2
+      borderBoxConf = C'234,179,8';   // Amber
+      bgBoxRisk     = C'24,33,47';   // Card 3
+      borderBoxRisk = C'71,85,105';  // Slate
+   }
+   else if(InpGuiTheme == THEME_MIDNIGHT_NAVY)
+   {
+      bgMain        = C'8,14,30';    // Deep Navy
+      borderMain    = C'99,102,241';  // Indigo
+      bgHeader      = C'15,23,55';   // Navy header
+      borderHeader  = C'129,140,248'; // Indigo accent
+      bgBoxNews     = C'15,23,55';   // Card 1
+      borderBoxNews = C'129,140,248'; // Light Indigo
+      bgBoxConf     = C'15,23,55';   // Card 2
+      borderBoxConf = C'45,212,191';  // Teal
+      bgBoxRisk     = C'15,23,55';   // Card 3
+      borderBoxRisk = C'99,102,241';  // Indigo
+   }
+   else // THEME_DARK_CYBER (Default - High Contrast Neon Bloomberg Style)
+   {
+      bgMain        = C'11,15,25';   // Obsidian Black
+      borderMain    = C'30,58,138';  // Cobalt Blue
+      bgHeader      = C'17,24,39';   // Dark Slate
+      borderHeader  = C'30,41,59';   // Slate 800
+      bgBoxNews     = C'17,24,39';   // Card 1
+      borderBoxNews = C'14,165,233';  // Neon Sky Blue
+      bgBoxConf     = C'16,24,40';   // Card 2
+      borderBoxConf = C'16,185,129';  // Emerald Green
+      bgBoxRisk     = C'15,23,42';   // Card 3
+      borderBoxRisk = C'51,65,85';   // Slate
+   }
+
+   // Main Background Panel
+   CreatePanel("BG", x, y, w, h, bgMain, borderMain, 2);
 
    // Header Bar
-   CreatePanel("Header", x, y, w, 32, C'17,24,39', C'30,41,59', 1);
-   CreateLabel("Title", x + 10, y + 8, "🛡️ AEGIS QUANT TERMINAL v3.0", "Segoe UI", 9, clrWhite, true);
-   CreateButton("MinBtn", x + w - 26, y + 5, 20, 20, "─", clrLightSteelBlue, C'30,41,59');
+   CreatePanel("Header", x, y, w, 32, bgHeader, borderHeader, 1);
+   CreateLabel("Title", x + 10, y + 8, "🛡️ AEGIS QUANT TERMINAL", "Segoe UI", 9, clrWhite, true);
+   CreateLabel("VerBadge", x + 195, y + 9, "v3.0 PRO", "Consolas", 8, clrAqua);
+   CreateButton("MinBtn", x + w - 24, y + 5, 18, 20, "─", clrLightSteelBlue, C'30,41,59');
 
-   // Connection & Latency Status
-   CreateLabel("PingLbl", x + 10, y + 38, "BRIDGE: CONNECTING...", "Consolas", 8, clrDarkGray);
-
-   // Asset & Price
+   // Sub-Header: Connectivity & Market Pulse
+   CreateLabel("PingLbl", x + 10, y + 36, "BRIDGE: CONNECTING...", "Consolas", 8, clrDarkGray);
    string symDisplay = InpOneChartMultiSymbol ? StringFormat("%s [MULTI-CHART 🌐]", _Symbol) : _Symbol;
-   CreateLabel("AssetLbl", x + 10, y + 54, symDisplay + "  |  SPREAD: -- pips", "Segoe UI", 9, clrSilver, true);
+   CreateLabel("AssetLbl", x + 10, y + 50, symDisplay + "  |  SPREAD: -- pips", "Segoe UI", 9, clrSilver, true);
 
-   // Forex Factory News Shield HUD
-   CreateLabel("NewsLbl", x + 10, y + 72, "📰 FF NEWS: MONITORING...", "Segoe UI", 8, clrLightSkyBlue);
+   // Card 1: Forex Factory News Sentinel Box
+   CreatePanel("NewsBox", x + 8, y + 68, w - 16, 42, bgBoxNews, borderBoxNews, 1);
+   CreateLabel("NewsTitle", x + 14, y + 72, "📰 FOREX FACTORY NEWS SENTINEL:", "Segoe UI", 8, clrLightSkyBlue);
+   CreateLabel("NewsLbl", x + 14, y + 87, "MONITORING ECONOMIC CALENDAR...", "Segoe UI", 8, clrSilver, true);
 
-   // Confluence Score Box
-   CreatePanel("ConfBox", x + 10, y + 92, w - 20, 52, C'20,29,45', C'37,99,235', 1);
-   CreateLabel("ConfTitle", x + 18, y + 98, "CONFLUENCE SCORE & BIAS", "Segoe UI", 8, clrLightSkyBlue);
-   CreateLabel("ConfScore", x + 18, y + 114, "85.0% [A+] STRONG BUY", "Segoe UI", 11, clrLimeGreen, true);
+   // Card 2: 5-Pillar Confluence Score & Setup Plan Box
+   CreatePanel("ConfBox", x + 8, y + 114, w - 16, 60, bgBoxConf, borderBoxConf, 1);
+   CreateLabel("ConfTitle", x + 14, y + 118, "5-PILLAR INSTITUTIONAL CONFLUENCE:", "Segoe UI", 8, clrCyan);
+   CreateLabel("ConfScore", x + 14, y + 133, "▲ 85.0% [A+] STRONG BUY", "Segoe UI", 11, clrLimeGreen, true);
+   CreateLabel("SigDetail", x + 14, y + 154, "WAITING FOR PRIME SETUP...", "Consolas", 8, clrSilver);
 
-   // Milestone Tier & Capital Status
-   CreateLabel("TierTitle", x + 10, y + 152, "CAPITAL & DRAWDOWN GOVERNOR:", "Segoe UI", 8, clrDodgerBlue, true);
-   CreateLabel("TierVal", x + 10, y + 168, "• Tier 1: Foundation ($10-$50)", "Segoe UI", 8, clrWhite);
-   CreateLabel("GovVal", x + 10, y + 184, "• DD Governor: NORMAL (100% Lot)", "Segoe UI", 8, clrLimeGreen);
-   CreateLabel("MarginVal", x + 10, y + 200, "• Margin Cap: < 20% Safe", "Segoe UI", 8, clrSilver);
+   // Card 3: Milestone Compounding & Active Risk Telemetry
+   CreatePanel("RiskBox", x + 8, y + 178, w - 16, 76, bgBoxRisk, borderBoxRisk, 1);
+   CreateLabel("TierVal", x + 14, y + 182, "• Tier: Tier 1: Foundation ($10-$50)", "Segoe UI", 8, clrWhite);
+   CreateLabel("GovVal", x + 14, y + 198, "• Daily PnL: +0.0% (Max Risk: 4.0%)", "Segoe UI", 8, clrLimeGreen);
+   CreateLabel("FloatingPnlLbl", x + 14, y + 214, "• Floating: $0.00 (0.0 pips) | 0 Open", "Consolas", 8, clrAqua, true);
+   CreateLabel("StatusVal", x + 14, y + 230, "• Harvest: ON | Time: OK | Retries: 3", "Segoe UI", 8, clrSilver);
 
-   // Signal Telemetry Box
-   CreatePanel("SigBox", x + 10, y + 222, w - 20, 48, C'17,24,39', C'30,41,59', 1);
-   CreateLabel("SigTitle", x + 18, y + 227, "ACTIVE AI SIGNAL:", "Segoe UI", 8, clrYellow);
-   CreateLabel("SigDetail", x + 18, y + 244, "WAITING FOR PRIME SETUP...", "Segoe UI", 8, clrSilver);
+   // Interactive Buttons (Control Deck)
+   int btnW = (w - 24) / 3;
+   CreateButton("BtnMode", x + 8, y + 260, btnW, 28, "AUTO: ON", clrWhite, C'16,185,129', clrLimeGreen, 8);
+   CreateButton("BtnBuy", x + 12 + btnW, y + 260, btnW, 28, "BUY", clrWhite, C'37,99,235', clrDodgerBlue, 8);
+   CreateButton("BtnSell", x + 16 + (btnW * 2), y + 260, btnW, 28, "SELL", clrWhite, C'225,29,72', clrCrimson, 8);
+   CreateButton("BtnCloseAll", x + 8, y + 294, w - 16, 26, "🛑 EMERGENCY CLOSE ALL (PANIC)", clrGold, C'60,20,30', clrOrangeRed, 8);
 
-   // Interactive Buttons (One-Click Execution & Mode Toggle)
-   int btnW = (w - 28) / 3;
-   CreateButton("BtnMode", x + 10, y + 280, btnW, 26, "AUTO: ON", clrWhite, C'16,185,129');
-   CreateButton("BtnBuy", x + 14 + btnW, y + 280, btnW, 26, "BUY", clrWhite, C'37,99,235');
-   CreateButton("BtnSell", x + 18 + (btnW * 2), y + 280, btnW, 26, "SELL", clrWhite, C'225,29,72');
-   CreateButton("BtnCloseAll", x + 10, y + 312, w - 20, 24, "🛑 CLOSE ALL POSITIONS", clrOrange, C'30,41,59');
+   // Footer Subtext
+   CreateLabel("FooterLbl", x + 10, y + 328, "• 0ms Event Sync | Confluence Matrix | VSA Box", "Segoe UI", 7, C'100,116,139');
 
    ChartRedraw();
 }
@@ -1389,11 +1442,11 @@ void UpdateDashboardGUI()
    ObjectSetString(0, GUI_PREFIX + "PingLbl", OBJPROP_TEXT, pingStr);
    ObjectSetInteger(0, GUI_PREFIX + "PingLbl", OBJPROP_COLOR, pingClr);
 
-   // Spread
+   // Spread & Symbol
    double spreadPips = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point / GetPipMultiplier();
    string symDisplay = InpOneChartMultiSymbol ? StringFormat("%s [MULTI-CHART 🌐]", _Symbol) : _Symbol;
-   string assetStr = StringFormat("%s  |  SPREAD: %.1f pips", symDisplay, spreadPips);
-   color assetClr = (spreadPips > InpMaxSpreadPips) ? clrRed : clrSilver;
+   string assetStr = StringFormat("%s · %s  |  SPREAD: %.1f pips", symDisplay, EnumToString(_Period), spreadPips);
+   color assetClr = (spreadPips > InpMaxSpreadPips) ? clrRed : ((spreadPips <= 2.5) ? clrLimeGreen : clrGold);
    ObjectSetString(0, GUI_PREFIX + "AssetLbl", OBJPROP_TEXT, assetStr);
    ObjectSetInteger(0, GUI_PREFIX + "AssetLbl", OBJPROP_COLOR, assetClr);
 
@@ -1402,44 +1455,64 @@ void UpdateDashboardGUI()
    color newsClr = clrLimeGreen;
    if(!InpEnableNewsShield)
    {
-      newsStr = "📰 NEWS SHIELD: DISABLED";
+      newsStr = "[ OFF ] News Shield Disabled";
       newsClr = clrDarkGray;
    }
    else if(m_newsMinutesToNext == -999)
    {
-      newsStr = "📰 FF NEWS: MONITORING...";
+      newsStr = "[ MONITORING ] Economic Calendar...";
       newsClr = clrSilver;
    }
    else if(m_newsMinutesToNext > 60)
    {
-      newsStr = StringFormat("📰 FF NEWS: SAFE (%s in %dh)", m_newsTitle, (int)(m_newsMinutesToNext / 60));
+      newsStr = StringFormat("[ SAFE 🟢 ] %s in %dh", m_newsTitle, (int)(m_newsMinutesToNext / 60));
       newsClr = clrLimeGreen;
    }
    else if(m_newsMinutesToNext > InpNewsPreFreezeMins)
    {
-      newsStr = StringFormat("📰 FF NEWS: CAUTION (%s in %dm)", m_newsTitle, m_newsMinutesToNext);
+      newsStr = StringFormat("[ CAUTION 🟡 ] %s in %dm", m_newsTitle, m_newsMinutesToNext);
       newsClr = clrGold;
    }
    else if(m_newsMinutesToNext >= 0)
    {
-      newsStr = StringFormat("🚨 RED NEWS IN %dm! FREEZE LOCKED", m_newsMinutesToNext);
+      newsStr = StringFormat("[ 🚨 FREEZE %dm ] %s (AUTO-BE LOCKED)", m_newsMinutesToNext, m_newsTitle);
       newsClr = clrCrimson;
    }
    else if(m_newsMinutesToNext >= -15)
    {
-      newsStr = StringFormat("⚡ POST-NEWS SNIPER (%dm ago)", (int)MathAbs(m_newsMinutesToNext));
+      newsStr = StringFormat("[ ⚡ POST-NEWS SNIPER ] (%dm ago)", (int)MathAbs(m_newsMinutesToNext));
       newsClr = clrCyan;
    }
    else
    {
-      newsStr = "📰 FF NEWS: SAFE WINDOW 🟢";
+      newsStr = "[ SAFE 🟢 ] Safe Trading Window";
       newsClr = clrLimeGreen;
    }
    ObjectSetString(0, GUI_PREFIX + "NewsLbl", OBJPROP_TEXT, newsStr);
    ObjectSetInteger(0, GUI_PREFIX + "NewsLbl", OBJPROP_COLOR, newsClr);
 
-   // Milestone Tier & Daily Drawdown Status
-   ObjectSetString(0, GUI_PREFIX + "TierVal", OBJPROP_TEXT, "• " + m_lastTierName);
+   // Confluence Score & Setup Bias Display
+   string dirArrow = (StringFind(m_lastOrderType, "BUY") >= 0) ? "▲ " : ((StringFind(m_lastOrderType, "SELL") >= 0) ? "▼ " : "◆ ");
+   string confText = StringFormat("%s%.1f%% [%s] %s", dirArrow, m_confluenceScore, m_setupGrade, (m_lastOrderType != "NONE" ? m_lastOrderType : "STRONG BIAS"));
+   color confClr = (StringFind(m_lastOrderType, "BUY") >= 0) ? clrLimeGreen : ((StringFind(m_lastOrderType, "SELL") >= 0) ? clrCrimson : clrGold);
+   ObjectSetString(0, GUI_PREFIX + "ConfScore", OBJPROP_TEXT, confText);
+   ObjectSetInteger(0, GUI_PREFIX + "ConfScore", OBJPROP_COLOR, confClr);
+
+   // Active AI Signal Detail
+   if(m_lastOrderType != "NONE" && m_lastOrderStatus != "IDLE")
+   {
+      string sigText = StringFormat("Plan: %s @ %.2f | SL: %.2f | Lot: %.2f", m_lastOrderType, m_lastOrderPrice, m_lastOrderSL, m_lastOrderLot);
+      ObjectSetString(0, GUI_PREFIX + "SigDetail", OBJPROP_TEXT, sigText);
+      ObjectSetInteger(0, GUI_PREFIX + "SigDetail", OBJPROP_COLOR, (StringFind(m_lastOrderType, "BUY") >= 0) ? clrLimeGreen : clrCrimson);
+   }
+   else
+   {
+      ObjectSetString(0, GUI_PREFIX + "SigDetail", OBJPROP_TEXT, "WAITING FOR PRIME SETUP...");
+      ObjectSetInteger(0, GUI_PREFIX + "SigDetail", OBJPROP_COLOR, clrSilver);
+   }
+
+   // Milestone Tier & Capital Status
+   ObjectSetString(0, GUI_PREFIX + "TierVal", OBJPROP_TEXT, "• Tier: " + m_lastTierName);
 
    string govStr = "";
    color govClr = clrLimeGreen;
@@ -1447,7 +1520,7 @@ void UpdateDashboardGUI()
    {
       double currentEq = AccountInfoDouble(ACCOUNT_EQUITY);
       double dPnl = ((currentEq - m_dayStartEquity) / m_dayStartEquity) * 100.0;
-      govStr = StringFormat("• Daily PnL: %+.1f%% (Cap: -%.1f%%)", dPnl, InpMaxDailyLossPct);
+      govStr = StringFormat("• Daily PnL: %+.1f%% (Max Risk: -%.1f%%)", dPnl, InpMaxDailyLossPct);
       govClr = (dPnl >= 0) ? clrLimeGreen : (dPnl <= -InpMaxDailyLossPct * 0.7) ? clrOrangeRed : clrGold;
    }
    else
@@ -1458,24 +1531,45 @@ void UpdateDashboardGUI()
    ObjectSetString(0, GUI_PREFIX + "GovVal", OBJPROP_TEXT, govStr);
    ObjectSetInteger(0, GUI_PREFIX + "GovVal", OBJPROP_COLOR, govClr);
 
-   string timeStatus = IsTradingTimeAllowed() ? "OK" : "FREEZE";
-   string harvestStr = InpEnableEarlyHarvest ? StringFormat("• Harvest: ON | Time: %s", timeStatus)
-                                             : StringFormat("• Harvest: OFF | Time: %s", timeStatus);
-   ObjectSetString(0, GUI_PREFIX + "MarginVal", OBJPROP_TEXT, harvestStr);
-   ObjectSetInteger(0, GUI_PREFIX + "MarginVal", OBJPROP_COLOR, IsTradingTimeAllowed() ? clrAqua : clrOrange);
+   // Real-Time Floating PnL of EA Positions
+   double totalFloatingProfit = 0.0;
+   double totalFloatingPips   = 0.0;
+   int openCount = 0;
 
-   // Signal detail
-   if(m_lastOrderType != "NONE" && m_lastOrderStatus != "IDLE")
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
-      string sigText = StringFormat("%s @ %.2f | Lot: %.2f", m_lastOrderType, m_lastOrderPrice, m_lastOrderLot);
-      ObjectSetString(0, GUI_PREFIX + "SigDetail", OBJPROP_TEXT, sigText);
-      ObjectSetInteger(0, GUI_PREFIX + "SigDetail", OBJPROP_COLOR, (StringFind(m_lastOrderType, "BUY") >= 0) ? clrLimeGreen : clrCrimson);
+      if(m_position.SelectByIndex(i))
+      {
+         bool isMatch = InpOneChartMultiSymbol ? true : (m_position.Symbol() == _Symbol);
+         if(isMatch && m_position.Magic() == InpMagicNumber)
+         {
+            openCount++;
+            totalFloatingProfit += m_position.Profit();
+            string pSym = m_position.Symbol();
+            double pMult = GetPipMultiplier(pSym);
+            double curPrice = m_position.PriceCurrent();
+            double opPrice  = m_position.PriceOpen();
+            double pips = (m_position.PositionType() == POSITION_TYPE_BUY)
+                          ? (curPrice - opPrice) * pMult
+                          : (opPrice - curPrice) * pMult;
+            totalFloatingPips += pips;
+         }
+      }
    }
-   else
-   {
-      ObjectSetString(0, GUI_PREFIX + "SigDetail", OBJPROP_TEXT, "WAITING FOR PRIME SETUP...");
-      ObjectSetInteger(0, GUI_PREFIX + "SigDetail", OBJPROP_COLOR, clrSilver);
-   }
+
+   string floatStr = StringFormat("• Floating: %+$0.2f (%+.1f pips) | %d Open",
+                                  totalFloatingProfit, totalFloatingPips, openCount);
+   color floatClr = (totalFloatingProfit > 0) ? clrLimeGreen : (totalFloatingProfit < 0 ? clrCrimson : clrSilver);
+   ObjectSetString(0, GUI_PREFIX + "FloatingPnlLbl", OBJPROP_TEXT, floatStr);
+   ObjectSetInteger(0, GUI_PREFIX + "FloatingPnlLbl", OBJPROP_COLOR, floatClr);
+
+   // Status & Safeguards Row
+   string timeStatus = IsTradingTimeAllowed() ? "OK" : "FREEZE";
+   string statusStr = StringFormat("• Harvest: %s | Time: %s | Retries: %d",
+                                   InpEnableEarlyHarvest ? "ON" : "OFF",
+                                   timeStatus, InpMaxOrderRetries);
+   ObjectSetString(0, GUI_PREFIX + "StatusVal", OBJPROP_TEXT, statusStr);
+   ObjectSetInteger(0, GUI_PREFIX + "StatusVal", OBJPROP_COLOR, IsTradingTimeAllowed() ? clrSilver : clrOrange);
 
    ChartRedraw();
 }
@@ -1489,8 +1583,10 @@ void UpdateLiveTickDisplay()
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double spreadPips = (ask - bid) / (GetPipMultiplier() * _Point);
    string symDisplay = InpOneChartMultiSymbol ? StringFormat("%s [MULTI-CHART 🌐]", _Symbol) : _Symbol;
-   string assetStr = StringFormat("%s  |  SPREAD: %.1f pips", symDisplay, spreadPips);
+   string assetStr = StringFormat("%s · %s  |  SPREAD: %.1f pips", symDisplay, EnumToString(_Period), spreadPips);
+   color assetClr = (spreadPips > InpMaxSpreadPips) ? clrRed : ((spreadPips <= 2.5) ? clrLimeGreen : clrGold);
    ObjectSetString(0, GUI_PREFIX + "AssetLbl", OBJPROP_TEXT, assetStr);
+   ObjectSetInteger(0, GUI_PREFIX + "AssetLbl", OBJPROP_COLOR, assetClr);
 }
 
 //+------------------------------------------------------------------+
@@ -1514,18 +1610,21 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
             m_currentMode = MODE_SEMI_AUTO;
             ObjectSetString(0, GUI_PREFIX + "BtnMode", OBJPROP_TEXT, "SEMI: ON");
             ObjectSetInteger(0, GUI_PREFIX + "BtnMode", OBJPROP_BGCOLOR, C'234,179,8'); // Amber
+            ObjectSetInteger(0, GUI_PREFIX + "BtnMode", OBJPROP_BORDER_COLOR, clrGold);
          }
          else if(m_currentMode == MODE_SEMI_AUTO)
          {
             m_currentMode = MODE_SIGNAL_ONLY;
             ObjectSetString(0, GUI_PREFIX + "BtnMode", OBJPROP_TEXT, "OFF");
             ObjectSetInteger(0, GUI_PREFIX + "BtnMode", OBJPROP_BGCOLOR, C'75,85,99'); // Gray
+            ObjectSetInteger(0, GUI_PREFIX + "BtnMode", OBJPROP_BORDER_COLOR, clrGray);
          }
          else
          {
             m_currentMode = MODE_FULL_AUTO;
             ObjectSetString(0, GUI_PREFIX + "BtnMode", OBJPROP_TEXT, "AUTO: ON");
             ObjectSetInteger(0, GUI_PREFIX + "BtnMode", OBJPROP_BGCOLOR, C'16,185,129'); // Emerald
+            ObjectSetInteger(0, GUI_PREFIX + "BtnMode", OBJPROP_BORDER_COLOR, clrLimeGreen);
          }
          ChartRedraw();
       }
@@ -1560,13 +1659,14 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 void ToggleMinimizeGUI(bool minimize)
 {
    int hide = minimize ? 0 : 1;
-   ObjectSetInteger(0, GUI_PREFIX + "BG", OBJPROP_YSIZE, minimize ? 32 : 355);
+   ObjectSetInteger(0, GUI_PREFIX + "BG", OBJPROP_YSIZE, minimize ? 32 : 352);
    ObjectSetString(0, GUI_PREFIX + "MinBtn", OBJPROP_TEXT, minimize ? "□" : "─");
 
    string elements[] = {
-      "PingLbl", "AssetLbl", "NewsLbl", "ConfBox", "ConfTitle", "ConfScore",
-      "TierTitle", "TierVal", "GovVal", "MarginVal", "SigBox",
-      "SigTitle", "SigDetail", "BtnMode", "BtnBuy", "BtnSell", "BtnCloseAll"
+      "VerBadge", "PingLbl", "AssetLbl", "NewsBox", "NewsTitle", "NewsLbl",
+      "ConfBox", "ConfTitle", "ConfScore", "SigDetail",
+      "RiskBox", "TierVal", "GovVal", "FloatingPnlLbl", "StatusVal",
+      "BtnMode", "BtnBuy", "BtnSell", "BtnCloseAll", "FooterLbl"
    };
 
    for(int i = 0; i < ArraySize(elements); i++)
@@ -1611,7 +1711,7 @@ void CreateLabel(string name, int x, int y, string text, string font, int fontSi
    ObjectSetInteger(0, objName, OBJPROP_SELECTABLE, false);
 }
 
-void CreateButton(string name, int x, int y, int w, int h, string text, color clr, color bg)
+void CreateButton(string name, int x, int y, int w, int h, string text, color clr, color bg, color borderClr=clrNONE, int fontSize=8)
 {
    string objName = GUI_PREFIX + name;
    ObjectDelete(0, objName);
@@ -1622,10 +1722,10 @@ void CreateButton(string name, int x, int y, int w, int h, string text, color cl
    ObjectSetInteger(0, objName, OBJPROP_YSIZE, h);
    ObjectSetString(0, objName, OBJPROP_TEXT, text);
    ObjectSetString(0, objName, OBJPROP_FONT, "Segoe UI");
-   ObjectSetInteger(0, objName, OBJPROP_FONTSIZE, 8);
+   ObjectSetInteger(0, objName, OBJPROP_FONTSIZE, fontSize);
    ObjectSetInteger(0, objName, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, objName, OBJPROP_BGCOLOR, bg);
-   ObjectSetInteger(0, objName, OBJPROP_BORDER_COLOR, clr);
+   ObjectSetInteger(0, objName, OBJPROP_BORDER_COLOR, (borderClr == clrNONE ? clr : borderClr));
    ObjectSetInteger(0, objName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, objName, OBJPROP_SELECTABLE, false);
 }
