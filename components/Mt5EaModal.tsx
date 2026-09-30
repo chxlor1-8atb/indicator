@@ -180,39 +180,47 @@ export default function Mt5EaModal({ isOpen, onClose }: Mt5EaModalProps) {
           </div>
 
           {/* 2. Direct Download Section */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-              <Download className="w-4 h-4 text-emerald-400" />
-              <span>2. ดาวน์โหลดไฟล์สำหรับ MetaTrader 5</span>
+            <div className="space-y-2">
+            <h4 className="text-xs font-bold text-white flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>2. ดาวน์โหลดไฟล์สำหรับ MetaTrader 5 (พร้อมใช้งานทันที)</span>
+              </span>
+              <span className="text-[10px] text-emerald-400 font-mono">
+                ⚡ ไม่ต้องกด Compile
+              </span>
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* Card 1: Main EA */}
-              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 hover:border-emerald-500/40 transition-all flex flex-col justify-between gap-2.5">
+              {/* Card 1: Main Compiled EA (.ex5 - Ready to Run) */}
+              <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-950/30 to-surface-100 border border-emerald-500/40 hover:border-emerald-400 transition-all flex flex-col justify-between gap-2.5 shadow-lg shadow-emerald-950/20">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      <FileCode className="w-4 h-4" />
+                    <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      <Cpu className="w-4 h-4" />
                     </div>
                     <div>
-                      <h5 className="text-xs font-bold text-white">Aegis_Quant_Terminal.mq5</h5>
-                      <span className="text-[10px] text-slate-400">ไฟล์ EA หลัก (พร้อม On-Chart GUI HUD)</span>
+                      <div className="flex items-center gap-1.5">
+                        <h5 className="text-xs font-bold text-white">Aegis_Quant_Terminal.ex5</h5>
+                        <span className="px-1.5 py-0.2 rounded text-[9px] bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">พร้อมรัน</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-300/80">ไฟล์สำเร็จรูป วางแล้วเทรดได้เลย</span>
                     </div>
                   </div>
-                  <p className="text-[10.5px] text-slate-400">
-                    นำไปวางในโฟลเดอร์ <code>MQL5/Experts/</code> แล้วกด Compile ใน MetaEditor
+                  <p className="text-[10.5px] text-slate-300">
+                    วางใน <code>MQL5/Experts/</code> แล้วกด Refresh ใน Navigator ลากลงกราฟได้ทันที
                   </p>
                 </div>
                 <a
-                  href="/api/download-ea?type=mq5"
-                  download="Aegis_Quant_Terminal.mq5"
-                  className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                  href="/api/download-ea?type=ex5"
+                  download="Aegis_Quant_Terminal.ex5"
+                  className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-900/30"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>ดาวน์โหลด EA (.mq5)</span>
+                  <span>ดาวน์โหลด EA พร้อมรัน (.ex5)</span>
                 </a>
               </div>
 
-              {/* Card 2: Preset Cent Account */}
+              {/* Card 2: 10-Year Gold Standard Preset */}
               <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 hover:border-amber-500/40 transition-all flex flex-col justify-between gap-2.5">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -220,75 +228,95 @@ export default function Mt5EaModal({ isOpen, onClose }: Mt5EaModalProps) {
                       <Sliders className="w-4 h-4" />
                     </div>
                     <div>
-                      <h5 className="text-xs font-bold text-white">Aegis_XAUUSD_Cent.set</h5>
-                      <span className="text-[10px] text-amber-300 font-medium">พรีเซ็ตพอร์ต $10-$50 (ทองคำ บัญชี Cent)</span>
+                      <h5 className="text-xs font-bold text-white">Aegis_Gold_Standard_Compound.set</h5>
+                      <span className="text-[10px] text-amber-300 font-medium">พรีเซ็ตทองคำ ทุน $10 - $50 (WR 90.7%)</span>
                     </div>
                   </div>
                   <p className="text-[10.5px] text-slate-400">
-                    ตั้งค่าความเสี่ยงระดับ 1,000 - 5,000 USC สำหรับปั้นพอร์ตเล็กอย่างปลอดภัย
+                    ระบบ Stealth SL/TP + Profit Martingale + Asian Box Shield วางใน <code>MQL5/Presets/</code>
                   </p>
                 </div>
                 <a
-                  href="/api/download-ea?type=set_cent"
-                  download="Aegis_XAUUSD_Cent.set"
+                  href="/api/download-ea?type=set_gold_compound"
+                  download="Aegis_Gold_Standard_Compound.set"
                   className="w-full py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>โหลด Preset Cent (.set)</span>
+                  <span>โหลด Preset ทองคำ ($10+)</span>
                 </a>
               </div>
 
-              {/* Card 3: Preset Forex Standard */}
+              {/* Card 3: One-Chart Multi-Symbol Preset */}
               <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 hover:border-blue-500/40 transition-all flex flex-col justify-between gap-2.5">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                      <Sliders className="w-4 h-4" />
+                      <Layers className="w-4 h-4" />
                     </div>
                     <div>
-                      <h5 className="text-xs font-bold text-white">Aegis_Forex_Standard.set</h5>
-                      <span className="text-[10px] text-blue-300 font-medium">พรีเซ็ต Forex Standard ($100+)</span>
+                      <h5 className="text-xs font-bold text-white">Aegis_MultiSymbol_AllInOne.set</h5>
+                      <span className="text-[10px] text-blue-300 font-medium">พรีเซ็ตเทรดหลายคู่เงินพร้อมกัน</span>
                     </div>
                   </div>
                   <p className="text-[10.5px] text-slate-400">
-                    ตั้งค่าสำหรับคู่เงิน EURUSD, GBPUSD, USDJPY สเปรดแคบ คุม Max Margin 20%
+                    เทรด Gold + Forex + Bitcoin + น้ำมัน พร้อมกันจากหน้าต่างกราฟเดียว
                   </p>
                 </div>
                 <a
-                  href="/api/download-ea?type=set_std"
-                  download="Aegis_Forex_Standard.set"
+                  href="/api/download-ea?type=set_multisymbol"
+                  download="Aegis_MultiSymbol_AllInOne.set"
                   className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>โหลด Preset Forex (.set)</span>
+                  <span>โหลด Preset Multi-Symbol (.set)</span>
                 </a>
               </div>
 
-              {/* Card 4: Installation Guide */}
+              {/* Card 4: 1-Click Auto-Installer Script */}
               <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 hover:border-indigo-500/40 transition-all flex flex-col justify-between gap-2.5">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                      <BookOpen className="w-4 h-4" />
+                      <Terminal className="w-4 h-4" />
                     </div>
                     <div>
-                      <h5 className="text-xs font-bold text-white">HOW_TO_INSTALL.md</h5>
-                      <span className="text-[10px] text-indigo-300 font-medium">คู่มือติดตั้งภาษาไทยฉบับจับมือทำ</span>
+                      <h5 className="text-xs font-bold text-white">install-mt5-ea.ps1</h5>
+                      <span className="text-[10px] text-indigo-300 font-medium">ตัวติดตั้งอัตโนมัติ (1-Click Installer)</span>
                     </div>
                   </div>
                   <p className="text-[10.5px] text-slate-400">
-                    คำอธิบายวิธีติดตั้ง การเปิดปุ่ม Algo Trading และวิธีใช้งานฟังก์ชันบนกราฟ
+                    ดับเบิลคลิกรันสคริปต์ ระบบจะตรวจหาโฟลเดอร์ MT5 และคัดลอกไฟล์ทั้งหมดให้อัตโนมัติ
                   </p>
                 </div>
                 <a
-                  href="/api/download-ea?type=guide"
-                  download="HOW_TO_INSTALL.md"
-                  className="w-full py-2 rounded-lg bg-surface-200 hover:bg-surface-300 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-slate-700"
+                  href="/api/download-ea?type=installer"
+                  download="install-mt5-ea.ps1"
+                  className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>ดาวน์โหลดคู่มือ (.md)</span>
+                  <span>โหลด 1-Click Installer (.ps1)</span>
                 </a>
               </div>
+            </div>
+
+            {/* Sub-links for Source Code & Guide */}
+            <div className="flex items-center justify-between px-1 pt-1 text-[11px] text-slate-400">
+              <a
+                href="/api/download-ea?type=mq5"
+                download="Aegis_Quant_Terminal.mq5"
+                className="hover:text-emerald-400 underline underline-offset-2 flex items-center gap-1"
+              >
+                <FileCode className="w-3.5 h-3.5" />
+                <span>ดาวน์โหลดซอร์สโค้ด MQL5 (.mq5)</span>
+              </a>
+              <a
+                href="/api/download-ea?type=guide"
+                download="HOW_TO_INSTALL.md"
+                className="hover:text-blue-400 underline underline-offset-2 flex items-center gap-1"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>คู่มือการใช้งาน (.md)</span>
+              </a>
             </div>
           </div>
 
