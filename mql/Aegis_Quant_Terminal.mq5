@@ -129,6 +129,13 @@ input bool               InpUsePendingOrders  = true;                   // ร�
 input int                InpPendingExpiryHours = 4;                     // อายุของ Pending Order ก่อนยกเลิก (ชั่วโมง)
 input double             InpMarketExecBufferPips = 2.0;                 // ถ้าราคาห่างจาก Limit ไม่เกินกี่ Pip ให้เข้า Market เลย
 
+input group "=== 🎯 INSTITUTIONAL PRECISION & ENTRY OPTIMIZER ==="
+input bool               InpEnableTwoStageExec      = true;  // เปิดโหมด Split Entry (50% Market + 50% Limit ที่ OTE)
+input bool               InpEnableAdaptiveSpread    = true;  // ปรับเพดานสเปรดตามคาดหวัง R:R (Spread EV Cushion)
+input bool               InpEnableJudasSwing        = true;  // ปลดล็อค Judas Swing Reversal ช่วง 12:00-13:59 (เวลาไทย)
+input bool               InpEnableMacroPullbackPass = true;  // อนุญาต Pullback Scalp เข้าหา Macro Equilibrium Zone
+input double             InpFrontRunBufferPips      = 1.0;   // ดักราคาก่อนถึง Limit (Front-Run Buffer) กันตกรถ
+
 input group "=== 📊 ON-CHART VISUAL LEVELS ==="
 input bool               InpDrawChartLevels   = true;                   // วาดเส้น Entry, SL, TP1, TP2 ลงบนกราฟ
 input color              InpColorEntry        = clrDodgerBlue;          // สีเส้น Entry
@@ -228,6 +235,7 @@ string   m_lastTierName         = "Tier 1: Foundation";
 string   m_lastGovernorStatus   = "NORMAL";
 double   m_confluenceScore      = 82.5;
 string   m_setupGrade           = "A+";
+string   m_lastOrderFlags       = "STANDARD";
 
 // Stealth Virtual SL / TP State (Hidden from Broker)
 double   m_stealthSL            = 0.0;
@@ -251,7 +259,7 @@ bool   IsSymbolMatching(string bridgeSym, string chartSym);
 bool   IsWatchlistSymbol(string sym);
 string ResolveBrokerSymbol(string canonicalSym);
 void   NotifyBridgeOrderEvent(string orderId, string action, double execPrice, double profitPips, string sym = "");
-void   ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots, string targetSym = "");
+void   ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots, string targetSym = "", string optFlags = "");
 double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice, double fallbackLot);
 
 //+------------------------------------------------------------------+
@@ -1019,6 +1027,7 @@ void ParseBridgeResponse(string responseText)
          string defense     = count >= 12 ? cols[11] : "NONE";
          string tier        = count >= 13 ? cols[12] : "Tier 1: Foundation";
          string governor    = count >= 14 ? cols[13] : "NORMAL";
+         string optFlags    = count >= 15 ? cols[14] : "STANDARD";
 
          // Multi-Symbol or Chart-Symbol Routing
          string targetBrokerSym = "";
@@ -1052,12 +1061,13 @@ void ParseBridgeResponse(string responseText)
                m_lastDefenseReason  = defense;
                m_lastTierName       = tier;
                m_lastGovernorStatus = governor;
+               m_lastOrderFlags     = optFlags;
             }
 
             // Execute if FULL_AUTO and not yet processed
             if(m_currentMode == MODE_FULL_AUTO && (status == "PENDING" || status == "FILLED"))
             {
-               ExecuteInstitutionalSignal(orderId, typeStr, price, sl, tp1, tp2, lots, targetBrokerSym);
+               ExecuteInstitutionalSignal(orderId, typeStr, price, sl, tp1, tp2, lots, targetBrokerSym, optFlags);
             }
          }
       }
@@ -1067,7 +1077,7 @@ void ParseBridgeResponse(string responseText)
 //+------------------------------------------------------------------+
 //| Execute or place order based on institutional criteria           |
 //+------------------------------------------------------------------+
-void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots, string targetSym = "")
+void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots, string targetSym = "", string optFlags = "")
 {
    if(targetSym == "") targetSym = _Symbol;
 
@@ -1104,11 +1114,20 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       datetime now = TimeCurrent();
       TimeToStruct(now, dt);
       int thaiHour = (dt.hour + 4) % 24; // Convert broker time to Thai time (UTC+7)
-      if(thaiHour >= 6 && thaiHour < 14 && m_setupGrade != "A+")
+      
+      // [APPROACH 3] Judas Swing Reversal Exception (12:00 - 13:59 Thai time)
+      bool isJudasTime = (thaiHour >= 12 && thaiHour < 14);
+      bool isJudasAuthorized = InpEnableJudasSwing && isJudasTime && (StringFind(optFlags, "JUDAS") >= 0 || StringFind(typeStr, "JUDAS") >= 0 || StringFind(m_lastDefenseReason, "JUDAS") >= 0 || m_setupGrade == "A+");
+
+      if(thaiHour >= 6 && thaiHour < 14 && m_setupGrade != "A+" && !isJudasAuthorized)
       {
          PrintFormat("🛡️ [Asian & Pre-London Box Shield] Skipping Box order %s (%02d:00 Thai Time) to preserve 93.1%% Win Rate and 0%% DD.",
                      orderId, thaiHour);
          return;
+      }
+      else if(isJudasAuthorized)
+      {
+         PrintFormat("🎯 [Judas Swing Authorized] Pre-London Stop Hunt reversal on %s (%02d:00 Thai Time) authorized!", targetSym, thaiHour);
       }
    }
 
@@ -1133,15 +1152,24 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
    if(InpEnableMacroBiasFilter && m_macroBias != "" && m_macroBias != "NEUTRAL")
    {
       bool isBuyOrder = (StringFind(typeStr, "BUY") >= 0);
-      if(m_macroBias == "SELL_ONLY" && isBuyOrder && m_setupGrade != "A+")
+      bool isMacroPullbackPass = InpEnableMacroPullbackPass && (StringFind(optFlags, "PULLBACK") >= 0 || StringFind(typeStr, "PULLBACK") >= 0 || StringFind(m_lastDefenseReason, "PULLBACK") >= 0);
+
+      if(!isMacroPullbackPass)
       {
-         PrintFormat("🛡️ [Macro Bias Guard] Skipping BUY on %s: Macro News (%s | %s) dictates SELL_ONLY bias!", targetSym, m_macroEventTitle, m_macroSentiment);
-         return;
+         if(m_macroBias == "SELL_ONLY" && isBuyOrder && m_setupGrade != "A+")
+         {
+            PrintFormat("🛡️ [Macro Bias Guard] Skipping BUY on %s: Macro News (%s | %s) dictates SELL_ONLY bias!", targetSym, m_macroEventTitle, m_macroSentiment);
+            return;
+         }
+         if(m_macroBias == "BUY_ONLY" && !isBuyOrder && m_setupGrade != "A+")
+         {
+            PrintFormat("🛡️ [Macro Bias Guard] Skipping SELL on %s: Macro News (%s | %s) dictates BUY_ONLY bias!", targetSym, m_macroEventTitle, m_macroSentiment);
+            return;
+         }
       }
-      if(m_macroBias == "BUY_ONLY" && !isBuyOrder && m_setupGrade != "A+")
+      else
       {
-         PrintFormat("🛡️ [Macro Bias Guard] Skipping SELL on %s: Macro News (%s | %s) dictates BUY_ONLY bias!", targetSym, m_macroEventTitle, m_macroSentiment);
-         return;
+         PrintFormat("🎯 [Macro Pullback Exemption] Executing %s counter-trend scalp targeting Equilibrium Zone!", targetSym);
       }
    }
 
@@ -1175,21 +1203,36 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
    double pipMult = GetPipMultiplier(targetSym);
    int digits = (int)SymbolInfoInteger(targetSym, SYMBOL_DIGITS);
 
-   // 4. Check Spread Safety
+   // 4. Check Spread Safety with [APPROACH 4] Spread EV Cushion
    double ask = SymbolInfoDouble(targetSym, SYMBOL_ASK);
    double bid = SymbolInfoDouble(targetSym, SYMBOL_BID);
    if(ask <= 0 || bid <= 0) return;
 
    double currentSpread = (ask - bid) / (targetPoint * pipMult);
-   if(currentSpread > InpMaxSpreadPips)
+   double effectiveMaxSpread = InpMaxSpreadPips;
+   if(InpEnableAdaptiveSpread)
    {
-      PrintFormat("🛑 [Spread Protection] Spread on %s is %.1f pips (exceeds limit %.1f)", targetSym, currentSpread, InpMaxSpreadPips);
+      double riskPips = MathMax(1.0, MathAbs(price - sl) / (targetPoint * pipMult));
+      double rewardPips = MathAbs(tp2 - price) / (targetPoint * pipMult);
+      double rrRatio = rewardPips / riskPips;
+      if(rrRatio >= 2.5)
+      {
+         double cushion = MathMin(1.40, 1.0 + (rrRatio - 2.0) * 0.12);
+         effectiveMaxSpread = InpMaxSpreadPips * cushion;
+      }
+   }
+
+   if(currentSpread > effectiveMaxSpread)
+   {
+      PrintFormat("🛑 [Spread Protection] Spread on %s is %.1f pips (exceeds adaptive limit %.1f)", targetSym, currentSpread, effectiveMaxSpread);
       return;
    }
 
-   if(InpEnableScalpSniper && _Period <= PERIOD_M15 && currentSpread > InpMaxScalpSpreadPips)
+   double scalpMaxSpread = InpMaxScalpSpreadPips;
+   if(InpEnableAdaptiveSpread) scalpMaxSpread *= 1.25;
+   if(InpEnableScalpSniper && _Period <= PERIOD_M15 && currentSpread > scalpMaxSpread)
    {
-      PrintFormat("🛑 [Scalp Spread Armor] Spread on %s is %.1f pips (exceeds Scalp limit %.1f). Order skipped.", targetSym, currentSpread, InpMaxScalpSpreadPips);
+      PrintFormat("🛑 [Scalp Spread Armor] Spread on %s is %.1f pips (exceeds Scalp limit %.1f). Order skipped.", targetSym, currentSpread, scalpMaxSpread);
       return;
    }
 
@@ -1290,11 +1333,70 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       brokerTP = 0.0; // Hide TP from broker!
    }
 
-   // 6. Institutional Pending Order Router (Buy/Sell Limit at Order Block)
+   // 6. Institutional Pending Order Router (Buy/Sell Limit at Order Block) & Two-Stage Execution
    if(InpUsePendingOrders && (typeStr == "BUY_LIMIT" || typeStr == "SELL_LIMIT"))
    {
+      double frontRunOffset = InpFrontRunBufferPips * targetPoint * pipMult;
+      double adjPrice = isBuy ? (price + frontRunOffset) : (price - frontRunOffset);
+      adjPrice = NormalizeDouble(adjPrice, digits);
+
       if(distPips > InpMarketExecBufferPips)
       {
+         // [APPROACH 5] Two-Stage Execution: Split 50% Market + 50% Limit if lot >= 0.02
+         if(InpEnableTwoStageExec && lots >= (lotStep * 2.0))
+         {
+            double mktLots = NormalizeDouble(MathRound((lots * 0.5) / lotStep) * lotStep, 2);
+            double limLots = NormalizeDouble(lots - mktLots, 2);
+
+            if(mktLots >= minLot && limLots >= minLot)
+            {
+               // Stage 1: Market Execution (guarantees entry during explosive momentum)
+               ENUM_ORDER_TYPE mktType = isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+               double mktExecPrice = isBuy ? ask : bid;
+               string mktComment = "Aegis_Mkt_" + StringSubstr(orderId, StringLen(orderId)-4);
+               bool mktOk = false;
+               int mRetries = 0;
+               while(mRetries < InpMaxOrderRetries && !mktOk)
+               {
+                  if(mRetries > 0) Sleep(InpRetryDelayMs);
+                  ResetLastError();
+                  if(isBuy) mktOk = m_trade.Buy(mktLots, targetSym, mktExecPrice, brokerSL, brokerTP, mktComment);
+                  else      mktOk = m_trade.Sell(mktLots, targetSym, mktExecPrice, brokerSL, brokerTP, mktComment);
+                  if(!mktOk) mRetries++;
+               }
+
+               if(mktOk)
+               {
+                  PrintFormat("🚀 [Two-Stage Exec Stage 1] Market fill on %s: %.2f lot @ %.5f", targetSym, mktLots, mktExecPrice);
+                  NotifyBridgeOrderEvent(orderId, "FILLED", mktExecPrice, 0.0, targetSym);
+               }
+
+               // Stage 2: Limit Order at OTE / Discount with Front-Run Buffer
+               datetime expTime = TimeCurrent() + (InpPendingExpiryHours * 3600);
+               string limComment = "Aegis_Lim_" + StringSubstr(orderId, StringLen(orderId)-4);
+               bool limOk = false;
+               int lRetries = 0;
+               while(lRetries < InpMaxOrderRetries && !limOk)
+               {
+                  if(lRetries > 0) Sleep(InpRetryDelayMs);
+                  ResetLastError();
+                  if(typeStr == "BUY_LIMIT" && adjPrice < ask)
+                     limOk = m_trade.BuyLimit(limLots, adjPrice, targetSym, brokerSL, brokerTP, ORDER_TIME_SPECIFIED, expTime, limComment);
+                  else if(typeStr == "SELL_LIMIT" && adjPrice > bid)
+                     limOk = m_trade.SellLimit(limLots, adjPrice, targetSym, brokerSL, brokerTP, ORDER_TIME_SPECIFIED, expTime, limComment);
+                  if(!limOk) lRetries++;
+               }
+
+               if(limOk)
+               {
+                  PrintFormat("⏳ [Two-Stage Exec Stage 2] Placed Limit on %s: %.2f lot @ %.5f (Front-run +%.1fp)", targetSym, limLots, adjPrice, InpFrontRunBufferPips);
+                  if(targetSym == _Symbol) DrawChartTradeLevels(typeStr, adjPrice, sl, tp1, tp2);
+               }
+               if(InpSoundAlerts) PlaySound("expert.wav");
+               return;
+            }
+         }
+
          datetime expTime = TimeCurrent() + (InpPendingExpiryHours * 3600);
          bool pendingOk = false;
          int pRetries = 0;
@@ -1304,23 +1406,23 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
             if(pRetries > 0) Sleep(InpRetryDelayMs);
             ResetLastError();
 
-            if(typeStr == "BUY_LIMIT" && price < ask)
+            if(typeStr == "BUY_LIMIT" && adjPrice < ask)
             {
-               pendingOk = m_trade.BuyLimit(lots, price, targetSym, brokerSL, brokerTP, ORDER_TIME_SPECIFIED, expTime, comment);
+               pendingOk = m_trade.BuyLimit(lots, adjPrice, targetSym, brokerSL, brokerTP, ORDER_TIME_SPECIFIED, expTime, comment);
             }
-            else if(typeStr == "SELL_LIMIT" && price > bid)
+            else if(typeStr == "SELL_LIMIT" && adjPrice > bid)
             {
-               pendingOk = m_trade.SellLimit(lots, price, targetSym, brokerSL, brokerTP, ORDER_TIME_SPECIFIED, expTime, comment);
+               pendingOk = m_trade.SellLimit(lots, adjPrice, targetSym, brokerSL, brokerTP, ORDER_TIME_SPECIFIED, expTime, comment);
             }
             if(!pendingOk) pRetries++;
          }
 
          if(pendingOk)
          {
-            PrintFormat("⏳ [Aegis Pending%s] Placed %s %0.2f lot on %s @ %0.*f | SL: %0.*f TP2: %0.*f (Expires in %dh)",
-                        InpEnableStealthMode ? " 🥷 STEALTH" : "", typeStr, lots, targetSym, digits, price, digits, sl, digits, tp2, InpPendingExpiryHours);
-            if(targetSym == _Symbol) DrawChartTradeLevels(typeStr, price, sl, tp1, tp2);
-            NotifyBridgeOrderEvent(orderId, "PENDING_PLACED", price, 0.0, targetSym);
+            PrintFormat("⏳ [Aegis Pending%s] Placed %s %0.2f lot on %s @ %0.*f (Front-Run +%.1fp) | SL: %0.*f TP2: %0.*f (Expires in %dh)",
+                        InpEnableStealthMode ? " 🥷 STEALTH" : "", typeStr, lots, targetSym, digits, adjPrice, InpFrontRunBufferPips, digits, sl, digits, tp2, InpPendingExpiryHours);
+            if(targetSym == _Symbol) DrawChartTradeLevels(typeStr, adjPrice, sl, tp1, tp2);
+            NotifyBridgeOrderEvent(orderId, "PENDING_PLACED", adjPrice, 0.0, targetSym);
             if(InpSoundAlerts) PlaySound("expert.wav");
             return;
          }

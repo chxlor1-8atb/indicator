@@ -235,11 +235,18 @@ export interface SpreadSafetyResult {
 export function validateSpreadSafety(
   symbol: string,
   currentSpreadPips: number,
-  isPostNews = false
+  isPostNews = false,
+  expectedRR?: number
 ): SpreadSafetyResult {
   const sym = symbol.toUpperCase();
   const baseline = BASELINE_SPREAD_PIPS[sym] ?? 2.0;
-  const maxMultiplier = isPostNews ? 2.5 : 2.0;
+  // [APPROACH 4: Spread EV Cushion]
+  // If trade has high expected R:R (>= 2.5), grant dynamic spread cushion up to +40%
+  let rrCushion = 1.0;
+  if (expectedRR && expectedRR >= 2.5) {
+    rrCushion = Math.min(1.4, 1.0 + (expectedRR - 2.0) * 0.12);
+  }
+  const maxMultiplier = (isPostNews ? 2.5 : 2.0) * rrCushion;
   const maxAllowedSpread = Number((baseline * maxMultiplier).toFixed(1));
   const blowoutMultiplier = Number((currentSpreadPips / baseline).toFixed(2));
 
@@ -249,7 +256,7 @@ export function validateSpreadSafety(
       spreadPips: currentSpreadPips,
       maxAllowedSpread,
       spreadBlowoutMultiplier: blowoutMultiplier,
-      warning: `สเปรดถ่างรุนแรง (${currentSpreadPips} pips > เกณฑ์ปลอดภัย ${maxAllowedSpread} pips | ${blowoutMultiplier}x ปกติ): ระงับการส่งคำสั่งอัตโนมัติ ป้องกัน Slippage`,
+      warning: `สเปรดถ่าง (${currentSpreadPips} pips > เกณฑ์ยืดหยุ่น EV Cushion ${maxAllowedSpread} pips | ${blowoutMultiplier}x ปกติ): ระงับการส่งคำสั่งอัตโนมัติ ป้องกัน Slippage`,
     };
   }
 

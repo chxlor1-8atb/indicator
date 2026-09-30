@@ -758,6 +758,9 @@ export function generateRuleBasedAnalysis(
   let signal: AnalysisResult["signal"] = "WAIT";
   let confidence = Math.max(40, Math.min(95, masterConfluence.totalScore + sessionStatus.confidenceModifier + (quadEma?.scoreBonus ?? 0) + correlationScoreBonus));
   let setupGrade: AnalysisResult["setupGrade"] = masterConfluence.grade;
+  const isSweepExemption = Boolean(masterConfluence.isSweepExemption);
+  const isMacroPullback = Boolean(masterConfluence.isMacroPullback);
+  const isJudasSwing = Boolean(masterConfluence.isJudasSwing);
 
   // ─── ANTI-CLASH STRATEGY ORCHESTRATION & VETO GATING ───
   const orchestrator = orchestrateStrategyDecision({
@@ -952,16 +955,20 @@ export function generateRuleBasedAnalysis(
       setupGrade = "A";
       confidence = Math.max(74, confidence + 8);
     } else {
-      const isStrongBull = (bullPillars >= 3 || masterConfluence.totalScore >= 68) && masterConfluence.totalScore >= 65;
-      const isStrongBear = (bearPillars >= 3 || masterConfluence.totalScore >= 68) && masterConfluence.totalScore >= 65;
+      const isStrongBull =
+        (bullPillars >= 3 || masterConfluence.totalScore >= 68 || (isSweepExemption && masterConfluence.totalScore >= 62)) &&
+        (masterConfluence.totalScore >= 65 || (isSweepExemption && masterConfluence.totalScore >= 62));
+      const isStrongBear =
+        (bearPillars >= 3 || masterConfluence.totalScore >= 68 || (isSweepExemption && masterConfluence.totalScore >= 62)) &&
+        (masterConfluence.totalScore >= 65 || (isSweepExemption && masterConfluence.totalScore >= 62));
 
       if (isStrongBull && (bullPillars > bearPillars || (bullPillars === bearPillars && currentPrice >= pivotPoints.pivot))) {
         signal = masterConfluence.totalScore >= 75 ? "STRONG_BUY" : "BUY";
-        setupGrade = masterConfluence.totalScore >= 75 ? "A" : "B";
+        setupGrade = (masterConfluence.totalScore >= 75 || isSweepExemption) ? "A" : "B";
         confidence = Math.max(60, confidence);
       } else if (isStrongBear && (bearPillars > bullPillars || (bullPillars === bearPillars && currentPrice < pivotPoints.pivot))) {
         signal = masterConfluence.totalScore >= 75 ? "STRONG_SELL" : "SELL";
-        setupGrade = masterConfluence.totalScore >= 75 ? "A" : "B";
+        setupGrade = (masterConfluence.totalScore >= 75 || isSweepExemption) ? "A" : "B";
         confidence = Math.max(60, confidence);
       } else {
         // ตลาดไซด์เวย์ไร้เทรนด์และขาด Confluence สนับสนุนชัดเจน -> พักรอโอกาสสถาบันที่ได้เปรียบ (WAIT / Grade C)
@@ -983,23 +990,31 @@ export function generateRuleBasedAnalysis(
     confidence = Math.min(confidence, 35);
   } else if (signal === "STRONG_BUY" || signal === "BUY") {
     if (orchestrator.unifiedSignal === "SELL") {
-      // Counter-trend conflict: บังคับ WAIT เพื่อรักษาเงินต้น ป้องกันการเทรดสวนทาง
-      isVetoBlocked = true;
-      vetoBlockReason = "ระบบ Anti-Clash ตรวจพบสัญญาณขัดแย้งกับทิศทางเทรนด์หลัก (SELL Dominant)";
-      signal = "WAIT";
-      setupGrade = "C (Wait)";
-      confidence = Math.min(confidence, 40);
+      // Counter-trend conflict: บังคับ WAIT เพื่อรักษาเงินต้น ป้องกันการเทรดสวนทาง (ยกเว้น Macro Pullback Scalp)
+      if (isMacroPullback) {
+        confidence = Math.min(95, confidence + 2);
+      } else {
+        isVetoBlocked = true;
+        vetoBlockReason = "ระบบ Anti-Clash ตรวจพบสัญญาณขัดแย้งกับทิศทางเทรนด์หลัก (SELL Dominant)";
+        signal = "WAIT";
+        setupGrade = "C (Wait)";
+        confidence = Math.min(confidence, 40);
+      }
     } else if (orchestrator.unifiedSignal === "BUY") {
       confidence = Math.min(99, confidence + 5);
     }
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     if (orchestrator.unifiedSignal === "BUY") {
-      // Counter-trend conflict: บังคับ WAIT เพื่อรักษาเงินต้น ป้องกันการเทรดสวนทาง
-      isVetoBlocked = true;
-      vetoBlockReason = "ระบบ Anti-Clash ตรวจพบสัญญาณขัดแย้งกับทิศทางเทรนด์หลัก (BUY Dominant)";
-      signal = "WAIT";
-      setupGrade = "C (Wait)";
-      confidence = Math.min(confidence, 40);
+      // Counter-trend conflict: บังคับ WAIT เพื่อรักษาเงินต้น ป้องกันการเทรดสวนทาง (ยกเว้น Macro Pullback Scalp)
+      if (isMacroPullback) {
+        confidence = Math.min(95, confidence + 2);
+      } else {
+        isVetoBlocked = true;
+        vetoBlockReason = "ระบบ Anti-Clash ตรวจพบสัญญาณขัดแย้งกับทิศทางเทรนด์หลัก (BUY Dominant)";
+        signal = "WAIT";
+        setupGrade = "C (Wait)";
+        confidence = Math.min(confidence, 40);
+      }
     } else if (orchestrator.unifiedSignal === "SELL") {
       confidence = Math.min(99, confidence + 5);
     }
@@ -1012,17 +1027,31 @@ export function generateRuleBasedAnalysis(
   const isHtfSellBlocked = (signal === "STRONG_SELL" || signal === "SELL") && (macroBullish || mtfScore >= 40);
 
   if (isHtfBuyBlocked) {
-    isHtfBlocked = true;
-    htfBlockReason = `สัญญาณ BUY ขัดแย้งกับเทรนด์ระดับ Macro H4/D1 (คะแนน MTF: ${mtfScore}%, H4: ${mtfMatrix.h4}, D1: ${mtfMatrix.d1}) - ล็อคระบบเพื่อป้องกันการโดนลากสวนเทรนด์ใหญ่`;
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
+    if (isMacroPullback) {
+      // [APPROACH 6] Macro Pullback Exemption: Permit counter-trend retracement scalps targeting 50% Equilibrium
+      signal = "BUY";
+      setupGrade = "A";
+      confidence = Math.max(68, confidence);
+    } else {
+      isHtfBlocked = true;
+      htfBlockReason = `สัญญาณ BUY ขัดแย้งกับเทรนด์ระดับ Macro H4/D1 (คะแนน MTF: ${mtfScore}%, H4: ${mtfMatrix.h4}, D1: ${mtfMatrix.d1}) - ล็อคระบบเพื่อป้องกันการโดนลากสวนเทรนด์ใหญ่`;
+      signal = "WAIT";
+      setupGrade = "C (Wait)";
+      confidence = Math.min(confidence, 40);
+    }
   } else if (isHtfSellBlocked) {
-    isHtfBlocked = true;
-    htfBlockReason = `สัญญาณ SELL ขัดแย้งกับเทรนด์ระดับ Macro H4/D1 (คะแนน MTF: ${mtfScore}%, H4: ${mtfMatrix.h4}, D1: ${mtfMatrix.d1}) - ล็อคระบบเพื่อป้องกันการโดนลากสวนเทรนด์ใหญ่`;
-    signal = "WAIT";
-    setupGrade = "C (Wait)";
-    confidence = Math.min(confidence, 40);
+    if (isMacroPullback) {
+      // [APPROACH 6] Macro Pullback Exemption: Permit counter-trend retracement scalps targeting 50% Equilibrium
+      signal = "SELL";
+      setupGrade = "A";
+      confidence = Math.max(68, confidence);
+    } else {
+      isHtfBlocked = true;
+      htfBlockReason = `สัญญาณ SELL ขัดแย้งกับเทรนด์ระดับ Macro H4/D1 (คะแนน MTF: ${mtfScore}%, H4: ${mtfMatrix.h4}, D1: ${mtfMatrix.d1}) - ล็อคระบบเพื่อป้องกันการโดนลากสวนเทรนด์ใหญ่`;
+      signal = "WAIT";
+      setupGrade = "C (Wait)";
+      confidence = Math.min(confidence, 40);
+    }
   } else if (isInstitutionalAligned) {
     confidence = Math.min(99, confidence + 5);
   }
@@ -1153,6 +1182,12 @@ export function generateRuleBasedAnalysis(
       pendingPrice = sniperBuyDiscount;
     }
 
+    // [APPROACH 1] Front-Run Buffer on Limit Entry (prevents missing fill by a pip)
+    if (pendingPrice < currentPrice) {
+      const frontRunBuffer = (sym.includes("XAU") || sym === "GOLD") ? 0.35 : currentATR * 0.08;
+      pendingPrice = Math.min(currentPrice, Number((pendingPrice + frontRunBuffer).toFixed(precision)));
+    }
+
     // If in Extreme Premium, force pendingPrice down at least to Equilibrium or Discount
     if (isExtremePremium && premiumDiscount.equilibrium && premiumDiscount.equilibrium < currentPrice) {
       pendingPrice = Math.min(pendingPrice, premiumDiscount.equilibrium);
@@ -1270,12 +1305,21 @@ export function generateRuleBasedAnalysis(
     if (stopLoss >= pendingPrice || (pendingPrice - stopLoss) < minRisk) {
       stopLoss = Number((pendingPrice - minRisk).toFixed(precision));
     }
+    // [APPROACH 1] Micro-SL Hard Cap on Small Accounts ($10-$50)
+    if (isGold) {
+      const maxSlDist = 2.2; // 22 pips max SL on Gold
+      if ((pendingPrice - stopLoss) > maxSlDist) {
+        stopLoss = Number((pendingPrice - maxSlDist).toFixed(precision));
+      }
+    }
     const actualRisk = pendingPrice - stopLoss;
     if (takeProfit1 <= pendingPrice) {
       takeProfit1 = Number((pendingPrice + Math.max(actualRisk * 1.0, currentATR * 0.8)).toFixed(precision));
     }
-    if (takeProfit2 <= takeProfit1) {
-      takeProfit2 = Number((takeProfit1 + Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision));
+    // Institutional 1:3 R:R Minimum for Scalp / Swing
+    const minTargetTP2 = Number((pendingPrice + actualRisk * 3.0).toFixed(precision));
+    if (takeProfit2 < minTargetTP2 || takeProfit2 <= takeProfit1) {
+      takeProfit2 = Math.max(minTargetTP2, Number((takeProfit1 + Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision)));
     }
     riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, actualRisk)).toFixed(1)}`;
 
@@ -1348,6 +1392,12 @@ export function generateRuleBasedAnalysis(
       pendingPrice = oteZone.sweetSpot;
     } else {
       pendingPrice = sniperSellPremium;
+    }
+
+    // [APPROACH 1] Front-Run Buffer on SELL Limit Entry (prevents missing fill by a pip)
+    if (pendingPrice > currentPrice) {
+      const frontRunBuffer = (sym.includes("XAU") || sym === "GOLD") ? 0.35 : currentATR * 0.08;
+      pendingPrice = Math.max(currentPrice, Number((pendingPrice - frontRunBuffer).toFixed(precision)));
     }
 
     // If in Deep Discount, force pendingPrice up at least to Equilibrium or Premium
@@ -1445,12 +1495,21 @@ export function generateRuleBasedAnalysis(
     if (stopLoss <= pendingPrice || (stopLoss - pendingPrice) < minRisk) {
       stopLoss = Number((pendingPrice + minRisk).toFixed(precision));
     }
+    // [APPROACH 1] Micro-SL Hard Cap on Small Accounts ($10-$50)
+    if (isGold) {
+      const maxSlDist = 2.2; // 22 pips max SL on Gold
+      if ((stopLoss - pendingPrice) > maxSlDist) {
+        stopLoss = Number((pendingPrice + maxSlDist).toFixed(precision));
+      }
+    }
     const actualRisk = stopLoss - pendingPrice;
     if (takeProfit1 >= pendingPrice) {
       takeProfit1 = Number((pendingPrice - Math.max(actualRisk * 1.0, currentATR * 0.8)).toFixed(precision));
     }
-    if (takeProfit2 >= takeProfit1) {
-      takeProfit2 = Number((takeProfit1 - Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision));
+    // Institutional 1:3 R:R Minimum for Scalp / Swing
+    const minTargetTP2 = Number((pendingPrice - actualRisk * 3.0).toFixed(precision));
+    if (takeProfit2 > minTargetTP2 || takeProfit2 >= takeProfit1) {
+      takeProfit2 = Math.min(minTargetTP2, Number((takeProfit1 - Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision)));
     }
     riskRewardRatio = `1:${((pendingPrice - takeProfit2) / Math.max(0.0001, actualRisk)).toFixed(1)}`;
   }
@@ -2586,6 +2645,9 @@ export function generateRuleBasedAnalysis(
     rsiInstitutionalAnalysis,
     drawdownProtection,
     srRoleReversal,
+    isSweepExemption: masterConfluence.isSweepExemption,
+    isJudasSwing: masterConfluence.isJudasSwing,
+    isMacroPullback: masterConfluence.isMacroPullback,
   };
 }
 

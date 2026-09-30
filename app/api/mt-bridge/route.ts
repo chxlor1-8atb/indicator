@@ -119,11 +119,18 @@ export async function GET(request: NextRequest) {
       const macroLine = `#MACRO,${symbol || "XAUUSD"},${macroInsight.assetDirectionalBias},${macroInsight.reactionZone?.zoneHigh || 0},${macroInsight.reactionZone?.zoneLow || 0},${macroInsight.reactionZone?.zoneMid || 0},${macroInsight.usdSentiment},${macroCleanTitle}`;
 
       // Format for MT4/MT5 EA line parser:
-      // TICKET_ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS,REMAINING_LOTS,STATUS,TRAILING_SL,DEFENSE,TIER,GOVERNOR
+      // TICKET_ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS,REMAINING_LOTS,STATUS,TRAILING_SL,DEFENSE,TIER,GOVERNOR,FLAGS
       const executableOrders = orders.filter((o) => o.status !== "PENDING_HUMAN_APPROVAL" && o.status !== "CANCELLED");
       const orderLines = executableOrders.map(
-        (o) =>
-          `${o.id},${o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize},${o.remainingLots ?? o.lotSize},${o.status},${o.trailingSlPrice ?? o.stopLoss},${o.emergencyDefenseReason ?? "NONE"},${o.tierName ?? "Tier 1"},${o.drawdownGovernorActive ? "GOVERNOR_ACTIVE" : "NORMAL"}`
+        (o) => {
+          const flags = [
+            o.isJudasSwing ? "JUDAS" : "",
+            o.isMacroPullback ? "PULLBACK" : "",
+            o.isSweepExemption ? "SWEEP" : "",
+            o.executionMode ?? "MARKET",
+          ].filter(Boolean).join("|") || "STANDARD";
+          return `${o.id},${o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize},${o.remainingLots ?? o.lotSize},${o.status},${o.trailingSlPrice ?? o.stopLoss},${o.emergencyDefenseReason ?? "NONE"},${o.tierName ?? "Tier 1"},${o.drawdownGovernorActive ? "GOVERNOR_ACTIVE" : "NORMAL"},${flags}`;
+        }
       );
       const lines = [newsLine, macroLine, ...orderLines];
       return new NextResponse(lines.join("\n"), {

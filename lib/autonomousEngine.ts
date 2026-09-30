@@ -341,7 +341,8 @@ export async function evaluateAssetAutonomous(
   const thaiHour = (dDate.getUTCHours() + 7) % 24;
   const isGoldAsset = sym.includes("XAU") || sym.includes("GOLD");
   const isBoxRegime = analysis.regimeInfo?.regime === "CHOPPY_DEADZONE" || regimeTitle.includes("BOX") || regimeTitle.includes("CHOPPY");
-  if (isGoldAsset && isBoxRegime && thaiHour >= 6 && thaiHour < 14 && setupGrade !== "A+") {
+  const isJudasSwing = Boolean(analysis.masterConfluence?.isJudasSwing || analysis.isJudasSwing);
+  if (isGoldAsset && isBoxRegime && thaiHour >= 6 && thaiHour < 14 && setupGrade !== "A+" && !isJudasSwing) {
     addTelemetryLog(
       sym,
       "VETO",
@@ -364,7 +365,8 @@ export async function evaluateAssetAutonomous(
 
   // ─── [Institutional Macro News Directional Bias Gate] ───
   const macroInsight = calculateMacroDirectionalInsight(sym, candles);
-  if (macroInsight.hasMacroEvent && macroInsight.assetDirectionalBias !== "NEUTRAL") {
+  const isMacroPullback = Boolean(analysis.masterConfluence?.isMacroPullback || analysis.isMacroPullback);
+  if (macroInsight.hasMacroEvent && macroInsight.assetDirectionalBias !== "NEUTRAL" && !isMacroPullback) {
     const isBuySignal = orderType.includes("BUY");
     const isSellSignal = orderType.includes("SELL");
 
@@ -564,6 +566,10 @@ export async function evaluateAssetAutonomous(
         gradeMultiplier: dynamicSize.gradeMultiplier,
         marginRequiredUSD: dynamicSize.marginRequiredUSD,
         marginUtilizationPct: dynamicSize.marginUtilizationPct,
+        isSweepExemption: Boolean(analysis.masterConfluence?.isSweepExemption || analysis.isSweepExemption),
+        isJudasSwing: Boolean(analysis.masterConfluence?.isJudasSwing || analysis.isJudasSwing),
+        isMacroPullback: Boolean(analysis.masterConfluence?.isMacroPullback || analysis.isMacroPullback),
+        executionMode: (lotSize >= 0.02 && distancePips >= 4.0) ? "TWO_STAGE" : "MARKET",
       };
 
       activeOrdersStore.set(newOrder.id, newOrder);

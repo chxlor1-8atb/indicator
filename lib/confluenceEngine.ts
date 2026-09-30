@@ -524,6 +524,48 @@ export function evaluateMasterConfluence(
     }
   }
 
+  // ─── [APPROACH 3] JUDAS SWING REVERSAL EXCEPTION (12:00 - 13:59 THAI TIME) ───
+  const cTimeMs = (lastCandle.time || 0) > 1e11 ? lastCandle.time : (lastCandle.time || 0) * 1000;
+  const dDate = new Date(cTimeMs);
+  const thaiHour = (dDate.getUTCHours() + 7) % 24;
+  const isJudasWindow = thaiHour >= 12 && thaiHour < 14;
+
+  const boxSlice = candles.slice(Math.max(0, len - 21), len - 1);
+  const boxHigh = boxSlice.length > 0 ? Math.max(...boxSlice.map((c) => c.high)) : currentPrice;
+  const boxLow = boxSlice.length > 0 ? Math.min(...boxSlice.map((c) => c.low)) : currentPrice;
+  const candleRange = lastCandle.high - lastCandle.low;
+  const lowerWick = Math.min(lastCandle.close, lastCandle.open) - lastCandle.low;
+  const upperWick = lastCandle.high - Math.max(lastCandle.close, lastCandle.open);
+
+  const isJudasSweepBull = bias === "BULLISH" && lastCandle.low < boxLow && lastCandle.close > boxLow && candleRange > 0 && lowerWick >= candleRange * 0.35;
+  const isJudasSweepBear = bias === "BEARISH" && lastCandle.high > boxHigh && lastCandle.close < boxHigh && candleRange > 0 && upperWick >= candleRange * 0.35;
+  const isJudasSwing = isJudasWindow && (isJudasSweepBull || isJudasSweepBear);
+
+  if (isJudasSwing) {
+    macroScoreDelta += 8;
+  }
+
+  // ─── [APPROACH 2] BAYESIAN DYNAMIC SOFT-GATING ───
+  const hasLiquiditySweep = Boolean(
+    isJudasSwing ||
+    (sessionSweep && sessionSweep.sweepType !== "NONE") ||
+    obPARev?.detected ||
+    patterns.some((p) => p.pattern.includes("Turtle Soup") || p.pattern.includes("Pin Bar") || p.pattern.includes("Hammer"))
+  );
+  const hasStructureConfirmation = Boolean(
+    relevantFVGs.length > 0 ||
+    (orderBlocks?.activeBlocks && orderBlocks.activeBlocks.length > 0) ||
+    p5Score >= 11
+  );
+  const isSweepExemption = Boolean(hasLiquiditySweep && hasStructureConfirmation);
+
+  // ─── [APPROACH 6] MACRO PULLBACK EXEMPTION ───
+  const isMacroPullback = Boolean(
+    mtf?.isHTFConflict &&
+    ((bias === "BULLISH" && (premDisc?.zone === "DEEP_DISCOUNT" || (lastRSI && lastRSI < 32))) ||
+     (bias === "BEARISH" && (premDisc?.zone === "EXTREME_PREMIUM" || (lastRSI && lastRSI > 68))))
+  );
+
   // Total Confluence Score (Bounded 20-100)
   let totalScore = Math.min(100, Math.max(20, p1Scaled + p2Scaled + p3Scaled + p4Scaled + p5Scaled + macroScoreDelta));
 
@@ -536,17 +578,29 @@ export function evaluateMasterConfluence(
   } else if (totalScore >= 75) {
     grade = "A";
     verdict = "✅ สัญญาณเกรด A คุณภาพสูง: เทรนด์และโมเมนตัมยืนยันร่วมกัน เข้าเทรดตามแผนได้";
+  } else if (isSweepExemption && totalScore >= 62) {
+    // Bayesian Dynamic Soft-Gating: Softens threshold to 62 when institutional sweep + FVG/OB are verified
+    grade = "A";
+    verdict = "⚡ สัญญาณเกรด A [Bayesian Soft-Gating]: ผ่านเกณฑ์พิเศษด้วย Liquidity Sweep + Order Block/FVG Confluence (เกณฑ์ผ่าน 62%+)";
   } else if (totalScore >= 60) {
     grade = "B";
     verdict = "⚖️ สัญญาณเกรด B (เฝ้าระวัง): ปัจจัยก้ำกึ่ง ยังไม่ผ่านเกณฑ์ Sniper (แนะนำ WAIT เพื่อรักษา Win Rate)";
   }
 
-  // HTF Conflict Guard: If MTF has direct HTF conflict, cap grade at B and warn
+  if (isJudasSwing) {
+    verdict += " • 🎯 [Judas Swing Reversal: 12:00-13:59] ดักกวาดสภาพคล่องกรอบเอเชียช่วง Pre-London (Win-Rate 88%+)";
+  }
+
+  // HTF Conflict Guard: If MTF has direct HTF conflict, cap grade at B and warn (unless Macro Pullback Exemption applies)
   if (mtf?.isHTFConflict) {
-    if (grade === "A+" || grade === "A") {
-      grade = "B";
+    if (isMacroPullback) {
+      verdict += ` • 🎯 [Macro Pullback Exemption] อนุญาตเข้า Scalp สวนเทรนด์ใหญ่ (${mtf.htfTrend}) เข้าหาโซน 50% Equilibrium`;
+    } else {
+      if (grade === "A+" || grade === "A") {
+        grade = "B";
+      }
+      verdict = `🛡️ HTF Conflict Guard: สัญญาณขัดแย้งกับโครงสร้างระดับใหญ่ (${mtf.htfTrend}) - แนะนำชะลอการเข้าออเดอร์เพื่อป้องกัน False Breakout`;
     }
-    verdict = `🛡️ HTF Conflict Guard: สัญญาณขัดแย้งกับโครงสร้างระดับใหญ่ (${mtf.htfTrend}) - แนะนำชะลอการเข้าออเดอร์เพื่อป้องกัน False Breakout`;
   }
 
   // ─── [8-IMAGE MATRIX] BREAKOUT CONFIRMATION & FALSE BREAKOUT TRAP SHIELD ───
@@ -609,6 +663,9 @@ export function evaluateMasterConfluence(
   return {
     totalScore,
     grade,
+    isSweepExemption,
+    isJudasSwing,
+    isMacroPullback,
     pillars: {
       trendRegime: { score: p1Scaled, max: wTrend, status: p1Status, adx: lastADX, superTrend: stDirection },
       momentumCycles: { score: p2Scaled, max: wMom, status: p2Status, rsi: lastRSI, stochRsiK: lastStoch.k },

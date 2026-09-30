@@ -1351,9 +1351,10 @@ export function simulateInstitutionalBacktest(
             continue; // Immediate resistance ceiling with inadequate clearance blocks trade
           }
 
-          // Layer 5: Adaptive TP multiplier with Night Session Runner Bonus
+          // Layer 5: Adaptive TP multiplier with Night Session Runner Bonus (Minimum 1:2.5 - 1:3 R:R)
           let adaptiveTP = isExplosive ? tpMultiplier * 1.2 : tpMultiplier;
           if (sessionPhase.phase === "NIGHT") adaptiveTP += 0.3;
+          if (adaptiveTP < 2.5) adaptiveTP = 2.5;
 
           // Layer 5: Session-Adaptive Accelerated Breakeven Protection (Quant Fast Defense)
           const isJpy = sym.includes("JPY");
@@ -1435,6 +1436,7 @@ export function simulateInstitutionalBacktest(
           // Layer 5: Adaptive TP with Night Session Runner Bonus + Session-Adaptive BE
           let adaptiveTP = isExplosive ? tpMultiplier * 1.2 : tpMultiplier;
           if (sessionPhase.phase === "NIGHT") adaptiveTP += 0.3;
+          if (adaptiveTP < 2.5) adaptiveTP = 2.5;
           const isJpy = sym.includes("JPY");
           const beRatio = isForex
             ? (isJpy ? 0.48 : 0.42)
@@ -1472,17 +1474,23 @@ export function simulateInstitutionalBacktest(
         const adxPrev = adx[i - 1] ?? adxVal;
         if (adxVal >= 28 || (adxVal > 18 && adxVal - adxPrev >= 1.2)) continue;
 
-        // ── Asian & Pre-London Transition Box Shield (06:00 - 14:00 Thai Time) ──
-        // 89.6% of historical losses occurred in Box during Asian Morning & Pre-London lull due to low institutional volume & false breakouts
-        if (isGold && thaiHour >= 6 && thaiHour < 14) continue;
-
         // Calculate 20-bar box boundaries
-
         const boxCandles = candles.slice(Math.max(0, i - 20), i);
         const boxHigh = Math.max(...boxCandles.map((k) => k.high));
         const boxLow = Math.min(...boxCandles.map((k) => k.low));
         const boxHeight = boxHigh - boxLow;
         const boxMid = (boxHigh + boxLow) / 2;
+
+        // ── Asian & Pre-London Transition Box Shield (06:00 - 14:00 Thai Time) ──
+        // [APPROACH 3] Judas Swing Reversal Exception (12:00 - 13:59 Thai Time)
+        // Pre-London stop hunts where price sweeps Asian High/Low and rejects back inside with wick >= 38%
+        const isJudasWindow = thaiHour >= 12 && thaiHour < 14;
+        const isJudasSweepBuy = isJudasWindow && c.low < boxLow && c.close > boxLow && candleRange > 0 && lowerWick >= candleRange * 0.38;
+        const isJudasSweepSell = isJudasWindow && c.high > boxHigh && c.close < boxHigh && candleRange > 0 && upperWick >= candleRange * 0.38;
+        const isJudasReversal = isJudasSweepBuy || isJudasSweepSell;
+
+        // Skip Asian box trades unless confirmed as institutional Judas Swing Reversal
+        if (isGold && thaiHour >= 6 && thaiHour < 14 && !isJudasReversal) continue;
 
         // VSA Boundary Guard: If bar volume is surging > 1.75x average, market is breaking out, NOT bouncing
         const avgBoxVol = boxCandles.reduce((sum, b) => sum + (b.volume || 0), 0) / Math.max(1, boxCandles.length);

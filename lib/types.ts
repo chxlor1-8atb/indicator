@@ -886,6 +886,10 @@ export interface MasterConfluenceScore {
     smartMoneyStructure: { score: number; max: number; status: string; fvgCount: number; structure: string };
   };
   verdict: string;
+  isSweepExemption?: boolean;
+  isJudasSwing?: boolean;
+  isMacroPullback?: boolean;
+  executionType?: "MARKET" | "LIMIT" | "TWO_STAGE";
 }
 
 export type MarketRegimeType = "EXPLOSIVE_TREND" | "HEALTHY_PULLBACK" | "VOLATILITY_SQUEEZE" | "CHOPPY_DEADZONE";
@@ -1532,6 +1536,9 @@ export interface AnalysisResult {
   rsiInstitutionalAnalysis?: RSIInstitutionalAnalysisInfo;
   drawdownProtection?: DrawdownRecoveryInfo;
   srRoleReversal?: SRRoleReversalInfo;
+  isSweepExemption?: boolean;
+  isJudasSwing?: boolean;
+  isMacroPullback?: boolean;
 }
 
 // ─── ANTI-CLASH ORCHESTRATOR & STRATEGY PERSONA TYPES ───
@@ -2445,6 +2452,10 @@ export interface MtBridgeOrder {
   gradeMultiplier?: number;
   marginRequiredUSD?: number;
   marginUtilizationPct?: number;
+  isSweepExemption?: boolean;
+  isJudasSwing?: boolean;
+  isMacroPullback?: boolean;
+  executionMode?: "MARKET" | "LIMIT" | "TWO_STAGE";
 }
 
 export interface TelemetryLog {
