@@ -125,6 +125,9 @@ export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
   maxDailyRiskPct: 15.0,      // เพดานความเสี่ยงสะสมรายวัน
   scalpTimeframe: "15m",
   enableEarlyHarvest: true,
+  riskProfile: "MANUAL_SCALPER",
+  enablePyramiding: true,
+  pyramidTriggerPips: 15.0,
 };
 
 /**
@@ -458,6 +461,42 @@ export async function evaluateAssetAutonomous(
         return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
       }
 
+      // ─── [Max Open Positions Cap Across Entire Terminal (Basket Protection)] ───
+      const maxPositionsCap = 3;
+      const currentOpenOrders = activeOrdersList.filter(
+        (o) => o.status === "PENDING" || o.status === "FILLED" || o.status === "PENDING_HUMAN_APPROVAL"
+      );
+      if (currentOpenOrders.length >= maxPositionsCap) {
+        addTelemetryLog(
+          sym,
+          "VETO",
+          `🎫 [Max Positions Cap] มีออเดอร์เปิด/รอทำงานอยู่ครบ ${maxPositionsCap} ไม้แล้ว — ระงับคำสั่งใหม่เพื่อป้องกัน Over-exposure`
+        );
+        return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+      }
+
+      // ─── [Anti-Averaging Down Guard: ห้ามถัวไม้แพ้เด็ดขาด / ป้องกัน Martingale มั่ว] ───
+      const activeSameAsset = activeOrdersList.filter(
+        (o) => o.symbol === sym && (o.status === "FILLED" || o.status === "PENDING")
+      );
+      if (activeSameAsset.length > 0) {
+        const isBuy = tradeSetup.action === "BUY";
+        for (const existing of activeSameAsset) {
+          const isExistingBuy = existing.orderType.includes("BUY");
+          if (isExistingBuy === isBuy) {
+            const isFloatingLoss = isBuy ? (currentPrice < existing.price) : (currentPrice > existing.price);
+            if (isFloatingLoss) {
+              addTelemetryLog(
+                sym,
+                "VETO",
+                `🚫 [Anti-Averaging Guard] ไม้เดิม #${existing.id} กำลังติดลบ ห้ามเปิดถัวเฉลี่ยขาลงเด็ดขาด! อนุญาตเฉพาะ Pyramiding เมื่อกำไรเกิน +15 pips เท่านั้น`
+              );
+              return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+            }
+          }
+        }
+      }
+
       // ─── [Tri-Session Distribution Guard: 10-20 Trades/Day Across Morning, Afternoon & Night] ───
       if (config.enforceRule131Guard) {
         const tracker = getDailyTradeTracker();
@@ -570,6 +609,8 @@ export async function evaluateAssetAutonomous(
         isJudasSwing: Boolean(analysis.masterConfluence?.isJudasSwing || analysis.isJudasSwing),
         isMacroPullback: Boolean(analysis.masterConfluence?.isMacroPullback || analysis.isMacroPullback),
         executionMode: (lotSize >= 0.02 && distancePips >= 4.0) ? "TWO_STAGE" : "MARKET",
+        isPyramidEligible: Boolean(config.enablePyramiding),
+        pyramidTriggerPips: config.pyramidTriggerPips ?? 15.0,
       };
 
       activeOrdersStore.set(newOrder.id, newOrder);

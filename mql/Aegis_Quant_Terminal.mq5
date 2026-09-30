@@ -103,6 +103,14 @@ input bool               InpEnableDailyGuard  = true;                   // เ�
 input double             InpMaxDailyLossPct   = 4.0;                    // ขาดทุนสูงสุดต่อวัน (%) ก่อนสั่งปิดหมดและหยุดเทรด
 input double             InpTrailingDailyLockPct = 50.0;                // ล็อคกำไรรายวัน (%) หากกำไรพีคย่อลงมาเกินกำหนด
 
+input group "=== 🧺 BASKET CLOSE & MAX POSITIONS GUARD ==="
+input bool               InpEnableBasketClose     = true;                   // เปิดระบบปิดรวบ (Basket Close) เมื่อขาดทุนรวมถึงเพดาน
+input double             InpBasketMaxLossPct      = 3.0;                    // ขาดทุนรวมของทุกไม้ (%) เทียบทุนก่อนปิดรวบทุกไม้ทันที
+input double             InpBasketProfitLockPct   = 40.0;                   // ล็อคกำไรลอยตัวรวมตะกร้า (%) ถ้ากำไรพีคแล้วย่อเกินกำหนดให้ปิดรวบ
+input int                InpMaxOpenPositions      = 3;                      // จำนวนออเดอร์เปิดพร้อมกันสูงสุด (รวม Pyramid) ป้องกันเปิดซ้อนมากเกิน
+input bool               InpEnableEquityShield    = true;                   // เปิดเกราะ Equity Shield ปิดทุกไม้ทันทีเมื่อ Equity หลุดเส้นแดง
+input double             InpEquityShieldPct       = 8.0;                    // เส้นแดง Equity Shield: หาก Equity ลดลงรวมเกิน N% จากจุดเริ่มต้นวัน ปิดหมดทันที
+
 input group "=== ⏰ SESSION & TIME FILTER ==="
 input bool               InpEnableTimeFilter  = true;                   // เปิดตัวกรองเวลาเทรด
 input bool               InpAsianBoxShield    = true;                   // บล็อกการเทรดกรอบ Box ช่วงเอเชียและก่อนเปิดลอนดอน (06:00 - 14:00 น. Win Rate 93.1%)
@@ -250,6 +258,11 @@ bool     m_isStealthActive      = false;
 // Profit Martingale Win Streak State
 int      m_winStreak            = 0;
 bool     m_hasPyramidedThisCycle = false;
+
+// Basket Close State
+double   m_basketPeakFloatingPnl = 0.0;
+bool     m_basketLocked          = false;
+string   m_basketLockReason      = "";
 
 // GUI Object Name Prefix
 
@@ -1106,6 +1119,60 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       return;
    }
 
+   // Max Open Positions Guard (ป้องกันเปิดไม้ซ้อนเกินกว่าเพดาน)
+   if(InpMaxOpenPositions > 0)
+   {
+      int currentOpenCount = 0;
+      for(int pc = PositionsTotal() - 1; pc >= 0; pc--)
+      {
+         if(m_position.SelectByIndex(pc))
+         {
+            bool pcMatch = InpOneChartMultiSymbol ? true : (m_position.Symbol() == _Symbol);
+            if(pcMatch && m_position.Magic() == InpMagicNumber)
+               currentOpenCount++;
+         }
+      }
+      if(currentOpenCount >= InpMaxOpenPositions)
+      {
+         PrintFormat("🎫 [Max Positions Guard] Already have %d/%d positions open. New order %s skipped to prevent overexposure.",
+                     currentOpenCount, InpMaxOpenPositions, orderId);
+         return;
+      }
+   }
+
+   // Anti-Averaging Down Guard (ห้ามเปิดถัวขาแพ้ / ห้าม Martingale เฉลี่ยต้นทุนแบบการพนัน)
+   for(int ap = PositionsTotal() - 1; ap >= 0; ap--)
+   {
+      if(m_position.SelectByIndex(ap))
+      {
+         bool apMatch = InpOneChartMultiSymbol ? true : (m_position.Symbol() == targetSym);
+         if(apMatch && m_position.Magic() == InpMagicNumber)
+         {
+            bool isPosBuy = (m_position.PositionType() == POSITION_TYPE_BUY);
+            bool isNewBuy = (StringFind(typeStr, "BUY") >= 0);
+            if(isPosBuy == isNewBuy)
+            {
+               double openP = m_position.PriceOpen();
+               double curP  = m_position.PriceCurrent();
+               bool isLoss  = isPosBuy ? (curP < openP) : (curP > openP);
+               if(isLoss)
+               {
+                  PrintFormat("🚫 [Anti-Averaging Guard] Existing position #%I64d on %s is in floating loss. Averaging down is strictly prohibited!",
+                              m_position.Ticket(), targetSym);
+                  return;
+               }
+            }
+         }
+      }
+   }
+
+   // Basket Lock check
+   if(m_basketLocked)
+   {
+      PrintFormat("🧺 [Basket Locked] %s. No new orders until next trading day.", m_basketLockReason);
+      return;
+   }
+
    if(!IsTradingTimeAllowed())
    {
       Print("⏰ [Time Filter] Rollover or weekend filter active. Skipping order execution.");
@@ -1507,7 +1574,99 @@ void ManageActivePositions()
    if(PositionsTotal() == 0)
    {
       m_hasPyramidedThisCycle = false;
+      m_basketPeakFloatingPnl = 0.0;
+      m_basketLocked = false;
+      m_basketLockReason = "";
       return;
+   }
+
+   // === BASKET CLOSE GUARD (ปิดรวบเมื่อขาดทุนรวมทะลุเพดาน) ===
+   if(InpEnableBasketClose || InpEnableEquityShield)
+   {
+      double totalFloatingPnl = 0.0;
+      int ownPositionCount = 0;
+      for(int b = PositionsTotal() - 1; b >= 0; b--)
+      {
+         if(m_position.SelectByIndex(b))
+         {
+            bool bMatch = InpOneChartMultiSymbol ? true : (m_position.Symbol() == _Symbol);
+            if(bMatch && m_position.Magic() == InpMagicNumber)
+            {
+               totalFloatingPnl += m_position.Profit() + m_position.Swap() + m_position.Commission();
+               ownPositionCount++;
+            }
+         }
+      }
+
+      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double equity  = AccountInfoDouble(ACCOUNT_EQUITY);
+
+      // Track basket peak floating PnL for profit lock
+      if(totalFloatingPnl > m_basketPeakFloatingPnl)
+         m_basketPeakFloatingPnl = totalFloatingPnl;
+
+      bool shouldBasketClose = false;
+      string basketReason = "";
+
+      // Check 1: Basket Loss exceeds threshold
+      if(InpEnableBasketClose && balance > 0)
+      {
+         double basketLossPct = -(totalFloatingPnl / balance) * 100.0;
+         if(totalFloatingPnl < 0 && basketLossPct >= InpBasketMaxLossPct)
+         {
+            shouldBasketClose = true;
+            basketReason = StringFormat("BASKET_LOSS: Floating PnL $%.2f = -%.1f%% (Limit: -%.1f%%)", totalFloatingPnl, basketLossPct, InpBasketMaxLossPct);
+         }
+      }
+
+      // Check 2: Basket Profit Lock (peaked then pulled back)
+      if(InpEnableBasketClose && m_basketPeakFloatingPnl > 1.0 && totalFloatingPnl > 0)
+      {
+         double pullbackPct = ((m_basketPeakFloatingPnl - totalFloatingPnl) / m_basketPeakFloatingPnl) * 100.0;
+         if(pullbackPct >= InpBasketProfitLockPct)
+         {
+            shouldBasketClose = true;
+            basketReason = StringFormat("BASKET_PROFIT_LOCK: Peak $%.2f -> Now $%.2f (pullback %.0f%% > %.0f%%)", m_basketPeakFloatingPnl, totalFloatingPnl, pullbackPct, InpBasketProfitLockPct);
+         }
+      }
+
+      // Check 3: Equity Shield (absolute equity floor from day start)
+      if(InpEnableEquityShield && m_dayStartEquity > 0 && equity > 0)
+      {
+         double eqDropPct = ((m_dayStartEquity - equity) / m_dayStartEquity) * 100.0;
+         if(eqDropPct >= InpEquityShieldPct)
+         {
+            shouldBasketClose = true;
+            basketReason = StringFormat("EQUITY_SHIELD: Equity $%.2f dropped -%.1f%% from day start $%.2f (Limit: -%.1f%%)", equity, eqDropPct, m_dayStartEquity, InpEquityShieldPct);
+         }
+      }
+
+      if(shouldBasketClose)
+      {
+         PrintFormat("🧺🚨 [BASKET CLOSE TRIGGERED] %s — Closing ALL %d positions immediately!", basketReason, ownPositionCount);
+         for(int bc = PositionsTotal() - 1; bc >= 0; bc--)
+         {
+            if(m_position.SelectByIndex(bc))
+            {
+               bool bcMatch = InpOneChartMultiSymbol ? true : (m_position.Symbol() == _Symbol);
+               if(bcMatch && m_position.Magic() == InpMagicNumber)
+               {
+                  ulong bcTicket = m_position.Ticket();
+                  if(m_trade.PositionClose(bcTicket))
+                     PrintFormat("🧺 [Basket Close] Closed ticket #%I64d on %s", bcTicket, m_position.Symbol());
+               }
+            }
+         }
+         m_basketLocked = true;
+         m_basketLockReason = basketReason;
+         m_isDailyLocked = true;
+         m_dailyLockReason = "Basket Close: " + basketReason;
+         if(InpSoundAlerts) PlaySound("alert.wav");
+         if(InpPushAlerts) SendNotification("🧺 BASKET CLOSE: " + basketReason);
+         m_stealthSL = 0; m_stealthTP1 = 0; m_stealthTP2 = 0; m_isStealthActive = false;
+         m_basketPeakFloatingPnl = 0.0;
+         return;
+      }
    }
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -1627,7 +1786,7 @@ void ManageActivePositions()
                bool isLockedInProfit = isBuy ? (currentSL >= openPrice) : (currentSL <= openPrice && currentSL > 0);
                bool isNotPyramidChild = (StringFind(posComment, "PYRAMID") < 0);
 
-               if(isNotPyramidChild && isLockedInProfit && currentPnlPips >= InpPyramidTriggerPips && !m_hasPyramidedThisCycle)
+               if(isNotPyramidChild && isLockedInProfit && currentPnlPips >= InpPyramidTriggerPips && !m_hasPyramidedThisCycle && (InpMaxOpenPositions <= 0 || PositionsTotal() < InpMaxOpenPositions))
                {
                   double pyramidLot = NormalizeDouble(volume * InpPyramidLotMultiplier, 2);
                   if(pyramidLot < 0.01) pyramidLot = 0.01;
