@@ -188,6 +188,15 @@ input bool               InpEnableTickVelocityFilter= true;  // ตรวจจ�
 input double             InpMinTickVelocity         = 1.5;   // ความเร็วขั้นต่ำ (Ticks/Sec) ยืนยันว่าไม่ใช่ตลาดตายก่อนเข้า Market Order
 input bool               InpEnableAdxBreakoutGuard  = true;  // กรองความชัน ADX ป้องกันเปิดสวนเทรนด์ช่วงกรอบแตก (Trend Re-ignition Guard)
 
+input group "=== 🛡️ REAL-WORLD FRICTION & ANTI-SLIPPAGE DEFENSE ==="
+input bool               InpEnableSpreadToAtrGate   = true;  // กรองสัดส่วน Spread-to-ATR Gate (เพดาน Spread ไม่เกิน % ของ ATR)
+input double             InpMaxSpreadToAtrPct       = 15.0;  // เพดานสูงสุด Spread / ATR(14) ไม่เกิน 15.0%
+input bool               InpEnableAntiHuntingJitter = true;  // สุ่มระยะ Stealth Stop หลบ AI ดักสภาพคล่องโบรคเกอร์ (Anti-Hunting Jitter ±0.3-0.7 pip)
+input bool               InpEnableLiquidityVacuum   = true;  // เกราะตรวจจับสุญญากาศสภาพคล่อง (Liquidity Vacuum / Flash Gap Shield)
+input double             InpVacuumAtrThreshold      = 2.5;   // ตัวคูณ ATR สำหรับระบุแท่งกระชากผิดปกติ (2.5x ATR)
+input double             InpVacuumDryVolPct         = 50.0;  // ปริมาณ Volume ต่ำกว่า % เฉลี่ยที่ถือเป็นสุญญากาศไร้สภาพคล่อง
+input bool               InpEnableBrokerTelemetry   = true;  // บันทึกและวิเคราะห์ความเร็ว Round-trip Latency & Slippage จากโบรคเกอร์
+
 input group "=== 📊 ON-CHART VISUAL LEVELS ==="
 input bool               InpDrawChartLevels   = true;                   // วาดเส้น Entry, SL, TP1, TP2 ลงบนกราฟ
 input color              InpColorEntry        = clrDodgerBlue;          // สีเส้น Entry
@@ -1574,6 +1583,54 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       return;
    }
 
+   // 4c. Spread-to-ATR Friction Gate (บล็อกเทรดเมื่อค่าสเปรดกินเนื้อกำไรเทียบกับความผันผวน ATR มากเกินไป)
+   if(InpEnableSpreadToAtrGate && hATR != INVALID_HANDLE)
+   {
+      double atrVal[1];
+      if(CopyBuffer(hATR, 0, 0, 1, atrVal) == 1 && atrVal[0] > 0)
+      {
+         double spreadDist = ask - bid;
+         double spreadToAtr = (spreadDist / atrVal[0]) * 100.0;
+         if(spreadToAtr > InpMaxSpreadToAtrPct && m_setupGrade != "A+")
+         {
+            PrintFormat("🛑 [Spread-to-ATR Gate] Current spread (%.1f pips) is %.1f%% of ATR (%.1f pips) — exceeds %.1f%% limit. Order skipped to prevent friction erosion!",
+                        currentSpread, spreadToAtr, atrVal[0] / (targetPoint * pipMult), InpMaxSpreadToAtrPct);
+            return;
+         }
+      }
+   }
+
+   // 4d. Liquidity Vacuum / Flash Gap Shield (ตรวจจับแท่งยาวผิดปกติแต่ Volume แห้ง สุญญากาศสภาพคล่อง)
+   if(InpEnableLiquidityVacuum && hATR != INVALID_HANDLE)
+   {
+      MqlRates lastRates[20];
+      ArraySetAsSeries(lastRates, true);
+      if(CopyRates(targetSym, _Period, 1, 20, lastRates) >= 20)
+      {
+         double lastCandleRange = lastRates[0].high - lastRates[0].low;
+         double atrVal[1];
+         if(CopyBuffer(hATR, 0, 1, 1, atrVal) == 1 && atrVal[0] > 0)
+         {
+            if(lastCandleRange >= (InpVacuumAtrThreshold * atrVal[0]))
+            {
+               double avgVol = 0;
+               for(int v = 1; v < 20; v++) avgVol += (double)lastRates[v].tick_volume;
+               avgVol /= 19.0;
+               
+               if(avgVol > 0 && (((double)lastRates[0].tick_volume / avgVol) * 100.0) < InpVacuumDryVolPct)
+               {
+                  PrintFormat("🛡️ [Liquidity Vacuum Shield] Abnormal candle (%.1f pips = %.1fx ATR) with dry tick volume (%.0f%% of avg) detected on %s! Routing to LIMIT order to avoid slippage.",
+                              lastCandleRange / (targetPoint * pipMult), lastCandleRange / atrVal[0], (((double)lastRates[0].tick_volume / avgVol) * 100.0), targetSym);
+                  if(typeStr != "BUY_LIMIT" && typeStr != "SELL_LIMIT")
+                  {
+                     typeStr = isBuy ? "BUY_LIMIT" : "SELL_LIMIT";
+                  }
+               }
+            }
+         }
+      }
+   }
+
    // 4b. Dynamic Market-Adaptive Lot Scaling based on Live MT5 Balance & Market Regime
    if(InpEnableAutoLotScale)
    {
@@ -1664,7 +1721,15 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
    double brokerTP = tp2;
    if(InpEnableStealthMode)
    {
-      m_stealthSL       = sl;
+      double jitterPips = 0.0;
+      if(InpEnableAntiHuntingJitter)
+      {
+         jitterPips = (double)(MathRand() % 41 + 30) / 100.0; // 0.30 to 0.70 pips breathing room
+      }
+
+      m_stealthSL       = isBuy ? (sl - (jitterPips * targetPoint * pipMult))
+                                : (sl + (jitterPips * targetPoint * pipMult));
+      m_stealthSL       = NormalizeDouble(m_stealthSL, digits);
       m_stealthTP1      = tp1;
       m_stealthTP2      = tp2;
       m_isStealthActive = true;
@@ -1704,6 +1769,7 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
                string mktComment = "Aegis_Mkt_" + StringSubstr(orderId, StringLen(orderId)-4);
                bool mktOk = false;
                int mRetries = 0;
+               ulong startTick = GetTickCount64();
                while(mRetries < InpMaxOrderRetries && !mktOk)
                {
                   if(mRetries > 0) Sleep(InpRetryDelayMs);
@@ -1712,10 +1778,19 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
                   else      mktOk = m_trade.Sell(mktLots, targetSym, mktExecPrice, brokerSL, brokerTP, mktComment);
                   if(!mktOk) mRetries++;
                }
+               ulong latencyMs = GetTickCount64() - startTick;
+               double dealPrice = m_trade.ResultPrice();
+               if(dealPrice <= 0) dealPrice = mktExecPrice;
+               double slippagePips = (isBuy ? (dealPrice - mktExecPrice) : (mktExecPrice - dealPrice)) / (targetPoint * pipMult);
 
                if(mktOk)
                {
                   PrintFormat("🚀 [Two-Stage Exec Stage 1] Market fill on %s: %.2f lot @ %.5f", targetSym, mktLots, mktExecPrice);
+                  if(InpEnableBrokerTelemetry)
+                  {
+                     PrintFormat("📡 [Broker Telemetry - Stage 1] Latency: %I64u ms | Req: %.*f | Fill: %.*f | Slippage: %+.1f pips",
+                                 latencyMs, digits, mktExecPrice, digits, dealPrice, slippagePips);
+                  }
                   NotifyBridgeOrderEvent(orderId, "FILLED", mktExecPrice, 0.0, targetSym);
                }
 
@@ -1799,6 +1874,7 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
 
    bool fillSuccess = false;
    int retries = 0;
+   ulong startTick = GetTickCount64();
    while(retries < InpMaxOrderRetries && !fillSuccess)
    {
       if(retries > 0)
@@ -1825,12 +1901,20 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
          retries++;
       }
    }
-
+   ulong latencyMs = GetTickCount64() - startTick;
+   double dealPrice = m_trade.ResultPrice();
+   if(dealPrice <= 0) dealPrice = execPrice;
+   double slippagePips = (orderType == ORDER_TYPE_BUY ? (dealPrice - execPrice) : (execPrice - dealPrice)) / (targetPoint * pipMult);
 
    if(fillSuccess)
    {
       PrintFormat("🚀 [Aegis Market Fill] %s %0.2f lot on %s @ %0.*f | SL: %0.*f TP1: %0.*f TP2: %0.*f",
                   typeStr, lots, targetSym, digits, execPrice, digits, sl, digits, tp1, digits, tp2);
+      if(InpEnableBrokerTelemetry)
+      {
+         PrintFormat("📡 [Broker Telemetry - Market Fill] Ticket #%I64d on %s | Latency: %I64u ms | Req: %.*f | Fill: %.*f | Slippage: %+.1f pips",
+                     m_trade.ResultDeal(), targetSym, latencyMs, digits, execPrice, digits, dealPrice, slippagePips);
+      }
       if(targetSym == _Symbol) DrawChartTradeLevels(typeStr, execPrice, sl, tp1, tp2);
       if(InpSoundAlerts) PlaySound("expert.wav");
       if(InpPushAlerts) SendNotification("Aegis Executed " + typeStr + " on " + targetSym + " @ " + DoubleToString(execPrice, digits));

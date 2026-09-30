@@ -1,0 +1,20 @@
+{
+  "forward": {
+    "startBalance": 10,
+    "finalBalance": 9.232180074693176,
+    "netProfit": -0.7678199253068243,
+    "roi": -7.678199253068244,
+    "winRate": 38,
+    "profitFactor": 0.789012952555214,
+    "maxDrawdownPct": 14.83656263740333,
+    "totalTrades": 50,
+    "newsShockBarsEncountered": 97,
+    "ordersBlockedBySpreadGate": 0
+  },
+  "reverse": {
+    "finalBalance": 8.360962986996732,
+    "netProfit": -1.6390370130032679,
+    "winRate": 18.51851851851852,
+    "maxDrawdownPct": 16.39037013003268
+  }
+}
