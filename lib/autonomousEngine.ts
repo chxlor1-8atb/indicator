@@ -117,9 +117,9 @@ export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
   accountType: "STANDARD",
   scanIntervalMs: 8000,
   /**
-   * SIGNAL_ONLY = Pure Web AI Signal Trading + Telegram Alerts (ไม่มีการส่ง order ไป MT4/MT5)
+   * AUTO = Full Auto-Pilot sends orders directly to MT4/MT5 Bridge without manual approval
    */
-  approvalMode: "SIGNAL_ONLY",
+  approvalMode: "AUTO",
   enforceRule131Guard: false, // ปลดล็อคเพดาน 3 ไม้ เพื่อให้เทรดได้ 10-20 ไม้ตามที่ต้องการ
   maxDailyTrades: 20,         // รองรับ 10 - 20 ออเดอร์ต่อวัน
   maxDailyRiskPct: 15.0,      // เพดานความเสี่ยงสะสมรายวัน
