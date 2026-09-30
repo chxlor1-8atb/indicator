@@ -128,6 +128,13 @@ export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
   riskProfile: "MANUAL_SCALPER",
   enablePyramiding: true,
   pyramidTriggerPips: 15.0,
+  enableScratchExit: true,
+  scratchMaxBars: 3,
+  scratchMaxLossPips: 4.0,
+  enableGoldenSessionLock: true,
+  enableOteDeepEntry: true,
+  fastTrackBePips: 5.0,
+  fastTrackLockPips: 1.0,
 };
 
 /**
@@ -354,6 +361,20 @@ export async function evaluateAssetAutonomous(
     return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
   }
 
+  // ─── [Zero-DD Suite: Golden Session High-Momentum Lock] ───
+  if (config.enableGoldenSessionLock && isGoldAsset) {
+    const isLondonSession = thaiHour >= 14 && thaiHour < 18;
+    const isNewYorkSession = thaiHour >= 19 && thaiHour < 24;
+    const isJudasHour = thaiHour >= 12 && thaiHour < 14;
+    if (!isLondonSession && !isNewYorkSession && !isJudasHour && setupGrade !== "A+" && !isJudasSwing) {
+      addTelemetryLog(
+        sym,
+        "VETO",
+        `🛡️ [Golden Session Lock] เวลาปัจจุบัน ${thaiHour}:00 น. สภาพคล่องต่ำ — ล็อคเทรดเฉพาะ Golden Session (London & NY Overlap) เพื่อกด Drawdown สู่ 0%`
+      );
+      return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+    }
+  }
 
   // ─── [Flash Volatility Spike Circuit Breaker (Pillar 3)] ───
   const flashSpikeCheck = detectFlashVolatilitySpike(candles, 3.0);

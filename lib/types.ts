@@ -2502,6 +2502,14 @@ export interface AutonomousPilotConfig {
   /** Pro Manual Scalper: Enable Auto-Pyramiding Scale-In */
   enablePyramiding?: boolean;
   pyramidTriggerPips?: number;
+  /** Zero-Drawdown Suite (Near 0% DD Engineering) */
+  enableScratchExit?: boolean;
+  scratchMaxBars?: number;
+  scratchMaxLossPips?: number;
+  enableGoldenSessionLock?: boolean;
+  enableOteDeepEntry?: boolean;
+  fastTrackBePips?: number;
+  fastTrackLockPips?: number;
 }
 
 export interface ClassicTrioInfo {

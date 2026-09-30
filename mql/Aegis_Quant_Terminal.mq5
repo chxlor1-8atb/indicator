@@ -120,15 +120,22 @@ input int                InpRolloverEndHour   = 1;                      // ช�
 input bool               InpCloseFridayNight  = false;                  // สั่งปิดทุกไม้ก่อนวันหยุดสุดสัปดาห์ (ศุกร์กลางคืน)
 input int                InpFridayCloseHour   = 22;                     // ชั่วโมงปิดไม้วันศุกร์ (Server Time)
 
-input group "=== 🎯 SNIPER SCALPING & HIGH-PRECISION (5M/15M) ==="
+input group "=== 🎯 ZERO-DRAWDOWN SUITE & SNIPER SCALPING (5M/15M) ==="
 input bool               InpEnableScalpSniper     = true;                   // เปิดโหมด Sniper Scalping ความแม่นยำสูง (5M / 15M)
 input bool               InpEnableMtfFilter       = true;                   // กรองทิศทางไม่ให้สวนเทรนด์ H1 (1H EMA21 vs EMA55)
 input bool               InpEnableLiquiditySweep  = true;                   // ตรวจจับไส้กวาดสภาพคล่องสถาบัน (Turtle Soup Sweep)
 input bool               InpRequireLiquiditySweep = false;                  // บังคับเฉพาะไม้ที่กวาด Sweep ชัดเจนเท่านั้น (โหมด Conservative)
 input bool               InpUsOpenSpikeFreeze     = true;                   // ฟรีซคำสั่งช่วงเปิดตลาดหุ้นสหรัฐฯ (20:25 - 21:45 น. เวลาไทย)
-input bool               InpEnableFastTrackBE     = true;                   // เปิดระบบเลื่อน SL ล็อกหน้าทุนเร็วพิเศษสำหรับ Scalper
-input double             InpFastTrackBePips       = 8.0;                    // ขยับ SL ล็อกหน้าทุนทันทีเมื่อบวกถึง (+8.0 pips)
-input double             InpFastTrackLockPips     = 1.5;                    // ระยะล็อกกำไรหน้าทุน (+1.5 pips)
+input bool               InpEnableFastTrackBE     = true;                   // เปิดระบบ Hyper Fast-Track SL ล็อกหน้าทุนเร็วพิเศษ (Zero-Risk Shield)
+input double             InpFastTrackBePips       = 5.0;                    // กระชับ SL ล็อกหน้าทุนทันทีเมื่อบวกถึง (+5.0 pips)
+input double             InpFastTrackLockPips     = 1.0;                    // ระยะล็อกกำไรหน้าทุน (+1.0 pips พ้นค่าสเปรด)
+input bool               InpEnableScratchExit     = true;                   // เปิดระบบหนีตาย 3 แท่งเทียน (3-Bar Scratch Invalidation ไม่รอโดนลาก)
+input int                InpScratchMaxBars        = 3;                      // จำนวนแท่งเทียนที่รอความเร็วโมเมนตัม (3 แท่ง = 15 นาทีบน M5)
+input double             InpScratchStallPips      = 2.5;                    // เพดานกำไรที่ถือว่ายังไม่เร่งสปีด (+2.5 pips)
+input double             InpScratchMaxLossPips    = 4.0;                    // ยอมเสียค่า Scratch สูงสุดไม่เกิน -4.0 pips (ตัดทิ้งทันทีก่อนโดนลาก -22 pips)
+input bool               InpEnableGoldenSessionLock = true;                 // ล็อคเทรดเฉพาะช่วง High-Momentum Golden Windows (London & NY Overlap)
+input bool               InpEnableOteDeepEntry    = true;                   // บังคับดักเฉพาะ OTE 70.5% - 78.6% Fib ปลายไส้ (Zero-MAE Entry)
+input double             InpMinRejectWickPct      = 40.0;                   // บังคับแท่งทดสอบต้องมีไส้ปฏิเสธราคาอย่างน้อย 40% ป้องกันแท่งตันทะลุ
 input bool               InpEnableAutoPyramiding  = true;                   // เปิดระบบยัดไม้เพิ่มอัตโนมัติเมื่อไม้แรกขยับกันทุนแล้ว (Auto-Pyramiding Scale-In)
 input double             InpPyramidTriggerPips    = 15.0;                   // ระยะกำไรของไม้แรก (Pips) ที่จะเริ่มยัดไม้ที่ 2 ตามน้ำ
 input double             InpPyramidLotMultiplier  = 1.0;                    // สัดส่วนขนาด Lot ของไม้ยัดเพิ่มเทียบกับไม้แรก (1.0x เท่ากัน)
@@ -569,6 +576,21 @@ bool IsTradingTimeAllowed()
    else
    {
       if(dt.hour >= InpRolloverStartHour && dt.hour <= InpRolloverEndHour) return false;
+   }
+
+   // D. Golden Session Lock (เทรดเฉพาะช่วง London & NY Overlap ที่มี Institutional Volume หนาแน่น)
+   if(InpEnableGoldenSessionLock)
+   {
+      int thaiHour = (dt.hour + 4) % 24; // Broker server time to Thai time UTC+7
+      bool isLondonSession = (thaiHour >= 14 && thaiHour < 18); // 14:00 - 17:59
+      bool isNewYorkSession = (thaiHour >= 19 && thaiHour < 24); // 19:00 - 23:59
+      bool isJudasHour = (thaiHour >= 12 && thaiHour < 14); // Judas Swing Pre-London
+      
+      // If outside high-conviction windows and not A+ setup
+      if(!isLondonSession && !isNewYorkSession && !isJudasHour && m_setupGrade != "A+")
+      {
+         return false; // Suppress low-volume choppy Asian noise to keep Drawdown near 0%!
+      }
    }
 
    return true;
@@ -1825,20 +1847,36 @@ void ManageActivePositions()
                }
             }
 
-            // 0d. Time-Decay Stop for Scalping (Exit if stagnant after N bars on M5/M15)
-            if(InpEnableScalpSniper && InpEnableTimeStop && _Period <= PERIOD_M15 && (posSym == _Symbol || InpOneChartMultiSymbol))
+            // 0d. 3-Bar Scratch Invalidation & Time-Decay Stop (Exit if stagnant after 3 bars to suppress Drawdown to near 0%)
+            if(InpEnableScalpSniper && _Period <= PERIOD_M15 && (posSym == _Symbol || InpOneChartMultiSymbol))
             {
                int secondsPerBar = PeriodSeconds(_Period);
                if(secondsPerBar <= 0) secondsPerBar = 300;
                datetime posOpenTime = (datetime)PositionGetInteger(POSITION_TIME);
                int barsHeld = (int)((TimeCurrent() - posOpenTime) / secondsPerBar);
 
-               if(barsHeld >= InpTimeStopBars)
-               {
-                  double currentPnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
-                  double currentPnlPips = currentPnlPoints * pipMult;
+               double currentPnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
+               double currentPnlPips = currentPnlPoints * pipMult;
 
-                  // If stagnant (between -6.0 and +6.0 pips, neither hit SL nor TP)
+               // Check 1: 3-Bar Velocity Scratch Invalidation (หนีตายทันทีใน 3 แท่งเทียน ไม่รอให้โดนลากถึง SL -22 pips)
+               if(InpEnableScratchExit && barsHeld >= InpScratchMaxBars)
+               {
+                  // If after 3 bars price hasn't accelerated into strong profit and is floating in stall zone (e.g. <= +2.5 pips and >= -4.0 pips)
+                  if(currentPnlPips <= InpScratchStallPips && currentPnlPips >= -InpScratchMaxLossPips)
+                  {
+                     PrintFormat("🥷 [3-Bar Scratch Invalidation] Scalp ticket #%I64d held for %d bars without momentum acceleration (PnL: %.1f pips). Closing immediately at scratch level to suppress Drawdown to near 0%%!",
+                                 ticket, barsHeld, currentPnlPips);
+                     if(m_trade.PositionClose(ticket))
+                     {
+                        NotifyBridgeOrderEvent(m_lastOrderId, "SCRATCH_EXIT", currentPrice, currentPnlPips, posSym);
+                        continue;
+                     }
+                  }
+               }
+
+               // Check 2: Time-Decay Stop if stagnant after N bars
+               if(InpEnableTimeStop && barsHeld >= InpTimeStopBars)
+               {
                   if(currentPnlPips > -6.0 && currentPnlPips < 6.0)
                   {
                      PrintFormat("⏱️ [Time-Decay Stop] Scalp ticket #%I64d held for %d bars on %s with stagnant PnL (%.1f pips). Closing to recycle capital.",
@@ -2396,6 +2434,7 @@ void UpdateDashboardGUI()
          : (InpRegimeLotBoost && (m_setupGrade == "A+" || m_confluenceScore >= 80.0) ? "Lot: +25% 🚀" : "AutoLot: ON"))
       : "Lot: FIXED";
    if(InpEnableAutoPyramiding) lotScaleBadge += " + PYRAMID";
+   if(InpEnableScratchExit) lotScaleBadge += " | ZERO-DD 🛡️";
    ObjectSetString(0, GUI_PREFIX + "TierVal", OBJPROP_TEXT, StringFormat("• %s | %s", m_lastTierName, lotScaleBadge));
 
    string govStr = "";
