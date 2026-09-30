@@ -2402,7 +2402,7 @@ export interface AssetScannerSummary {
   updatedAt: number;
 }
 
-export type RiskProfileType = "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE";
+export type RiskProfileType = "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE" | "MANUAL_SCALPER";
 
 export interface PartialCloseEvent {
   stage: "TP1" | "TP2";
@@ -2438,6 +2438,9 @@ export interface MtBridgeOrder {
   approvedAt?: number;
   /** Advanced Order Management fields */
   riskProfile?: RiskProfileType;
+  /** Pro Manual Scalper & Pyramiding fields */
+  isPyramidEligible?: boolean;
+  pyramidTriggerPips?: number;
   initialLots?: number;
   remainingLots?: number;
   partialCloses?: PartialCloseEvent[];
@@ -2496,6 +2499,9 @@ export interface AutonomousPilotConfig {
   scalpTimeframe?: "15m" | "1h" | "5m";
   /** Enable dynamic early profit harvesting before TP */
   enableEarlyHarvest?: boolean;
+  /** Pro Manual Scalper: Enable Auto-Pyramiding Scale-In */
+  enablePyramiding?: boolean;
+  pyramidTriggerPips?: number;
 }
 
 export interface ClassicTrioInfo {

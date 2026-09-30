@@ -345,8 +345,8 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
     baseRiskPct = customRiskPct;
   } else if (riskProfile === "CONSERVATIVE") {
     baseRiskPct = Math.max(0.5, baseRiskPct * 0.5);
-  } else if (riskProfile === "AGGRESSIVE") {
-    baseRiskPct = Math.min(3.0, baseRiskPct * 1.35);
+  } else if (riskProfile === "AGGRESSIVE" || riskProfile === "MANUAL_SCALPER") {
+    baseRiskPct = Math.min(3.5, baseRiskPct * 1.5);
   }
 
   // 2. Realized Volatility Scaling (ATR Expansion vs Baseline)
@@ -422,6 +422,17 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
 
   if (calculatedLotSize < 0.01) calculatedLotSize = 0.01;
 
+  // 5c. Pro Manual Scalper (House-Money Compounding for Small Accounts $10 - $1,000)
+  if (riskProfile === "MANUAL_SCALPER" || riskProfile === "AGGRESSIVE") {
+    if (accountBalance >= 20 && accountBalance < 35 && calculatedLotSize < 0.02) calculatedLotSize = 0.02;
+    else if (accountBalance >= 35 && accountBalance < 60 && calculatedLotSize < 0.03) calculatedLotSize = 0.03;
+    else if (accountBalance >= 60 && accountBalance < 100 && calculatedLotSize < 0.05) calculatedLotSize = 0.05;
+    else if (accountBalance >= 100 && accountBalance < 200 && calculatedLotSize < 0.10) calculatedLotSize = 0.10;
+    else if (accountBalance >= 200 && accountBalance < 350 && calculatedLotSize < 0.20) calculatedLotSize = 0.20;
+    else if (accountBalance >= 350 && accountBalance < 500 && calculatedLotSize < 0.35) calculatedLotSize = 0.35;
+    else if (accountBalance >= 500 && calculatedLotSize < 0.50) calculatedLotSize = 0.50;
+  }
+
   // 6. Margin Capacity Ceiling (Free Margin Safety Cap: max 20% margin usage)
   const effectiveLeverage = leverage || 500;
   const contractSize = sym === "XAUUSD" || sym.startsWith("XAU") ? 100 : isForex ? 100000 : 1;
@@ -449,7 +460,9 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
     : undefined;
 
   let smallAccountGuidance: string | undefined;
-  if (isSmallAccount) {
+  if (riskProfile === "MANUAL_SCALPER") {
+    smallAccountGuidance = `🥷 Pro Manual Scalper (House-Money Mode): ปลดล็อคขนาดล็อตตามกำไรสะสม (ทุน $${accountBalance}) -> ใช้ Lot ${calculatedLotSize} พร้อมระบบ Auto-Pyramiding ขยายไม้นิรภัย`;
+  } else if (isSmallAccount) {
     const std001Loss = Number((0.01 * slPips * (pipValuePerStandardLot * 0.1)).toFixed(2));
     if (slPips <= 16) {
       smallAccountGuidance = `🎯 Sniper Micro-SL (${slPips} pips): ทุน $${accountBalance} เทรด 0.01 lot ได้จริง เสี่ยงเพียง -$${std001Loss} USD หรือเลือกใช้ Cent Account เพื่อคุมความเสี่ยงระดับ 1.5%`;

@@ -43,9 +43,10 @@ enum ENUM_GUI_THEME
 
 enum ENUM_LOT_COMPOUND_MODE
 {
-   COMPOUND_CONSERVATIVE = 0, // Conservative Cap (Max 5.0 lots - เน้นความปลอดภัยสูงสุด สถาบัน)
-   COMPOUND_BALANCED     = 1, // Balanced Market-Adaptive (Max 15.0 lots - ปรับขนาดตามสภาพตลาดและโมเมนตัม)
-   COMPOUND_AGGRESSIVE   = 2  // Aggressive Hyper-Growth (Max 30.0 lots - ทบต้นเต็มพิกัด เร่งพอร์ตไว)
+   COMPOUND_CONSERVATIVE   = 0, // Conservative Cap (Max 5.0 lots - เน้นความปลอดภัยสูงสุด สถาบัน)
+   COMPOUND_BALANCED       = 1, // Balanced Market-Adaptive (Max 15.0 lots - ปรับขนาดตามสภาพตลาดและโมเมนตัม)
+   COMPOUND_AGGRESSIVE     = 2, // Aggressive Hyper-Growth (Max 30.0 lots - ทบต้นเต็มพิกัด เร่งพอร์ตไว)
+   COMPOUND_MANUAL_SCALPER = 3  // Manual Scalper (สายเทรดมือปั้นพอร์ตไว - House Money + Pyramiding)
 };
 
 //--- Input Parameters
@@ -56,7 +57,7 @@ input ulong              InpMagicNumber       = 777888;                  // Magi
 
 input group "=== 📈 MARKET-ADAPTIVE DYNAMIC LOT SCALING ==="
 input bool                    InpEnableAutoLotScale    = true;                    // เปิดโหมดคำนวณและปรับขนาด Lot อัตโนมัติตามสภาวะตลาด
-input ENUM_LOT_COMPOUND_MODE InpLotCompoundMode       = COMPOUND_BALANCED;       // โหมดทบต้นและเพดาน Lot สูงสุด
+input ENUM_LOT_COMPOUND_MODE InpLotCompoundMode       = COMPOUND_MANUAL_SCALPER; // โหมดทบต้นและเพดาน Lot (แนะนำ MANUAL_SCALPER สายเทรดมือปั้นพอร์ตไว)
 input double                  InpBaseRiskPct           = 1.8;                     // เปอร์เซ็นต์ความเสี่ยงพื้นฐานต่อไม้ (%)
 input double                  InpMaxLotCap             = 15.0;                    // เพดานขนาด Lot สูงสุดที่อนุญาต (ป้องกัน Slippage)
 input bool                    InpRegimeLotBoost        = true;                    // เร่ง Lot (+25%) เมื่อตลาดเป็น Trend แรง และลด Lot (-30%) ใน Sideway
@@ -120,6 +121,9 @@ input bool               InpUsOpenSpikeFreeze     = true;                   // �
 input bool               InpEnableFastTrackBE     = true;                   // เปิดระบบเลื่อน SL ล็อกหน้าทุนเร็วพิเศษสำหรับ Scalper
 input double             InpFastTrackBePips       = 8.0;                    // ขยับ SL ล็อกหน้าทุนทันทีเมื่อบวกถึง (+8.0 pips)
 input double             InpFastTrackLockPips     = 1.5;                    // ระยะล็อกกำไรหน้าทุน (+1.5 pips)
+input bool               InpEnableAutoPyramiding  = true;                   // เปิดระบบยัดไม้เพิ่มอัตโนมัติเมื่อไม้แรกขยับกันทุนแล้ว (Auto-Pyramiding Scale-In)
+input double             InpPyramidTriggerPips    = 15.0;                   // ระยะกำไรของไม้แรก (Pips) ที่จะเริ่มยัดไม้ที่ 2 ตามน้ำ
+input double             InpPyramidLotMultiplier  = 1.0;                    // สัดส่วนขนาด Lot ของไม้ยัดเพิ่มเทียบกับไม้แรก (1.0x เท่ากัน)
 input bool               InpEnableTimeStop        = true;                   // เปิดระบบตัดออเดอร์หมดอายุเวลา (Time-Decay Stop)
 input int                InpTimeStopBars          = 4;                      // ปิดออเดอร์ทันทีหากผ่านไป N แท่ง (เช่น 4 แท่ง 5M = 20 นาที) แล้วราคานิ่ง
 input double             InpMaxScalpSpreadPips    = 2.5;                    // สเปรดสูงสุดที่ยอมรับได้สำหรับ Scalp (ทองคำไม่เกิน 2.5 pips)
@@ -245,6 +249,7 @@ bool     m_isStealthActive      = false;
 
 // Profit Martingale Win Streak State
 int      m_winStreak            = 0;
+bool     m_hasPyramidedThisCycle = false;
 
 // GUI Object Name Prefix
 
@@ -1499,6 +1504,12 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
 //+------------------------------------------------------------------+
 void ManageActivePositions()
 {
+   if(PositionsTotal() == 0)
+   {
+      m_hasPyramidedThisCycle = false;
+      return;
+   }
+
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       if(m_position.SelectByIndex(i))
@@ -1602,6 +1613,55 @@ void ManageActivePositions()
                      if(InpEnableStealthMode) m_stealthSL = fastBeSL;
                      m_trade.PositionModify(ticket, fastBeSL, m_position.TakeProfit());
                      currentSL = fastBeSL;
+                  }
+               }
+            }
+
+            // 0c2. Auto-Pyramiding Scale-In for Pro Scalpers (ยัดไม้เพิ่มเมื่อไม้แรกขยับกันทุนแล้ว และกำไร >= InpPyramidTriggerPips)
+            if(InpEnableAutoPyramiding && (posSym == _Symbol || InpOneChartMultiSymbol))
+            {
+               double currentPnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
+               double currentPnlPips = currentPnlPoints * pipMult;
+               string posComment = PositionGetString(POSITION_COMMENT);
+
+               bool isLockedInProfit = isBuy ? (currentSL >= openPrice) : (currentSL <= openPrice && currentSL > 0);
+               bool isNotPyramidChild = (StringFind(posComment, "PYRAMID") < 0);
+
+               if(isNotPyramidChild && isLockedInProfit && currentPnlPips >= InpPyramidTriggerPips && !m_hasPyramidedThisCycle)
+               {
+                  double pyramidLot = NormalizeDouble(volume * InpPyramidLotMultiplier, 2);
+                  if(pyramidLot < 0.01) pyramidLot = 0.01;
+
+                  // SL for the pyramid order is placed at the openPrice of the 1st position (guaranteed net profit for the basket!)
+                  double pyramidSL = openPrice;
+                  double pyramidTP = m_position.TakeProfit();
+
+                  PrintFormat("🚀 [Auto-Pyramiding Scale-In] 1st position on %s at +%.1f pips is risk-free! Entering Pyramid order %.2f lots at %.5f (SL: %.5f)",
+                              posSym, currentPnlPips, pyramidLot, currentPrice, pyramidSL);
+
+                  MqlTradeRequest pReq;
+                  MqlTradeResult  pRes;
+                  ZeroMemory(pReq);
+                  ZeroMemory(pRes);
+                  pReq.action       = TRADE_ACTION_DEAL;
+                  pReq.symbol       = posSym;
+                  pReq.volume       = pyramidLot;
+                  pReq.type         = isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+                  pReq.price        = currentPrice;
+                  pReq.sl           = pyramidSL;
+                  pReq.tp           = pyramidTP;
+                  pReq.deviation    = InpSlippagePips;
+                  pReq.magic        = InpMagicNumber;
+                  pReq.comment      = "Aegis-PYRAMID";
+                  pReq.type_filling = ORDER_FILLING_IOC;
+
+                  if(OrderSend(pReq, pRes))
+                  {
+                     if(pRes.retcode == TRADE_RETCODE_DONE)
+                     {
+                        m_hasPyramidedThisCycle = true;
+                        PrintFormat("✅ [Pyramid Success] Opened Pyramid ticket #%I64d on %s successfully! Net basket is 100%% Risk-Free!", pRes.order, posSym);
+                     }
                   }
                }
             }
@@ -1906,22 +1966,45 @@ double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice,
    double pipVal = (StringFind(sym, "XAU") >= 0 || StringFind(sym, "GOLD") >= 0 || pMult == 10000.0) ? 10.0 : 1.0;
    double targetLot = dollarRisk / (slPips * pipVal);
 
-   // 14-Step Hyper-Growth Staircase Floor ($10 -> $20 -> $30 -> $40 -> $50 -> $60 -> $70 -> $80 -> $90 -> $100 -> $200 -> $300 -> $400 -> $500 -> $600+)
-   if(balance >= 40.0 && targetLot < 0.02) targetLot = 0.02;
-   if(balance >= 60.0 && targetLot < 0.03) targetLot = 0.03;
-   if(balance >= 80.0 && targetLot < 0.04) targetLot = 0.04;
-   if(balance >= 100.0 && targetLot < 0.05) targetLot = 0.05;
-   if(balance >= 150.0 && targetLot < 0.07) targetLot = 0.07;
-   if(balance >= 200.0 && targetLot < 0.10) targetLot = 0.10;
-   if(balance >= 300.0 && targetLot < 0.15) targetLot = 0.15;
-   if(balance >= 400.0 && targetLot < 0.20) targetLot = 0.20;
-   if(balance >= 500.0 && targetLot < 0.25) targetLot = 0.25;
-   if(balance >= 600.0 && targetLot < 0.30) targetLot = 0.30;
-   if(balance >= 800.0 && targetLot < 0.40) targetLot = 0.40;
-   if(balance >= 1000.0 && targetLot < 0.50) targetLot = 0.50;
-   if(balance >= 2500.0 && targetLot < 1.00) targetLot = 1.00;
-   if(balance >= 5000.0 && targetLot < 2.00) targetLot = 2.00;
-   if(balance >= 10000.0 && targetLot < 4.00) targetLot = 4.00;
+   // Pro Manual Scalper (House-Money Hyper Growth):
+   if(InpLotCompoundMode == COMPOUND_MANUAL_SCALPER)
+   {
+      // ทุน $10 - $19: 0.01 lot
+      // ทุน $20 - $34: 0.02 lot (กำไรสะสมเกิน $10 = ใช้เงินตลาด)
+      // ทุน $35 - $59: 0.03 lot
+      // ทุน $60 - $99: 0.05 lot
+      // ทุน $100 - $199: 0.10 lot
+      // ทุน $200 - $349: 0.20 lot
+      // ทุน $350 - $499: 0.35 lot
+      // ทุน $500+: 0.50 lot (หรือ 5% equity risk)
+      if(balance < 20.0) targetLot = MathMax(targetLot, 0.01);
+      else if(balance < 35.0) targetLot = MathMax(targetLot, 0.02);
+      else if(balance < 60.0) targetLot = MathMax(targetLot, 0.03);
+      else if(balance < 100.0) targetLot = MathMax(targetLot, 0.05);
+      else if(balance < 200.0) targetLot = MathMax(targetLot, 0.10);
+      else if(balance < 350.0) targetLot = MathMax(targetLot, 0.20);
+      else if(balance < 500.0) targetLot = MathMax(targetLot, 0.35);
+      else targetLot = MathMax(targetLot, MathMin(10.0, MathMax(0.50, MathFloor((balance * 0.05 / 20.0) * 100.0) / 100.0)));
+   }
+   else
+   {
+      // 14-Step Hyper-Growth Staircase Floor ($10 -> $20 -> $30 -> $40 -> $50 -> $60 -> $70 -> $80 -> $90 -> $100 -> $200 -> $300 -> $400 -> $500 -> $600+)
+      if(balance >= 40.0 && targetLot < 0.02) targetLot = 0.02;
+      if(balance >= 60.0 && targetLot < 0.03) targetLot = 0.03;
+      if(balance >= 80.0 && targetLot < 0.04) targetLot = 0.04;
+      if(balance >= 100.0 && targetLot < 0.05) targetLot = 0.05;
+      if(balance >= 150.0 && targetLot < 0.07) targetLot = 0.07;
+      if(balance >= 200.0 && targetLot < 0.10) targetLot = 0.10;
+      if(balance >= 300.0 && targetLot < 0.15) targetLot = 0.15;
+      if(balance >= 400.0 && targetLot < 0.20) targetLot = 0.20;
+      if(balance >= 500.0 && targetLot < 0.25) targetLot = 0.25;
+      if(balance >= 600.0 && targetLot < 0.30) targetLot = 0.30;
+      if(balance >= 800.0 && targetLot < 0.40) targetLot = 0.40;
+      if(balance >= 1000.0 && targetLot < 0.50) targetLot = 0.50;
+      if(balance >= 2500.0 && targetLot < 1.00) targetLot = 1.00;
+      if(balance >= 5000.0 && targetLot < 2.00) targetLot = 2.00;
+      if(balance >= 10000.0 && targetLot < 4.00) targetLot = 4.00;
+   }
 
    // Profit Martingale Win Streak Multiplier (House Money Compounding)
    if(InpEnableProfitMartingale && m_winStreak >= 1)
@@ -1935,7 +2018,7 @@ double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice,
    double maxCap = InpMaxLotCap;
    if(InpLotCompoundMode == COMPOUND_CONSERVATIVE) maxCap = MathMin(5.0, maxCap);
    else if(InpLotCompoundMode == COMPOUND_BALANCED) maxCap = MathMin(15.0, maxCap);
-   else if(InpLotCompoundMode == COMPOUND_AGGRESSIVE) maxCap = MathMin(30.0, maxCap);
+   else if(InpLotCompoundMode == COMPOUND_AGGRESSIVE || InpLotCompoundMode == COMPOUND_MANUAL_SCALPER) maxCap = MathMin(30.0, maxCap);
 
    targetLot = MathMin(maxCap, targetLot);
    return targetLot;
@@ -2149,8 +2232,11 @@ void UpdateDashboardGUI()
 
    // Milestone Tier & Capital Status with Market-Adaptive Lot Scaling Badge
    string lotScaleBadge = InpEnableAutoLotScale 
-      ? (InpRegimeLotBoost && (m_setupGrade == "A+" || m_confluenceScore >= 80.0) ? "Lot: +25% 🚀" : "AutoLot: ON")
+      ? (InpLotCompoundMode == COMPOUND_MANUAL_SCALPER 
+         ? "MANUAL SCALPER 🥷" 
+         : (InpRegimeLotBoost && (m_setupGrade == "A+" || m_confluenceScore >= 80.0) ? "Lot: +25% 🚀" : "AutoLot: ON"))
       : "Lot: FIXED";
+   if(InpEnableAutoPyramiding) lotScaleBadge += " + PYRAMID";
    ObjectSetString(0, GUI_PREFIX + "TierVal", OBJPROP_TEXT, StringFormat("• %s | %s", m_lastTierName, lotScaleBadge));
 
    string govStr = "";
