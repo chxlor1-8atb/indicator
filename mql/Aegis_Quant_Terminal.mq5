@@ -49,6 +49,15 @@ enum ENUM_LOT_COMPOUND_MODE
    COMPOUND_MANUAL_SCALPER = 3  // Manual Scalper (สายเทรดมือปั้นพอร์ตไว - House Money + Pyramiding)
 };
 
+enum ENUM_WOW_TRAILING_MODE
+{
+   TRAIL_OFF                 = 0, // ปิดระบบ Trailing Stop
+   TRAIL_SMC_STRUCTURE       = 1, // 🏛️ SMC Structure (เลื่อน SL ซ่อนหลัง Swing High / Swing Low ป้องกันโดนกวาดไส้)
+   TRAIL_ATR_PARABOLIC       = 2, // ⚡ ATR Parabolic Accelerator (ยิ่งกำไรเยอะ ยิ่งบีบแคบ 2.0x -> 1.0x ATR)
+   TRAIL_MULTI_STAGE_RATCHET = 3, // 🪜 Multi-Stage Ratchet (บันไดล็อกกำไร 5 ระดับ: +5p->+1p, +15p->+8p, +25p->+16p, +40p->+30p)
+   TRAIL_HYBRID_INSTITUTIONAL= 4  // 👑 Hybrid Master (ผสาน SMC Structure + Candle-by-Candle ที่ยอดดอย + ล็อกกันทุน)
+};
+
 //--- Input Parameters
 input group "=== 🌐 BRIDGE & SERVER SETTINGS ==="
 input string             InpServerUrl         = "http://localhost:3000"; // Server URL (อย่าใส่ / ต่อท้าย)
@@ -92,6 +101,14 @@ input bool               InpEnableEarlyHarvest = true;                   // เ�
 input double             InpHarvestMinR       = 0.75;                   // กำไรขั้นต่ำ (R-Multiple) ก่อนเริ่มดักเก็บกำไร
 input double             InpHarvestMinPips    = 12.0;                   // กำไรขั้นต่ำ (Pips) ก่อนเริ่มดักเก็บกำไร
 input ENUM_SINGLE_LOT_MODE InpSingleLotMode   = SINGLE_LOT_CASH_HARVEST; // โหมด TP สำหรับไม้ 0.01 Lot (CASH_HARVEST vs RUNNER_TRAIL)
+
+input group "=== 🌪️ WOW-GRADE ADAPTIVE TRAILING STOP ENGINE ==="
+input ENUM_WOW_TRAILING_MODE InpTrailingMode          = TRAIL_HYBRID_INSTITUTIONAL; // โหมด Trailing Stop อัจฉริยะ (แนะนำ Hybrid Master)
+input double                 InpTrailActivationPips   = 10.0;                       // กำไรขั้นต่ำ (Pips) ก่อนเริ่มสตาร์ท Trailing Stop
+input double                 InpTrailStepPips         = 1.0;                        // ระยะห่างขยับแต่ละครั้ง (Pips) เพื่อไม่ให้ส่งคำสั่งถี่เกิน
+input int                    InpSmcSwingLookbackBars  = 5;                          // จำนวนแท่งเทียนย้อนหลังสำหรับหา Swing Pivot (3 - 8 แท่ง)
+input bool                   InpTrailBarByBarAtPeak   = true;                       // สลับเข้าสู่ Candle-by-Candle จี้ใต้แท่งเทียนทันทีเมื่อกำไรเกิน +30 pips
+input double                 InpTrailPeakThresholdPips= 30.0;                       // ระดับกำไร (Pips) ที่จะเริ่มจี้ใต้แท่งเทียนเพื่อล็อกกำไรยอดดอย
 
 input group "=== ⚡ FLASH VOLATILITY SPIKE GUARD ==="
 input bool               InpEnableFlashSpikeGuard = true;                // ตรวจจับแท่งเทียนกระชากผิดปกติ (>3x ATR) พักเทรดทันที
@@ -1589,6 +1606,111 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
 }
 
 //+------------------------------------------------------------------+
+//| Calculate WOW-Grade Institutional Trailing Stop Level            |
+//+------------------------------------------------------------------+
+double CalculateWowTrailingStop(ulong ticket, string sym, bool isBuy, double openPrice, double currentPrice, double currentSL, double pnlPips)
+{
+   if(InpTrailingMode == TRAIL_OFF) return 0.0;
+   if(pnlPips < InpTrailActivationPips) return 0.0;
+
+   int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+   double point = SymbolInfoDouble(sym, SYMBOL_POINT);
+   double pipMult = GetPipMultiplier(sym);
+
+   double calculatedSL = 0.0;
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   int lookback = MathMax(3, InpSmcSwingLookbackBars);
+   int copied = CopyRates(sym, _Period, 0, lookback + 2, rates);
+   if(copied < lookback + 2) return 0.0;
+
+   // ─── 1. Candle-by-Candle High-Watermark Protection (ยอดดอย) ───
+   // When profit accelerates beyond InpTrailPeakThresholdPips (+30 pips), trail directly under/above the previous candle
+   if(InpTrailBarByBarAtPeak && pnlPips >= InpTrailPeakThresholdPips)
+   {
+      double candleBuffer = 1.0 * point * pipMult; // 1.0 pip buffer
+      if(isBuy)
+         calculatedSL = rates[1].low - candleBuffer;
+      else
+         calculatedSL = rates[1].high + candleBuffer;
+   }
+   // ─── 2. Mode: SMC Market Structure (Swing HL / LH Pivot) ───
+   else if(InpTrailingMode == TRAIL_SMC_STRUCTURE || InpTrailingMode == TRAIL_HYBRID_INSTITUTIONAL)
+   {
+      double swingBuffer = 1.5 * point * pipMult; // 1.5 pips behind institutional pivot
+      if(isBuy)
+      {
+         double swingLow = rates[1].low;
+         for(int b = 2; b <= lookback; b++)
+         {
+            if(rates[b].low < swingLow) swingLow = rates[b].low;
+         }
+         calculatedSL = swingLow - swingBuffer;
+      }
+      else
+      {
+         double swingHigh = rates[1].high;
+         for(int b = 2; b <= lookback; b++)
+         {
+            if(rates[b].high > swingHigh) swingHigh = rates[b].high;
+         }
+         calculatedSL = swingHigh + swingBuffer;
+      }
+   }
+   // ─── 3. Mode: ATR Parabolic Accelerator ───
+   else if(InpTrailingMode == TRAIL_ATR_PARABOLIC)
+   {
+      double curAtr = 1.5;
+      if(hATR != INVALID_HANDLE)
+      {
+         double atrBuffer[1];
+         if(CopyBuffer(hATR, 0, 0, 1, atrBuffer) == 1 && atrBuffer[0] > 0)
+            curAtr = atrBuffer[0];
+      }
+      
+      // Accelerator: The higher the profit, the tighter the leash!
+      double atrMult = 2.0;
+      if(pnlPips >= 45.0) atrMult = 1.0;
+      else if(pnlPips >= 25.0) atrMult = 1.5;
+
+      double trailDist = curAtr * atrMult;
+      if(isBuy) calculatedSL = currentPrice - trailDist;
+      else      calculatedSL = currentPrice + trailDist;
+   }
+   // ─── 4. Mode: Multi-Stage Profit Ratchet ───
+   else if(InpTrailingMode == TRAIL_MULTI_STAGE_RATCHET)
+   {
+      double lockedPips = 1.0;
+      if(pnlPips >= 60.0) lockedPips = 48.0;
+      else if(pnlPips >= 40.0) lockedPips = 30.0;
+      else if(pnlPips >= 25.0) lockedPips = 16.0;
+      else if(pnlPips >= 15.0) lockedPips = 8.0;
+      else if(pnlPips >= 8.0)  lockedPips = 2.0;
+
+      if(isBuy) calculatedSL = openPrice + (lockedPips * point * pipMult);
+      else      calculatedSL = openPrice - (lockedPips * point * pipMult);
+   }
+
+   calculatedSL = NormalizeDouble(calculatedSL, digits);
+
+   // Validation: SL can ONLY move in the direction of profit, never retreat!
+   // And must maintain a minimum InpTrailStepPips step distance
+   double stepDistance = InpTrailStepPips * point * pipMult;
+   if(isBuy)
+   {
+      if(calculatedSL > (currentSL + stepDistance) && calculatedSL < currentPrice && calculatedSL > openPrice)
+         return calculatedSL;
+   }
+   else
+   {
+      if((currentSL == 0 || calculatedSL < (currentSL - stepDistance)) && calculatedSL > currentPrice && calculatedSL < openPrice)
+         return calculatedSL;
+   }
+
+   return 0.0;
+}
+
+//+------------------------------------------------------------------+
 //| Manage active positions: TP1 50% partial close & Breakeven SL    |
 //+------------------------------------------------------------------+
 void ManageActivePositions()
@@ -2025,26 +2147,45 @@ void ManageActivePositions()
                }
             }
 
-            // 3. Trailing Stop
-            if(m_lastTrailingSl > 0 && posSym == _Symbol)
+            // 3. 🌪️ WOW-Grade Adaptive Trailing Stop Engine
+            double currentPnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
+            double currentPnlPips = currentPnlPoints * pipMult;
+            double targetTrailSL = 0.0;
+
+            // Priority A: Real-time on-chart WOW Trailing Stop Engine
+            if(InpTrailingMode != TRAIL_OFF)
             {
-               double normTrail = NormalizeDouble(m_lastTrailingSl, digits);
+               targetTrailSL = CalculateWowTrailingStop(ticket, posSym, isBuy, openPrice, currentPrice, currentSL, currentPnlPips);
+            }
+            // Priority B: Fallback to Web Bridge Trailing SL if available
+            if(targetTrailSL <= 0 && m_lastTrailingSl > 0 && posSym == _Symbol)
+            {
+               targetTrailSL = NormalizeDouble(m_lastTrailingSl, digits);
+            }
+
+            if(targetTrailSL > 0)
+            {
                if(InpEnableStealthMode)
                {
-                  bool shouldUpdateStealth = isBuy ? (normTrail > m_stealthSL && normTrail < currentPrice)
-                                                   : (normTrail < m_stealthSL && normTrail > currentPrice);
+                  bool shouldUpdateStealth = isBuy ? (targetTrailSL > m_stealthSL && targetTrailSL < currentPrice)
+                                                   : (targetTrailSL < m_stealthSL && targetTrailSL > currentPrice);
                   if(shouldUpdateStealth)
                   {
-                     m_stealthSL = normTrail;
-                     PrintFormat("🥷 [Stealth Trailing SL] Updated Virtual SL to %.*f on %s", digits, normTrail, posSym);
+                     m_stealthSL = targetTrailSL;
+                     PrintFormat("🥷 [Stealth WOW-Trail] Updated Virtual SL to %.*f on %s (+%.1f pips locked)", digits, targetTrailSL, posSym, currentPnlPips);
                   }
                }
-               bool shouldModify = isBuy ? (normTrail > currentSL && normTrail < currentPrice)
-                                         : (normTrail < currentSL && normTrail > currentPrice);
+               
+               bool shouldModify = isBuy ? (targetTrailSL > currentSL && targetTrailSL < currentPrice)
+                                         : ((currentSL == 0 || targetTrailSL < currentSL) && targetTrailSL > currentPrice);
                if(shouldModify)
                {
-                  m_trade.PositionModify(ticket, normTrail, m_position.TakeProfit());
-                  PrintFormat("🛡️ [Aegis] Adaptive Trailing SL updated to %.5f on %s", normTrail, posSym);
+                  if(m_trade.PositionModify(ticket, targetTrailSL, m_position.TakeProfit()))
+                  {
+                     PrintFormat("🌪️ [WOW Trailing Stop] Ticket #%I64d on %s trailed to %.*f (+%.1f pips locked | Mode: %s)",
+                                 ticket, posSym, digits, targetTrailSL, currentPnlPips, EnumToString(InpTrailingMode));
+                     currentSL = targetTrailSL;
+                  }
                }
             }
          }
