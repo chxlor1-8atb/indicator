@@ -143,9 +143,16 @@ input bool               InpEnableMtfFilter       = true;                   // �
 input bool               InpEnableLiquiditySweep  = true;                   // ตรวจจับไส้กวาดสภาพคล่องสถาบัน (Turtle Soup Sweep)
 input bool               InpRequireLiquiditySweep = false;                  // บังคับเฉพาะไม้ที่กวาด Sweep ชัดเจนเท่านั้น (โหมด Conservative)
 input bool               InpUsOpenSpikeFreeze     = true;                   // ฟรีซคำสั่งช่วงเปิดตลาดหุ้นสหรัฐฯ (20:25 - 21:45 น. เวลาไทย)
+input bool               InpEnableEarlyDeRisk     = true;                   // ลดความเสี่ยงอัตโนมัติ (Soft De-Risking) ทันทีที่กำไรเริ่มวิ่งพ้นสเปรด (+3.0 pips)
+input double             InpDeRiskTriggerPips     = 3.0;                    // กำไรขั้นต่ำ (Pips) ที่จะกระชับ SL ลดความเสี่ยงลงทันที
+input double             InpDeRiskCompressSLPips  = 6.0;                    // ดึง SL แคบลงเหลือ -6.0 pips (จากเดิม -22 pips ลดความเสี่ยงทันที 73%!)
+input bool               InpEnableWickSnapSL      = true;                   // ดึง SL แนบปลายไส้แท่งเทียนสถาบัน (Structural Rejection Wick Snap)
 input bool               InpEnableFastTrackBE     = true;                   // เปิดระบบ Hyper Fast-Track SL ล็อกหน้าทุนเร็วพิเศษ (Zero-Risk Shield)
 input double             InpFastTrackBePips       = 5.0;                    // กระชับ SL ล็อกหน้าทุนทันทีเมื่อบวกถึง (+5.0 pips)
 input double             InpFastTrackLockPips     = 1.0;                    // ระยะล็อกกำไรหน้าทุน (+1.0 pips พ้นค่าสเปรด)
+input bool               InpEnableProfitCushion   = true;                   // เปิดระบบล็อกกำไรการันตีเข้ากระเป๋า (Profit Cushion Lock)
+input double             InpProfitCushionTriggerPips = 8.0;                 // กระชับ SL ล็อกกำไรเมื่อบวกถึง (+8.0 pips)
+input double             InpProfitCushionLockPips = 3.0;                    // ระยะล็อกกำไรสุทธิการันตี (+3.0 pips)
 input bool               InpEnableScratchExit     = true;                   // เปิดระบบหนีตาย 3 แท่งเทียน (3-Bar Scratch Invalidation ไม่รอโดนลาก)
 input int                InpScratchMaxBars        = 3;                      // จำนวนแท่งเทียนที่รอความเร็วโมเมนตัม (3 แท่ง = 15 นาทีบน M5)
 input double             InpScratchStallPips      = 2.5;                    // เพดานกำไรที่ถือว่ายังไม่เร่งสปีด (+2.5 pips)
@@ -1895,13 +1902,70 @@ void ManageActivePositions()
                }
             }
 
-            // 0c. Fast-Track Breakeven Ratchet for Scalper (+8.0 pips -> Lock +1.5 pips)
-            if(InpEnableScalpSniper && InpEnableFastTrackBE && (posSym == _Symbol || InpOneChartMultiSymbol))
+            // 0c. 🛡️ WOW EARLY-STAGE PROFIT ARMOR & MICRO-RATCHET
+            if(InpEnableScalpSniper && (posSym == _Symbol || InpOneChartMultiSymbol))
             {
                double currentPnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
                double currentPnlPips = currentPnlPoints * pipMult;
 
-               if(currentPnlPips >= InpFastTrackBePips)
+               // Stage 0: Soft De-Risking (Risk Compression at +3.0 pips -> compress SL from -22 pips down to -6 pips)
+               if(InpEnableEarlyDeRisk && currentPnlPips >= InpDeRiskTriggerPips && currentPnlPips < InpFastTrackBePips)
+               {
+                  double compressedSL = isBuy ? openPrice - (InpDeRiskCompressSLPips * point * pipMult)
+                                              : openPrice + (InpDeRiskCompressSLPips * point * pipMult);
+                  compressedSL = NormalizeDouble(compressedSL, digits);
+
+                  bool needsDeRisk = isBuy ? (currentSL < compressedSL && currentPrice > compressedSL)
+                                           : ((currentSL > compressedSL || currentSL == 0) && currentPrice < compressedSL);
+                  if(needsDeRisk)
+                  {
+                     PrintFormat("🛡️ [Soft De-Risking] %s reached +%.1f pips! Compressing SL from -22 pips to -%.1f pips (Slash risk by 73%%) on ticket #%I64d.",
+                                 posSym, currentPnlPips, InpDeRiskCompressSLPips, ticket);
+                     if(InpEnableStealthMode) m_stealthSL = compressedSL;
+                     m_trade.PositionModify(ticket, compressedSL, m_position.TakeProfit());
+                     currentSL = compressedSL;
+                  }
+               }
+
+               // Stage 0b: Institutional Structural Rejection Wick Snap
+               if(InpEnableWickSnapSL && currentPnlPips >= 2.5)
+               {
+                  MqlRates bar1Rates[];
+                  ArraySetAsSeries(bar1Rates, true);
+                  if(CopyRates(posSym, _Period, 0, 3, bar1Rates) >= 2)
+                  {
+                     double wickBuffer = 1.0 * point * pipMult;
+                     if(isBuy)
+                     {
+                        double bar1Low = bar1Rates[1].low - wickBuffer;
+                        bar1Low = NormalizeDouble(bar1Low, digits);
+                        if(bar1Low > currentSL && bar1Low < currentPrice)
+                        {
+                           PrintFormat("🕯️ [Wick Snap SL] %s snapping SL behind Bar 1 Rejection Low at %.*f on ticket #%I64d.",
+                                       posSym, digits, bar1Low, ticket);
+                           if(InpEnableStealthMode) m_stealthSL = bar1Low;
+                           m_trade.PositionModify(ticket, bar1Low, m_position.TakeProfit());
+                           currentSL = bar1Low;
+                        }
+                     }
+                     else
+                     {
+                        double bar1High = bar1Rates[1].high + wickBuffer;
+                        bar1High = NormalizeDouble(bar1High, digits);
+                        if((currentSL == 0 || bar1High < currentSL) && bar1High > currentPrice)
+                        {
+                           PrintFormat("🕯️ [Wick Snap SL] %s snapping SL behind Bar 1 Rejection High at %.*f on ticket #%I64d.",
+                                       posSym, digits, bar1High, ticket);
+                           if(InpEnableStealthMode) m_stealthSL = bar1High;
+                           m_trade.PositionModify(ticket, bar1High, m_position.TakeProfit());
+                           currentSL = bar1High;
+                        }
+                     }
+                  }
+               }
+
+               // Stage 1: Zero-Risk Fast-Track Breakeven (+5.0 pips -> Lock +1.0 pip)
+               if(InpEnableFastTrackBE && currentPnlPips >= InpFastTrackBePips)
                {
                   double fastBeSL = isBuy ? openPrice + (InpFastTrackLockPips * point * pipMult)
                                           : openPrice - (InpFastTrackLockPips * point * pipMult);
@@ -1911,11 +1975,30 @@ void ManageActivePositions()
                                            : ((currentSL > fastBeSL || currentSL == 0) && currentPrice < fastBeSL);
                   if(needsFastBe)
                   {
-                     PrintFormat("🎯 [Fast-Track BE] Scalp on %s reached +%.1f pips! Locking risk-free SL to +%.1f pips on ticket #%I64d.",
+                     PrintFormat("🎯 [Fast-Track BE] %s reached +%.1f pips! Locking risk-free SL to +%.1f pips on ticket #%I64d.",
                                  posSym, currentPnlPips, InpFastTrackLockPips, ticket);
                      if(InpEnableStealthMode) m_stealthSL = fastBeSL;
                      m_trade.PositionModify(ticket, fastBeSL, m_position.TakeProfit());
                      currentSL = fastBeSL;
+                  }
+               }
+
+               // Stage 2: Profit Cushion / Lunch Money Lock (+8.0 pips -> Lock +3.0 pips)
+               if(InpEnableProfitCushion && currentPnlPips >= InpProfitCushionTriggerPips)
+               {
+                  double cushionSL = isBuy ? openPrice + (InpProfitCushionLockPips * point * pipMult)
+                                           : openPrice - (InpProfitCushionLockPips * point * pipMult);
+                  cushionSL = NormalizeDouble(cushionSL, digits);
+
+                  bool needsCushion = isBuy ? (currentSL < cushionSL && currentPrice > cushionSL)
+                                            : ((currentSL > cushionSL || currentSL == 0) && currentPrice < cushionSL);
+                  if(needsCushion)
+                  {
+                     PrintFormat("💰 [Profit Cushion Lock] %s reached +%.1f pips! Locking guaranteed profit to +%.1f pips on ticket #%I64d.",
+                                 posSym, currentPnlPips, InpProfitCushionLockPips, ticket);
+                     if(InpEnableStealthMode) m_stealthSL = cushionSL;
+                     m_trade.PositionModify(ticket, cushionSL, m_position.TakeProfit());
+                     currentSL = cushionSL;
                   }
                }
             }
@@ -1934,6 +2017,18 @@ void ManageActivePositions()
                {
                   double pyramidLot = NormalizeDouble(volume * InpPyramidLotMultiplier, 2);
                   if(pyramidLot < 0.01) pyramidLot = 0.01;
+
+                  // Ratchet 1st position's SL to +8.0 pips to guarantee positive basket umbrella
+                  double umbrellaSL = isBuy ? openPrice + (8.0 * point * pipMult) : openPrice - (8.0 * point * pipMult);
+                  umbrellaSL = NormalizeDouble(umbrellaSL, digits);
+                  bool needsUmbrella = isBuy ? (currentSL < umbrellaSL) : (currentSL > umbrellaSL || currentSL == 0);
+                  if(needsUmbrella)
+                  {
+                     if(InpEnableStealthMode) m_stealthSL = umbrellaSL;
+                     m_trade.PositionModify(ticket, umbrellaSL, m_position.TakeProfit());
+                     currentSL = umbrellaSL;
+                     PrintFormat("🛡️ [Pyramid Umbrella SL] Ratcheted 1st ticket #%I64d SL to +8.0 pips (%.*f) to lock basket safety.", ticket, digits, umbrellaSL);
+                  }
 
                   // SL for the pyramid order is placed at the openPrice of the 1st position (guaranteed net profit for the basket!)
                   double pyramidSL = openPrice;

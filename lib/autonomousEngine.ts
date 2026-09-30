@@ -602,6 +602,7 @@ export async function evaluateAssetAutonomous(
         orderType: effectiveOrderType,
         price: pendingPrice,
         stopLoss: slPrice,
+        initialStopLoss: slPrice,
         takeProfit1: tp1Price,
         takeProfit2: tp2Price,
         lotSize,
@@ -1057,13 +1058,14 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
         }
       }
 
-      // Adaptive Trailing Stop (Trail by ATR when in profit >= 1.5R)
+      // Adaptive Trailing Stop (Multi-stage ratchet from 0.25R de-risking to peak locking)
       if (order.adaptiveTrailingActive) {
+        const initialSlVal = order.initialStopLoss || order.stopLoss;
         const trailing = calculateAdaptiveTrailingStop(
           isBuy ? "BUY" : "SELL",
           order.price,
           currentPrice,
-          order.price,
+          initialSlVal,
           order.stopLoss,
           estAtr,
           sym

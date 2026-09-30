@@ -546,35 +546,53 @@ export function calculateAdaptiveTrailingStop(
   let stage = 0;
   let proposedSl = currentSl;
   let isBreakevenMoved = false;
-  let statusDescription = `Stage 0: Pre-profit (<1.0R, current ${rMultipleGained}R). Structural SL maintained.`;
+  let statusDescription = `Stage 0: Pre-profit (<0.25R, current ${rMultipleGained}R). Initial SL maintained.`;
 
   // Spread buffer for breakeven (1.5 pips)
   const beBufferPrice = (1.5 / pipMultiplier);
 
   if (rMultipleGained >= 2.5) {
-    // Stage 3: Aggressive Lock-in (Trail by 1.0x ATR behind live price)
-    stage = 3;
+    // Stage 4: Peak Lock-in (Trail tightly at 1.0x ATR behind live price)
+    stage = 4;
     proposedSl = isBuy
       ? Number((currentPrice - atrValue * 1.0).toFixed(precision))
       : Number((currentPrice + atrValue * 1.0).toFixed(precision));
     isBreakevenMoved = true;
-    statusDescription = `Stage 3: Peak Lock-in (${rMultipleGained}R gained >= 2.5R). Trailing tightly at 1.0x ATR.`;
+    statusDescription = `Stage 4: Peak Lock-in (${rMultipleGained}R gained >= 2.5R). Trailing tightly at 1.0x ATR.`;
   } else if (rMultipleGained >= 1.5) {
-    // Stage 2: ATR Trailing Stop (Trail by 1.5x ATR)
-    stage = 2;
+    // Stage 3: Dynamic ATR Trailing Stop (Trail by 1.5x ATR)
+    stage = 3;
     proposedSl = isBuy
       ? Number((currentPrice - atrValue * 1.5).toFixed(precision))
       : Number((currentPrice + atrValue * 1.5).toFixed(precision));
     isBreakevenMoved = true;
-    statusDescription = `Stage 2: Dynamic ATR Trail (${rMultipleGained}R gained >= 1.5R). Trailing at 1.5x ATR.`;
-  } else if (rMultipleGained >= 1.0) {
-    // Stage 1: Move to Breakeven (+ spread buffer)
+    statusDescription = `Stage 3: Dynamic ATR Trail (${rMultipleGained}R gained >= 1.5R). Trailing at 1.5x ATR.`;
+  } else if (rMultipleGained >= 0.8) {
+    // Stage 2: Profit Cushion (+0.3R profit locked)
+    stage = 2;
+    const cushionPrice = initialRisk * 0.3;
+    proposedSl = isBuy
+      ? Number((entryPrice + cushionPrice).toFixed(precision))
+      : Number((entryPrice - cushionPrice).toFixed(precision));
+    isBreakevenMoved = true;
+    statusDescription = `Stage 2: Profit Cushion Locked (${rMultipleGained}R gained >= 0.8R). +0.3R profit secured.`;
+  } else if (rMultipleGained >= 0.5) {
+    // Stage 1: Fast-Track Breakeven (+ spread buffer)
     stage = 1;
     proposedSl = isBuy
       ? Number((entryPrice + beBufferPrice).toFixed(precision))
       : Number((entryPrice - beBufferPrice).toFixed(precision));
     isBreakevenMoved = true;
-    statusDescription = `Stage 1: Breakeven Locked (${rMultipleGained}R gained >= 1.0R). Trade is 100% Risk-Free.`;
+    statusDescription = `Stage 1: Fast-Track Breakeven (${rMultipleGained}R gained >= 0.5R). Trade is 100% Risk-Free.`;
+  } else if (rMultipleGained >= 0.25) {
+    // Stage 0.5: Soft De-Risking (Compress initial risk from 1.0R to 0.35R - cuts potential loss by 65%)
+    stage = 0.5;
+    const compressedRiskDist = initialRisk * 0.35;
+    proposedSl = isBuy
+      ? Number((entryPrice - compressedRiskDist).toFixed(precision))
+      : Number((entryPrice + compressedRiskDist).toFixed(precision));
+    isBreakevenMoved = false;
+    statusDescription = `Stage 0.5: Soft De-Risking (${rMultipleGained}R gained >= 0.25R). Risk compressed by 65% to 0.35R.`;
   }
 
   // Ratchet Mechanism: Stop Loss can only tighten, NEVER widen risk
@@ -582,7 +600,7 @@ export function calculateAdaptiveTrailingStop(
   if (isBuy) {
     finalSl = Math.max(currentSl, proposedSl);
   } else {
-    finalSl = Math.min(currentSl, proposedSl);
+    finalSl = (currentSl > 0) ? Math.min(currentSl, proposedSl) : proposedSl;
   }
 
   return {

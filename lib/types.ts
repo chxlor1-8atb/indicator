@@ -2438,6 +2438,7 @@ export interface MtBridgeOrder {
   approvedAt?: number;
   /** Advanced Order Management fields */
   riskProfile?: RiskProfileType;
+  initialStopLoss?: number;
   /** Pro Manual Scalper & Pyramiding fields */
   isPyramidEligible?: boolean;
   pyramidTriggerPips?: number;
