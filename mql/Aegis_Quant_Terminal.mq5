@@ -6,8 +6,8 @@
 //+------------------------------------------------------------------+
 #property copyright   "Aegis Quant Terminal"
 #property link        "https://github.com/aegis-quant"
-#property version     "2.50"
-#property description "Institutional MT5 EA with On-Chart GUI HUD, 5-Pillar Confluence Engine, Milestone Scaling & Drawdown Governor"
+#property version     "3.00"
+#property description "Institutional MT5 EA v3.0 Master: Forex Factory News Shield, OnTradeTransaction 0ms Sync, Smart Retry Engine, One-Chart Multi-Symbol & Milestone Compounding"
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -91,6 +91,20 @@ input color              InpColorSL           = clrCrimson;             // ส�
 input color              InpColorTP1          = clrLimeGreen;           // สีเส้น TP1 (Harvest)
 input color              InpColorTP2          = clrGold;                // สีเส้น TP2 (Target)
 
+input group "=== 📰 FOREX FACTORY NEWS SHIELD ==="
+input bool               InpEnableNewsShield      = true;                   // เปิดระบบป้องกันข่าว Forex Factory
+input int                InpNewsPreFreezeMins     = 15;                     // ระยะเวลาหยุดรับสัญญาณก่อนข่าวแดงออก (นาที)
+input bool               InpNewsAutoBreakeven     = true;                   // เลื่อน SL มาล็อกหน้าทุนอัตโนมัติก่อนข่าวแดงออก 15 นาที
+input bool               InpEnablePostNewsSniper  = true;                   // เปิดรับสัญญาณดักสไนเปอร์สวนไส้ข่าว (Turtle Soup)
+
+input group "=== 🌐 ONE-CHART MULTI-SYMBOL ENGINE ==="
+input bool               InpOneChartMultiSymbol   = false;                  // เปิดโหมดเทรดหลายคู่เงินพร้อมกันจากกราฟเดียว
+input string             InpWatchlistSymbols      = "XAUUSD,EURUSD,GBPUSD,USDJPY,BTCUSD,USOIL"; // รายชื่อคู่เงินที่ต้องการให้ EA เทรด
+
+input group "=== ⚡ SMART RETRY EXECUTION ENGINE ==="
+input int                InpMaxOrderRetries       = 3;                      // จำนวนครั้งส่งคำสั่งซ้ำเมื่อโดน Requote / Off-Quotes
+input int                InpRetryDelayMs          = 300;                    // ระยะเวลารอระหว่างส่งซ้ำ (มิลลิวินาที)
+
 input group "=== 📶 OFFLINE STANDALONE FALLBACK ==="
 input bool               InpOfflineFallback   = true;                   // เปิดโหมดทำงานสำรองเมื่อเซิร์ฟเวอร์เว็บหลุด
 input int                InpMaxLossCooldownTrades = 2;                  // จำนวนไม้ที่โดน SL ติดกันก่อนเข้า Cooldown
@@ -114,6 +128,13 @@ int      m_lastPingMs             = 0;
 bool     m_isOnline               = false;
 bool     m_isMinimized            = false;
 ENUM_EXECUTION_MODE m_currentMode;
+
+// Forex Factory News State
+int      m_newsMinutesToNext      = -999;
+string   m_newsState              = "SAFE_TRADING_WINDOW";
+string   m_newsTitle              = "NONE";
+bool     m_newsTradeAllowed       = true;
+string   m_newsTimeStr            = "--:--";
 
 // Flash Volatility Spike State
 datetime m_spikeFreezeUntil       = 0;
@@ -150,6 +171,16 @@ string   m_setupGrade           = "A+";
 // GUI Object Name Prefix
 #define GUI_PREFIX "AegisHUD_"
 #define LEVEL_PREFIX "AegisLvl_"
+
+//--- Forward Function Prototypes
+double GetPipMultiplier(string sym = "");
+bool   HasOpenPosition(string orderId, string sym = "");
+bool   HasPendingOrder(string orderId, string sym = "");
+bool   IsSymbolMatching(string bridgeSym, string chartSym);
+bool   IsWatchlistSymbol(string sym);
+string ResolveBrokerSymbol(string canonicalSym);
+void   NotifyBridgeOrderEvent(string orderId, string action, double execPrice, double profitPips, string sym = "");
+void   ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots, string targetSym = "");
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -408,13 +439,14 @@ bool IsTradingTimeAllowed()
 //+------------------------------------------------------------------+
 //| Check if Pending Order is already active                         |
 //+------------------------------------------------------------------+
-bool HasPendingOrder(string orderId)
+bool HasPendingOrder(string orderId, string sym = "")
 {
+   if(sym == "") sym = _Symbol;
    for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
       if(m_order.SelectByIndex(i))
       {
-         if(m_order.Symbol() == _Symbol && m_order.Magic() == InpMagicNumber)
+         if(m_order.Symbol() == sym && m_order.Magic() == InpMagicNumber)
          {
             return true;
          }
@@ -552,15 +584,85 @@ void OnTick()
 }
 
 //+------------------------------------------------------------------+
+//| TradeTransaction event handler (0ms Native Real-Time Sync)       |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction& trans,
+                        const MqlTradeRequest& request,
+                        const MqlTradeResult& result)
+{
+   // Catch completed deal additions (Order closure by SL / TP / Market / SO)
+   if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
+   {
+      ulong dealTicket = trans.deal;
+      if(HistoryDealSelect(dealTicket))
+      {
+         long dealMagic = HistoryDealGetInteger(dealTicket, DEAL_MAGIC);
+         if(dealMagic == InpMagicNumber)
+         {
+            ENUM_DEAL_ENTRY dealEntry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+            if(dealEntry == DEAL_ENTRY_OUT)
+            {
+               string dealSymbol = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
+               ENUM_DEAL_REASON dealReason = (ENUM_DEAL_REASON)HistoryDealGetInteger(dealTicket, DEAL_REASON);
+               double dealProfit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
+               double dealPrice  = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
+               
+               string action = "CLOSE";
+               if(dealReason == DEAL_REASON_SL) action = "HIT_SL";
+               else if(dealReason == DEAL_REASON_TP) action = "HIT_TP2";
+               else if(dealReason == DEAL_REASON_SO) action = "STOP_OUT";
+
+               PrintFormat("⚡ [OnTradeTransaction 0ms] Position Closed on %s! Reason: %s | PnL: $%.2f | Price: %.5f",
+                           dealSymbol, action, dealProfit, dealPrice);
+
+               NotifyBridgeOrderEvent(m_lastOrderId, action, dealPrice, dealProfit, dealSymbol);
+               if(dealSymbol == _Symbol) ClearChartTradeLevels();
+               if(InpShowGUI) UpdateDashboardGUI();
+            }
+         }
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Resolve canonical symbol into broker-specific symbol name        |
+//| (Handles suffixes like XAUUSDm, EURUSD.a, GOLD)                  |
+//+------------------------------------------------------------------+
+string ResolveBrokerSymbol(string canonicalSym)
+{
+   if(SymbolInfoInteger(canonicalSym, SYMBOL_VISIBLE)) return canonicalSym;
+   int total = SymbolsTotal(false);
+   for(int s = 0; s < total; s++)
+   {
+      string name = SymbolName(s, false);
+      if(IsSymbolMatching(canonicalSym, name))
+      {
+         SymbolSelect(name, true);
+         return name;
+      }
+   }
+   return "";
+}
+
+//+------------------------------------------------------------------+
 //| Poll signals & orders from Web Bridge API                        |
 //+------------------------------------------------------------------+
 void PollBridgeServer()
 {
-   double brokerBid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double brokerAsk = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double brokerSpread = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point / GetPipMultiplier();
-   string url = StringFormat("%s/api/mt-bridge?format=mt&symbol=%s&bid=%.5f&ask=%.5f&spread=%.2f",
-                             InpServerUrl, _Symbol, brokerBid, brokerAsk, brokerSpread);
+   string url;
+   if(InpOneChartMultiSymbol)
+   {
+      url = StringFormat("%s/api/mt-bridge?format=mt&multi=true&symbol=ALL", InpServerUrl);
+   }
+   else
+   {
+      double brokerBid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double brokerAsk = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double brokerSpread = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point / GetPipMultiplier(_Symbol);
+      url = StringFormat("%s/api/mt-bridge?format=mt&symbol=%s&bid=%.5f&ask=%.5f&spread=%.2f",
+                         InpServerUrl, _Symbol, brokerBid, brokerAsk, brokerSpread);
+   }
+
    char postData[], resultData[];
    string resultHeaders;
 
@@ -606,6 +708,25 @@ bool IsSymbolMatching(string bridgeSym, string chartSym)
 }
 
 //+------------------------------------------------------------------+
+//| Check if symbol is permitted by InpWatchlistSymbols              |
+//+------------------------------------------------------------------+
+bool IsWatchlistSymbol(string sym)
+{
+   if(!InpOneChartMultiSymbol) return IsSymbolMatching(sym, _Symbol);
+   if(InpWatchlistSymbols == "" || InpWatchlistSymbols == "*") return true;
+   string list[];
+   int count = StringSplit(InpWatchlistSymbols, ',', list);
+   for(int i = 0; i < count; i++)
+   {
+      string item = list[i];
+      StringTrimLeft(item);
+      StringTrimRight(item);
+      if(IsSymbolMatching(item, sym)) return true;
+   }
+   return false;
+}
+
+//+------------------------------------------------------------------+
 //| Parse CSV response from Web Bridge                               |
 //| ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS,REM_LOTS,STATUS,TRAIL_SL,DEFENSE,TIER,GOVERNOR
 //+------------------------------------------------------------------+
@@ -625,6 +746,23 @@ void ParseBridgeResponse(string responseText)
       StringTrimRight(line);
       if(StringLen(line) == 0) continue;
 
+      // 1. Check Forex Factory News Header Line (#NEWS,minutes,state,title,allowed,time)
+      if(StringFind(line, "#NEWS") == 0)
+      {
+         string newsCols[];
+         int nCount = StringSplit(line, ',', newsCols);
+         if(nCount >= 5)
+         {
+            m_newsMinutesToNext = (int)StringToInteger(newsCols[1]);
+            m_newsState         = newsCols[2];
+            m_newsTitle         = newsCols[3];
+            m_newsTradeAllowed  = (newsCols[4] == "true");
+            if(nCount >= 6) m_newsTimeStr = newsCols[5];
+         }
+         continue;
+      }
+
+      // 2. Parse Order Telemetry & Signals
       string cols[];
       int count = StringSplit(line, ',', cols);
       if(count >= 10)
@@ -644,26 +782,44 @@ void ParseBridgeResponse(string responseText)
          string tier        = count >= 13 ? cols[12] : "Tier 1: Foundation";
          string governor    = count >= 14 ? cols[13] : "NORMAL";
 
-         if(IsSymbolMatching(sym, _Symbol))
+         // Multi-Symbol or Chart-Symbol Routing
+         string targetBrokerSym = "";
+         if(InpOneChartMultiSymbol)
          {
-            m_lastOrderId        = orderId;
-            m_lastOrderType      = typeStr;
-            m_lastOrderPrice     = price;
-            m_lastOrderSL        = sl;
-            m_lastOrderTP1       = tp1;
-            m_lastOrderTP2       = tp2;
-            m_lastOrderLot       = lots;
-            m_lastRemainingLot   = remLots;
-            m_lastOrderStatus    = status;
-            m_lastTrailingSl     = trailSl;
-            m_lastDefenseReason  = defense;
-            m_lastTierName       = tier;
-            m_lastGovernorStatus = governor;
+            if(IsWatchlistSymbol(sym))
+            {
+               targetBrokerSym = ResolveBrokerSymbol(sym);
+            }
+         }
+         else if(IsSymbolMatching(sym, _Symbol))
+         {
+            targetBrokerSym = _Symbol;
+         }
+
+         if(targetBrokerSym != "")
+         {
+            // If matches the active chart symbol, update HUD telemetry variables
+            if(IsSymbolMatching(targetBrokerSym, _Symbol))
+            {
+               m_lastOrderId        = orderId;
+               m_lastOrderType      = typeStr;
+               m_lastOrderPrice     = price;
+               m_lastOrderSL        = sl;
+               m_lastOrderTP1       = tp1;
+               m_lastOrderTP2       = tp2;
+               m_lastOrderLot       = lots;
+               m_lastRemainingLot   = remLots;
+               m_lastOrderStatus    = status;
+               m_lastTrailingSl     = trailSl;
+               m_lastDefenseReason  = defense;
+               m_lastTierName       = tier;
+               m_lastGovernorStatus = governor;
+            }
 
             // Execute if FULL_AUTO and not yet processed
             if(m_currentMode == MODE_FULL_AUTO && (status == "PENDING" || status == "FILLED"))
             {
-               ExecuteInstitutionalSignal(orderId, typeStr, price, sl, tp1, tp2, lots);
+               ExecuteInstitutionalSignal(orderId, typeStr, price, sl, tp1, tp2, lots, targetBrokerSym);
             }
          }
       }
@@ -673,8 +829,10 @@ void ParseBridgeResponse(string responseText)
 //+------------------------------------------------------------------+
 //| Execute or place order based on institutional criteria           |
 //+------------------------------------------------------------------+
-void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots)
+void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots, string targetSym = "")
 {
+   if(targetSym == "") targetSym = _Symbol;
+
    // 1. Institutional Circuit Breaker & Safety Guards
    if(m_isDailyLocked)
    {
@@ -701,22 +859,50 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       return;
    }
 
-   // 2. Check if already open or pending
-   if(HasOpenPosition(orderId) || HasPendingOrder(orderId)) return;
+   // 2. Forex Factory News Shield Pre-News Freeze Guard
+   bool isPostNewsSniper = (StringFind(typeStr, "POST_NEWS") >= 0 || StringFind(orderId, "POST_NEWS") >= 0 || m_lastDefenseReason == "POST_NEWS_SNIPER");
+   if(InpEnableNewsShield && !m_newsTradeAllowed)
+   {
+      if(!isPostNewsSniper || !InpEnablePostNewsSniper)
+      {
+         PrintFormat("🛑 [News Shield Freeze] High-Impact Red Event '%s' in %d mins! Order %s on %s rejected.",
+                     m_newsTitle, m_newsMinutesToNext, orderId, targetSym);
+         return;
+      }
+      else
+      {
+         PrintFormat("⚡ [Post-News Sniper Authorized] Executing institutional reaction sniper on %s despite Red Event!", targetSym);
+      }
+   }
 
-   // 3. Check Spread Safety
-   double currentSpread = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point / GetPipMultiplier();
+   // 3. Check if already open or pending
+   if(HasOpenPosition(orderId, targetSym) || HasPendingOrder(orderId, targetSym)) return;
+
+   // Ensure target symbol is active in Market Watch
+   if(!SymbolInfoInteger(targetSym, SYMBOL_VISIBLE))
+   {
+      SymbolSelect(targetSym, true);
+   }
+
+   double targetPoint = SymbolInfoDouble(targetSym, SYMBOL_POINT);
+   double pipMult = GetPipMultiplier(targetSym);
+   int digits = (int)SymbolInfoInteger(targetSym, SYMBOL_DIGITS);
+
+   // 4. Check Spread Safety
+   double ask = SymbolInfoDouble(targetSym, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(targetSym, SYMBOL_BID);
+   if(ask <= 0 || bid <= 0) return;
+
+   double currentSpread = (ask - bid) / (targetPoint * pipMult);
    if(currentSpread > InpMaxSpreadPips)
    {
-      Print("🛑 [Spread Protection] Spread ", currentSpread, " pips exceeds limit ", InpMaxSpreadPips);
+      PrintFormat("🛑 [Spread Protection] Spread on %s is %.1f pips (exceeds limit %.1f)", targetSym, currentSpread, InpMaxSpreadPips);
       return;
    }
 
-   // 4. Check Free Margin (20% Max Cap)
+   // 5. Check Free Margin (20% Max Cap)
    double marginReq = 0;
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   if(!OrderCalcMargin(ORDER_TYPE_BUY, _Symbol, lots, ask, marginReq)) marginReq = 0;
+   if(!OrderCalcMargin(ORDER_TYPE_BUY, targetSym, lots, ask, marginReq)) marginReq = 0;
    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    if(marginReq > freeMargin * (InpMaxMarginPct / 100.0))
    {
@@ -725,16 +911,15 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
    }
 
    bool isBuy = (StringFind(typeStr, "BUY") >= 0);
-   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    sl    = NormalizeDouble(sl, digits);
    tp1   = NormalizeDouble(tp1, digits);
    tp2   = NormalizeDouble(tp2, digits);
    price = NormalizeDouble(price, digits);
 
    // Normalize Lots to Broker Specification (Step, Min, Max)
-   double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double maxLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minLot  = SymbolInfoDouble(targetSym, SYMBOL_VOLUME_MIN);
+   double maxLot  = SymbolInfoDouble(targetSym, SYMBOL_VOLUME_MAX);
+   double lotStep = SymbolInfoDouble(targetSym, SYMBOL_VOLUME_STEP);
    if(minLot <= 0) minLot = 0.01;
    if(maxLot <= 0) maxLot = 100.0;
    if(lotStep <= 0) lotStep = 0.01;
@@ -744,8 +929,8 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
    lots = NormalizeDouble(lots, 2);
 
    // Broker Trade Stops-Level Safety Buffer
-   int stopLevel = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double minStopDist = (stopLevel + 2) * _Point;
+   int stopLevel = (int)SymbolInfoInteger(targetSym, SYMBOL_TRADE_STOPS_LEVEL);
+   double minStopDist = (stopLevel + 2) * targetPoint;
    if(minStopDist > 0)
    {
       if(isBuy)
@@ -762,31 +947,39 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
 
    string comment = "Aegis_" + StringSubstr(orderId, StringLen(orderId)-6);
    double currentMarket = isBuy ? ask : bid;
-   double distPips = MathAbs(currentMarket - price) / (_Point * GetPipMultiplier());
+   double distPips = MathAbs(currentMarket - price) / (targetPoint * pipMult);
 
-   // 5. Institutional Pending Order Router (Buy/Sell Limit at Order Block)
+   // 6. Institutional Pending Order Router (Buy/Sell Limit at Order Block)
    if(InpUsePendingOrders && (typeStr == "BUY_LIMIT" || typeStr == "SELL_LIMIT"))
    {
       if(distPips > InpMarketExecBufferPips)
       {
          datetime expTime = TimeCurrent() + (InpPendingExpiryHours * 3600);
          bool pendingOk = false;
+         int pRetries = 0;
 
-         if(typeStr == "BUY_LIMIT" && price < ask)
+         while(pRetries < InpMaxOrderRetries && !pendingOk)
          {
-            pendingOk = m_trade.BuyLimit(lots, price, _Symbol, sl, tp2, ORDER_TIME_SPECIFIED, expTime, comment);
-         }
-         else if(typeStr == "SELL_LIMIT" && price > bid)
-         {
-            pendingOk = m_trade.SellLimit(lots, price, _Symbol, sl, tp2, ORDER_TIME_SPECIFIED, expTime, comment);
+            if(pRetries > 0) Sleep(InpRetryDelayMs);
+            ResetLastError();
+
+            if(typeStr == "BUY_LIMIT" && price < ask)
+            {
+               pendingOk = m_trade.BuyLimit(lots, price, targetSym, sl, tp2, ORDER_TIME_SPECIFIED, expTime, comment);
+            }
+            else if(typeStr == "SELL_LIMIT" && price > bid)
+            {
+               pendingOk = m_trade.SellLimit(lots, price, targetSym, sl, tp2, ORDER_TIME_SPECIFIED, expTime, comment);
+            }
+            if(!pendingOk) pRetries++;
          }
 
          if(pendingOk)
          {
-            PrintFormat("⏳ [Aegis Pending] Placed %s %0.2f lot @ %0.*f | SL: %0.*f TP2: %0.*f (Expires in %dh)",
-                        typeStr, lots, digits, price, digits, sl, digits, tp2, InpPendingExpiryHours);
-            DrawChartTradeLevels(typeStr, price, sl, tp1, tp2);
-            NotifyBridgeOrderEvent(orderId, "PENDING_PLACED", price, 0.0);
+            PrintFormat("⏳ [Aegis Pending] Placed %s %0.2f lot on %s @ %0.*f | SL: %0.*f TP2: %0.*f (Expires in %dh)",
+                        typeStr, lots, targetSym, digits, price, digits, sl, digits, tp2, InpPendingExpiryHours);
+            if(targetSym == _Symbol) DrawChartTradeLevels(typeStr, price, sl, tp1, tp2);
+            NotifyBridgeOrderEvent(orderId, "PENDING_PLACED", price, 0.0, targetSym);
             if(InpSoundAlerts) PlaySound("expert.wav");
             return;
          }
@@ -797,34 +990,58 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       }
    }
 
-   // 6. Market Execution (Instant Fill with Millisecond Local PA Trigger - Pillar 5)
+   // 7. Market Execution with Smart Retry Engine (Pillar 3 & Pillar 5)
    ENUM_ORDER_TYPE orderType = isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
    double execPrice = isBuy ? ask : bid;
 
    // Verify quotes haven't breached SL or touched TP1 during network transit
    if(isBuy)
    {
-      if(sl > 0 && ask <= sl) { PrintFormat("🛑 [Local PA Trigger] Live Ask (%.*f) breached SL (%.*f). Fill aborted.", digits, ask, digits, sl); return; }
-      if(tp1 > 0 && ask >= tp1) { PrintFormat("🛑 [Local PA Trigger] Live Ask (%.*f) reached TP1 (%.*f). Fill aborted.", digits, ask, digits, tp1); return; }
+      if(sl > 0 && ask <= sl) { PrintFormat("🛑 [Local PA Trigger] Live Ask (%.*f) breached SL (%.*f) on %s. Fill aborted.", digits, ask, digits, sl, targetSym); return; }
+      if(tp1 > 0 && ask >= tp1) { PrintFormat("🛑 [Local PA Trigger] Live Ask (%.*f) reached TP1 (%.*f) on %s. Fill aborted.", digits, ask, digits, tp1, targetSym); return; }
    }
    else
    {
-      if(sl > 0 && bid >= sl) { PrintFormat("🛑 [Local PA Trigger] Live Bid (%.*f) breached SL (%.*f). Fill aborted.", digits, bid, digits, sl); return; }
-      if(tp1 > 0 && bid <= tp1) { PrintFormat("🛑 [Local PA Trigger] Live Bid (%.*f) reached TP1 (%.*f). Fill aborted.", digits, bid, digits, tp1); return; }
+      if(sl > 0 && bid >= sl) { PrintFormat("🛑 [Local PA Trigger] Live Bid (%.*f) breached SL (%.*f) on %s. Fill aborted.", digits, bid, digits, sl, targetSym); return; }
+      if(tp1 > 0 && bid <= tp1) { PrintFormat("🛑 [Local PA Trigger] Live Bid (%.*f) reached TP1 (%.*f) on %s. Fill aborted.", digits, bid, digits, tp1, targetSym); return; }
    }
 
-   if(m_trade.PositionOpen(_Symbol, orderType, lots, execPrice, sl, tp2, comment))
+   bool fillSuccess = false;
+   int retries = 0;
+   while(retries < InpMaxOrderRetries && !fillSuccess)
    {
-      PrintFormat("🚀 [Aegis Market Fill] %s %0.2f lot @ %0.*f | SL: %0.*f TP1: %0.*f TP2: %0.*f",
-                  typeStr, lots, digits, execPrice, digits, sl, digits, tp1, digits, tp2);
-      DrawChartTradeLevels(typeStr, execPrice, sl, tp1, tp2);
+      if(retries > 0)
+      {
+         Sleep(InpRetryDelayMs);
+         ask = SymbolInfoDouble(targetSym, SYMBOL_ASK);
+         bid = SymbolInfoDouble(targetSym, SYMBOL_BID);
+         execPrice = isBuy ? ask : bid;
+      }
+
+      ResetLastError();
+      fillSuccess = m_trade.PositionOpen(targetSym, orderType, lots, execPrice, sl, tp2, comment);
+      if(!fillSuccess)
+      {
+         uint err = GetLastError();
+         uint retCode = m_trade.ResultRetcode();
+         PrintFormat("⚠️ [Smart Retry] Execution attempt %d/%d failed on %s (RetCode: %u, Err: %u). Retrying...",
+                     retries + 1, InpMaxOrderRetries, targetSym, retCode, err);
+         retries++;
+      }
+   }
+
+   if(fillSuccess)
+   {
+      PrintFormat("🚀 [Aegis Market Fill] %s %0.2f lot on %s @ %0.*f | SL: %0.*f TP1: %0.*f TP2: %0.*f",
+                  typeStr, lots, targetSym, digits, execPrice, digits, sl, digits, tp1, digits, tp2);
+      if(targetSym == _Symbol) DrawChartTradeLevels(typeStr, execPrice, sl, tp1, tp2);
       if(InpSoundAlerts) PlaySound("expert.wav");
-      if(InpPushAlerts) SendNotification("Aegis Executed " + typeStr + " on " + _Symbol + " @ " + DoubleToString(execPrice, digits));
-      NotifyBridgeOrderEvent(orderId, "FILL", execPrice, 0.0);
+      if(InpPushAlerts) SendNotification("Aegis Executed " + typeStr + " on " + targetSym + " @ " + DoubleToString(execPrice, digits));
+      NotifyBridgeOrderEvent(orderId, "FILL", execPrice, 0.0, targetSym);
    }
    else
    {
-      Print("❌ [Aegis] Order Failed: ", GetLastError());
+      PrintFormat("❌ [Aegis] Order Failed on %s after %d retries. Last Error: %u", targetSym, InpMaxOrderRetries, GetLastError());
    }
 }
 
@@ -833,24 +1050,43 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
 //+------------------------------------------------------------------+
 void ManageActivePositions()
 {
-   double pipMult = GetPipMultiplier();
-   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       if(m_position.SelectByIndex(i))
       {
-         if(m_position.Symbol() == _Symbol && m_position.Magic() == InpMagicNumber)
+         bool isSymMatch = InpOneChartMultiSymbol ? true : (m_position.Symbol() == _Symbol);
+         if(isSymMatch && m_position.Magic() == InpMagicNumber)
          {
             ulong ticket = m_position.Ticket();
+            string posSym = m_position.Symbol();
             double openPrice = m_position.PriceOpen();
             double currentPrice = m_position.PriceCurrent();
             double currentSL = m_position.StopLoss();
             double volume = m_position.Volume();
             bool isBuy = (m_position.PositionType() == POSITION_TYPE_BUY);
+            int digits = (int)SymbolInfoInteger(posSym, SYMBOL_DIGITS);
+            double point = SymbolInfoDouble(posSym, SYMBOL_POINT);
+            double pipMult = GetPipMultiplier(posSym);
+
+            // 0. Pre-News Auto-Breakeven Shield (Pillar 1)
+            // If upcoming Red Folder is within InpNewsPreFreezeMins (15m), lock SL to Breakeven (+1.5 pips buffer)
+            if(InpEnableNewsShield && InpNewsAutoBreakeven && m_newsMinutesToNext >= 0 && m_newsMinutesToNext <= InpNewsPreFreezeMins)
+            {
+               double newsBeSL = isBuy ? openPrice + (1.5 * point * pipMult) : openPrice - (1.5 * point * pipMult);
+               newsBeSL = NormalizeDouble(newsBeSL, digits);
+               bool needsNewsBe = isBuy ? (currentSL < newsBeSL && currentPrice > newsBeSL)
+                                        : ((currentSL > newsBeSL || currentSL == 0) && currentPrice < newsBeSL);
+               if(needsNewsBe)
+               {
+                  PrintFormat("🛡️ [Pre-News Auto-BE] Red Event '%s' in %dm! Locking SL to Breakeven (+1.5 pips) on ticket #%I64d (%s)",
+                              m_newsTitle, m_newsMinutesToNext, ticket, posSym);
+                  m_trade.PositionModify(ticket, newsBeSL, m_position.TakeProfit());
+                  currentSL = newsBeSL;
+               }
+            }
 
             // 1. Check TP1 Partial Close (50%) or Breakeven Protection for 0.01 Lot
-            if(m_lastOrderTP1 > 0)
+            if(m_lastOrderTP1 > 0 && (posSym == _Symbol || InpOneChartMultiSymbol))
             {
                bool isTp1Reached = isBuy ? (currentPrice >= m_lastOrderTP1) : (currentPrice <= m_lastOrderTP1);
                if(isTp1Reached)
@@ -860,12 +1096,12 @@ void ManageActivePositions()
                      double closeVol = NormalizeDouble(volume * 0.5, 2);
                      if(m_trade.PositionClosePartial(ticket, closeVol))
                      {
-                        Print("🎯 [Aegis] TP1 Hit! Closed 50% (", closeVol, " lot). Moving SL to Breakeven.");
+                        PrintFormat("🎯 [Aegis] TP1 Hit on %s! Closed 50%% (%.2f lot). Moving SL to Breakeven.", posSym, closeVol);
                         // Move SL to Breakeven (+ 1.5 pips buffer)
-                        double beSL = isBuy ? openPrice + (1.5 * _Point * pipMult) : openPrice - (1.5 * _Point * pipMult);
+                        double beSL = isBuy ? openPrice + (1.5 * point * pipMult) : openPrice - (1.5 * point * pipMult);
                         beSL = NormalizeDouble(beSL, digits);
                         m_trade.PositionModify(ticket, beSL, m_position.TakeProfit());
-                        NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP1", currentPrice, Math.Abs(currentPrice - openPrice) * pipMult);
+                        NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP1", currentPrice, MathAbs(currentPrice - openPrice) * pipMult, posSym);
                      }
                   }
                   else
@@ -875,24 +1111,24 @@ void ManageActivePositions()
                      {
                         double pnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
                         double pnlPips = pnlPoints * pipMult;
-                        PrintFormat("🎯 [Aegis Single-Lot Harvest] TP1 Hit for 0.01 Lot! Fully closing to lock profit (+%.1f pips).", pnlPips);
+                        PrintFormat("🎯 [Aegis Single-Lot Harvest] TP1 Hit for 0.01 Lot on %s! Fully closing to lock profit (+%.1f pips).", posSym, pnlPips);
                         if(m_trade.PositionClose(ticket))
                         {
-                           NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP1", currentPrice, pnlPips);
+                           NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP1", currentPrice, pnlPips, posSym);
                            continue;
                         }
                      }
                      else
                      {
                         // SINGLE_LOT_RUNNER_TRAIL: lock risk-free by moving SL to Breakeven (+1.5 pips)
-                        double beSL = isBuy ? openPrice + (1.5 * _Point * pipMult) : openPrice - (1.5 * _Point * pipMult);
+                        double beSL = isBuy ? openPrice + (1.5 * point * pipMult) : openPrice - (1.5 * point * pipMult);
                         beSL = NormalizeDouble(beSL, digits);
                         bool needsMove = isBuy ? (currentSL < beSL) : (currentSL > beSL || currentSL == 0);
                         if(needsMove)
                         {
-                           Print("🎯 [Aegis] TP1 Hit for 0.01 Lot! Moving SL to Breakeven (+1.5 pips) to let runner trail.");
+                           PrintFormat("🎯 [Aegis] TP1 Hit for 0.01 Lot on %s! Moving SL to Breakeven (+1.5 pips) to let runner trail.", posSym);
                            m_trade.PositionModify(ticket, beSL, m_position.TakeProfit());
-                           NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP1_BE", currentPrice, Math.Abs(currentPrice - openPrice) * pipMult);
+                           NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP1_BE", currentPrice, MathAbs(currentPrice - openPrice) * pipMult, posSym);
                         }
                      }
                   }
@@ -900,7 +1136,7 @@ void ManageActivePositions()
             }
 
             // 2. Dynamic Early Profit Harvesting (Lock in gains before TP when momentum stalls)
-            if(InpEnableEarlyHarvest)
+            if(InpEnableEarlyHarvest && posSym == _Symbol)
             {
                double pnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
                double pnlPips = pnlPoints * pipMult;
@@ -972,10 +1208,10 @@ void ManageActivePositions()
                   // Execute Early Profit Harvest
                   if(triggerHarvest)
                   {
-                     PrintFormat("🌾 [Aegis Early Harvest] Closing position #%I64d at +%.2fR (+%.1f pips). Reason: %s", ticket, currentR, pnlPips, harvestReason);
+                     PrintFormat("🌾 [Aegis Early Harvest] Closing position #%I64d on %s at +%.2fR (+%.1f pips). Reason: %s", ticket, posSym, currentR, pnlPips, harvestReason);
                      if(m_trade.PositionClose(ticket))
                      {
-                        NotifyBridgeOrderEvent(m_lastOrderId, "EARLY_HARVEST", currentPrice, pnlPips);
+                        NotifyBridgeOrderEvent(m_lastOrderId, "EARLY_HARVEST", currentPrice, pnlPips, posSym);
                         continue;
                      }
                   }
@@ -983,7 +1219,7 @@ void ManageActivePositions()
             }
 
             // 3. Trailing Stop
-            if(m_lastTrailingSl > 0)
+            if(m_lastTrailingSl > 0 && posSym == _Symbol)
             {
                double normTrail = NormalizeDouble(m_lastTrailingSl, digits);
                bool shouldModify = isBuy ? (normTrail > currentSL && normTrail < currentPrice)
@@ -991,14 +1227,14 @@ void ManageActivePositions()
                if(shouldModify)
                {
                   m_trade.PositionModify(ticket, normTrail, m_position.TakeProfit());
-                  Print("🛡️ [Aegis] Adaptive Trailing SL updated to ", normTrail);
+                  PrintFormat("🛡️ [Aegis] Adaptive Trailing SL updated to %.5f on %s", normTrail, posSym);
                }
             }
          }
       }
    }
 
-   // Clear visual lines if no active positions or pending orders remain
+   // Clear visual lines if no active positions or pending orders remain on active chart
    if(PositionsTotal() == 0 && OrdersTotal() == 0)
    {
       ClearChartTradeLevels();
@@ -1008,8 +1244,10 @@ void ManageActivePositions()
 //+------------------------------------------------------------------+
 //| Send event notification back to Web Bridge                       |
 //+------------------------------------------------------------------+
-void NotifyBridgeOrderEvent(string orderId, string action, double execPrice, double profitPips)
+void NotifyBridgeOrderEvent(string orderId, string action, double execPrice, double profitPips, string sym = "")
 {
+   if(sym == "") sym = _Symbol;
+
    if(action == "HIT_SL")
    {
       m_consecutiveLosses++;
@@ -1026,7 +1264,7 @@ void NotifyBridgeOrderEvent(string orderId, string action, double execPrice, dou
 
    string url = InpServerUrl + "/api/mt-bridge";
    string payload = StringFormat("{\"orderId\":\"%s\",\"action\":\"%s\",\"symbol\":\"%s\",\"executionPrice\":%f,\"profitPips\":%f}",
-                                 orderId, action, _Symbol, execPrice, profitPips);
+                                 orderId, action, sym, execPrice, profitPips);
    char postData[], resultData[];
    string resultHeaders;
    StringToCharArray(payload, postData);
@@ -1036,13 +1274,14 @@ void NotifyBridgeOrderEvent(string orderId, string action, double execPrice, dou
 //+------------------------------------------------------------------+
 //| Check if position is already open                                |
 //+------------------------------------------------------------------+
-bool HasOpenPosition(string orderId)
+bool HasOpenPosition(string orderId, string sym = "")
 {
+   if(sym == "") sym = _Symbol;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       if(m_position.SelectByIndex(i))
       {
-         if(m_position.Symbol() == _Symbol && m_position.Magic() == InpMagicNumber)
+         if(m_position.Symbol() == sym && m_position.Magic() == InpMagicNumber)
          {
             return true;
          }
@@ -1054,11 +1293,15 @@ bool HasOpenPosition(string orderId)
 //+------------------------------------------------------------------+
 //| Helper: Get pip multiplier based on symbol                       |
 //+------------------------------------------------------------------+
-double GetPipMultiplier()
+double GetPipMultiplier(string sym = "")
 {
-   if(StringFind(_Symbol, "XAU") >= 0 || StringFind(_Symbol, "GOLD") >= 0) return 10.0;
-   if(StringFind(_Symbol, "JPY") >= 0) return 100.0;
-   if(StringFind(_Symbol, "USDT") >= 0) return 1.0;
+   if(sym == "") sym = _Symbol;
+   string s = sym;
+   StringToUpper(s);
+   if(StringFind(s, "XAU") >= 0 || StringFind(s, "GOLD") >= 0) return 10.0;
+   if(StringFind(s, "JPY") >= 0) return 100.0;
+   if(StringFind(s, "USDT") >= 0 || StringFind(s, "BTC") >= 0 || StringFind(s, "ETH") >= 0) return 1.0;
+   if(StringFind(s, "OIL") >= 0 || StringFind(s, "USO") >= 0 || StringFind(s, "WTI") >= 0) return 100.0;
    return 10000.0; // Standard 5-digit Forex
 }
 
@@ -1070,44 +1313,48 @@ void CreateDashboardGUI()
    int x = InpGuiX;
    int y = InpGuiY;
    int w = 270;
-   int h = 330;
+   int h = 355;
 
    // Main Background Panel (Dark Glassmorphism)
    CreatePanel("BG", x, y, w, h, C'13,17,23', C'30,41,59', 2);
 
    // Header Bar
    CreatePanel("Header", x, y, w, 32, C'17,24,39', C'30,41,59', 1);
-   CreateLabel("Title", x + 10, y + 8, "🛡️ AEGIS QUANT TERMINAL v2.5", "Segoe UI", 9, clrWhite, true);
+   CreateLabel("Title", x + 10, y + 8, "🛡️ AEGIS QUANT TERMINAL v3.0", "Segoe UI", 9, clrWhite, true);
    CreateButton("MinBtn", x + w - 26, y + 5, 20, 20, "─", clrLightSteelBlue, C'30,41,59');
 
    // Connection & Latency Status
    CreateLabel("PingLbl", x + 10, y + 38, "BRIDGE: CONNECTING...", "Consolas", 8, clrDarkGray);
 
    // Asset & Price
-   CreateLabel("AssetLbl", x + 10, y + 56, _Symbol + "  |  SPREAD: -- pips", "Segoe UI", 9, clrSilver, true);
+   string symDisplay = InpOneChartMultiSymbol ? StringFormat("%s [MULTI-CHART 🌐]", _Symbol) : _Symbol;
+   CreateLabel("AssetLbl", x + 10, y + 54, symDisplay + "  |  SPREAD: -- pips", "Segoe UI", 9, clrSilver, true);
+
+   // Forex Factory News Shield HUD
+   CreateLabel("NewsLbl", x + 10, y + 72, "📰 FF NEWS: MONITORING...", "Segoe UI", 8, clrLightSkyBlue);
 
    // Confluence Score Box
-   CreatePanel("ConfBox", x + 10, y + 78, w - 20, 52, C'20,29,45', C'37,99,235', 1);
-   CreateLabel("ConfTitle", x + 18, y + 84, "CONFLUENCE SCORE & BIAS", "Segoe UI", 8, clrLightSkyBlue);
-   CreateLabel("ConfScore", x + 18, y + 100, "85.0% [A+] STRONG BUY", "Segoe UI", 11, clrLimeGreen, true);
+   CreatePanel("ConfBox", x + 10, y + 92, w - 20, 52, C'20,29,45', C'37,99,235', 1);
+   CreateLabel("ConfTitle", x + 18, y + 98, "CONFLUENCE SCORE & BIAS", "Segoe UI", 8, clrLightSkyBlue);
+   CreateLabel("ConfScore", x + 18, y + 114, "85.0% [A+] STRONG BUY", "Segoe UI", 11, clrLimeGreen, true);
 
    // Milestone Tier & Capital Status
-   CreateLabel("TierTitle", x + 10, y + 138, "CAPITAL & DRAWDOWN GOVERNOR:", "Segoe UI", 8, clrDodgerBlue, true);
-   CreateLabel("TierVal", x + 10, y + 154, "• Tier 1: Foundation ($10-$50)", "Segoe UI", 8, clrWhite);
-   CreateLabel("GovVal", x + 10, y + 170, "• DD Governor: NORMAL (100% Lot)", "Segoe UI", 8, clrLimeGreen);
-   CreateLabel("MarginVal", x + 10, y + 186, "• Margin Cap: < 20% Safe", "Segoe UI", 8, clrSilver);
+   CreateLabel("TierTitle", x + 10, y + 152, "CAPITAL & DRAWDOWN GOVERNOR:", "Segoe UI", 8, clrDodgerBlue, true);
+   CreateLabel("TierVal", x + 10, y + 168, "• Tier 1: Foundation ($10-$50)", "Segoe UI", 8, clrWhite);
+   CreateLabel("GovVal", x + 10, y + 184, "• DD Governor: NORMAL (100% Lot)", "Segoe UI", 8, clrLimeGreen);
+   CreateLabel("MarginVal", x + 10, y + 200, "• Margin Cap: < 20% Safe", "Segoe UI", 8, clrSilver);
 
    // Signal Telemetry Box
-   CreatePanel("SigBox", x + 10, y + 208, w - 20, 48, C'17,24,39', C'30,41,59', 1);
-   CreateLabel("SigTitle", x + 18, y + 213, "ACTIVE AI SIGNAL:", "Segoe UI", 8, clrYellow);
-   CreateLabel("SigDetail", x + 18, y + 230, "WAITING FOR PRIME SETUP...", "Segoe UI", 8, clrSilver);
+   CreatePanel("SigBox", x + 10, y + 222, w - 20, 48, C'17,24,39', C'30,41,59', 1);
+   CreateLabel("SigTitle", x + 18, y + 227, "ACTIVE AI SIGNAL:", "Segoe UI", 8, clrYellow);
+   CreateLabel("SigDetail", x + 18, y + 244, "WAITING FOR PRIME SETUP...", "Segoe UI", 8, clrSilver);
 
    // Interactive Buttons (One-Click Execution & Mode Toggle)
    int btnW = (w - 28) / 3;
-   CreateButton("BtnMode", x + 10, y + 266, btnW, 26, "AUTO: ON", clrWhite, C'16,185,129');
-   CreateButton("BtnBuy", x + 14 + btnW, y + 266, btnW, 26, "BUY", clrWhite, C'37,99,235');
-   CreateButton("BtnSell", x + 18 + (btnW * 2), y + 266, btnW, 26, "SELL", clrWhite, C'225,29,72');
-   CreateButton("BtnCloseAll", x + 10, y + 296, w - 20, 22, "🛑 CLOSE ALL POSITIONS", clrOrange, C'30,41,59');
+   CreateButton("BtnMode", x + 10, y + 280, btnW, 26, "AUTO: ON", clrWhite, C'16,185,129');
+   CreateButton("BtnBuy", x + 14 + btnW, y + 280, btnW, 26, "BUY", clrWhite, C'37,99,235');
+   CreateButton("BtnSell", x + 18 + (btnW * 2), y + 280, btnW, 26, "SELL", clrWhite, C'225,29,72');
+   CreateButton("BtnCloseAll", x + 10, y + 312, w - 20, 24, "🛑 CLOSE ALL POSITIONS", clrOrange, C'30,41,59');
 
    ChartRedraw();
 }
@@ -1144,10 +1391,52 @@ void UpdateDashboardGUI()
 
    // Spread
    double spreadPips = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point / GetPipMultiplier();
-   string assetStr = StringFormat("%s  |  SPREAD: %.1f pips", _Symbol, spreadPips);
+   string symDisplay = InpOneChartMultiSymbol ? StringFormat("%s [MULTI-CHART 🌐]", _Symbol) : _Symbol;
+   string assetStr = StringFormat("%s  |  SPREAD: %.1f pips", symDisplay, spreadPips);
    color assetClr = (spreadPips > InpMaxSpreadPips) ? clrRed : clrSilver;
    ObjectSetString(0, GUI_PREFIX + "AssetLbl", OBJPROP_TEXT, assetStr);
    ObjectSetInteger(0, GUI_PREFIX + "AssetLbl", OBJPROP_COLOR, assetClr);
+
+   // Forex Factory News Shield HUD
+   string newsStr = "";
+   color newsClr = clrLimeGreen;
+   if(!InpEnableNewsShield)
+   {
+      newsStr = "📰 NEWS SHIELD: DISABLED";
+      newsClr = clrDarkGray;
+   }
+   else if(m_newsMinutesToNext == -999)
+   {
+      newsStr = "📰 FF NEWS: MONITORING...";
+      newsClr = clrSilver;
+   }
+   else if(m_newsMinutesToNext > 60)
+   {
+      newsStr = StringFormat("📰 FF NEWS: SAFE (%s in %dh)", m_newsTitle, (int)(m_newsMinutesToNext / 60));
+      newsClr = clrLimeGreen;
+   }
+   else if(m_newsMinutesToNext > InpNewsPreFreezeMins)
+   {
+      newsStr = StringFormat("📰 FF NEWS: CAUTION (%s in %dm)", m_newsTitle, m_newsMinutesToNext);
+      newsClr = clrGold;
+   }
+   else if(m_newsMinutesToNext >= 0)
+   {
+      newsStr = StringFormat("🚨 RED NEWS IN %dm! FREEZE LOCKED", m_newsMinutesToNext);
+      newsClr = clrCrimson;
+   }
+   else if(m_newsMinutesToNext >= -15)
+   {
+      newsStr = StringFormat("⚡ POST-NEWS SNIPER (%dm ago)", (int)MathAbs(m_newsMinutesToNext));
+      newsClr = clrCyan;
+   }
+   else
+   {
+      newsStr = "📰 FF NEWS: SAFE WINDOW 🟢";
+      newsClr = clrLimeGreen;
+   }
+   ObjectSetString(0, GUI_PREFIX + "NewsLbl", OBJPROP_TEXT, newsStr);
+   ObjectSetInteger(0, GUI_PREFIX + "NewsLbl", OBJPROP_COLOR, newsClr);
 
    // Milestone Tier & Daily Drawdown Status
    ObjectSetString(0, GUI_PREFIX + "TierVal", OBJPROP_TEXT, "• " + m_lastTierName);
@@ -1199,7 +1488,8 @@ void UpdateLiveTickDisplay()
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double spreadPips = (ask - bid) / (GetPipMultiplier() * _Point);
-   string assetStr = StringFormat("%s  |  SPREAD: %.1f pips", _Symbol, spreadPips);
+   string symDisplay = InpOneChartMultiSymbol ? StringFormat("%s [MULTI-CHART 🌐]", _Symbol) : _Symbol;
+   string assetStr = StringFormat("%s  |  SPREAD: %.1f pips", symDisplay, spreadPips);
    ObjectSetString(0, GUI_PREFIX + "AssetLbl", OBJPROP_TEXT, assetStr);
 }
 
@@ -1258,16 +1548,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       // Close All Positions Emergency Button
       else if(sparam == GUI_PREFIX + "BtnCloseAll")
       {
-         for(int i = PositionsTotal() - 1; i >= 0; i--)
-         {
-            if(m_position.SelectByIndex(i))
-            {
-               if(m_position.Symbol() == _Symbol && m_position.Magic() == InpMagicNumber)
-               {
-                  m_trade.PositionClose(m_position.Ticket());
-               }
-            }
-         }
+         CloseAllPositionsAndPendings();
          Print("🛑 [Aegis] Emergency Close All Executed.");
       }
    }
@@ -1279,11 +1560,11 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 void ToggleMinimizeGUI(bool minimize)
 {
    int hide = minimize ? 0 : 1;
-   ObjectSetInteger(0, GUI_PREFIX + "BG", OBJPROP_YSIZE, minimize ? 32 : 330);
+   ObjectSetInteger(0, GUI_PREFIX + "BG", OBJPROP_YSIZE, minimize ? 32 : 355);
    ObjectSetString(0, GUI_PREFIX + "MinBtn", OBJPROP_TEXT, minimize ? "□" : "─");
 
    string elements[] = {
-      "PingLbl", "AssetLbl", "ConfBox", "ConfTitle", "ConfScore",
+      "PingLbl", "AssetLbl", "NewsLbl", "ConfBox", "ConfTitle", "ConfScore",
       "TierTitle", "TierVal", "GovVal", "MarginVal", "SigBox",
       "SigTitle", "SigDetail", "BtnMode", "BtnBuy", "BtnSell", "BtnCloseAll"
    };

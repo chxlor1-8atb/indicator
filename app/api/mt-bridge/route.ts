@@ -9,6 +9,7 @@ import {
 } from "@/lib/autonomousEngine";
 import { validatePriceIntegrity, validateSpreadSafety } from "@/lib/priceIntegrity";
 import { sendTelegramMessage } from "@/lib/telegramService";
+import { getNewsSafetyShieldStatus } from "@/lib/calendarEngine";
 
 export const dynamic = "force-dynamic";
 
@@ -85,25 +86,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    let orders = getActiveBridgeOrders(symbol);
+    const isMulti = searchParams.get("multi") === "true" || rawSymbol === "ALL";
+    const targetSymbol = isMulti ? undefined : symbol;
+
+    let orders = getActiveBridgeOrders(targetSymbol);
 
     // Auto-Trigger Background Scan if registry has no orders and last scan > 30s
     const now = Date.now();
-    if (orders.length === 0 && symbol && now - lastBridgeScanTime > 30000) {
+    if (orders.length === 0 && targetSymbol && now - lastBridgeScanTime > 30000) {
       lastBridgeScanTime = now;
       scanWatchlistAutonomous(DEFAULT_PILOT_CONFIG).catch(() => {});
-      orders = getActiveBridgeOrders(symbol);
+      orders = getActiveBridgeOrders(targetSymbol);
     }
 
     if (format === "csv" || format === "mt") {
+      // News Safety Shield Header Line:
+      // #NEWS,MINUTES_TO_NEXT,STATE,TITLE,TRADE_ALLOWED,TIME_STR
+      const newsSafety = getNewsSafetyShieldStatus(symbol || "XAUUSD");
+      const newsCleanTitle = (newsSafety.nextHighImpactEvent?.title || "NONE")
+        .replace(/,/g, " ")
+        .replace(/[🔴🟠🟡⚪]/g, "")
+        .trim();
+      const newsLine = `#NEWS,${newsSafety.minutesToNextEvent ?? -999},${newsSafety.state},${newsCleanTitle},${newsSafety.tradeAllowed ? 1 : 0},${newsSafety.nextHighImpactEvent?.timeStr || "--:--"}`;
+
       // Format for MT4/MT5 EA line parser:
-      // TICKET_ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS,REMAINING_LOTS,STATUS,TRAILING_SL
-      // Only serve orders cleared for execution — filters out PENDING_HUMAN_APPROVAL to prevent unintended triggers
+      // TICKET_ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS,REMAINING_LOTS,STATUS,TRAILING_SL,DEFENSE,TIER,GOVERNOR
       const executableOrders = orders.filter((o) => o.status !== "PENDING_HUMAN_APPROVAL" && o.status !== "CANCELLED");
-      const lines = executableOrders.map(
+      const orderLines = executableOrders.map(
         (o) =>
-          `${o.id},${rawSymbol || o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize},${o.remainingLots ?? o.lotSize},${o.status},${o.trailingSlPrice ?? o.stopLoss},${o.emergencyDefenseReason ?? "NONE"},${o.tierName ?? "Tier 1"},${o.drawdownGovernorActive ? "GOVERNOR_ACTIVE" : "NORMAL"}`
+          `${o.id},${o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize},${o.remainingLots ?? o.lotSize},${o.status},${o.trailingSlPrice ?? o.stopLoss},${o.emergencyDefenseReason ?? "NONE"},${o.tierName ?? "Tier 1"},${o.drawdownGovernorActive ? "GOVERNOR_ACTIVE" : "NORMAL"}`
       );
+      const lines = [newsLine, ...orderLines];
       return new NextResponse(lines.join("\n"), {
         status: 200,
         headers: {
