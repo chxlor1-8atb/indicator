@@ -17,7 +17,7 @@ import {
   calculatePartialTpPlan,
   evaluateEarlyProfitHarvest,
 } from "./riskEngine";
-import { getNewsSafetyShieldStatus, detectFlashVolatilitySpike } from "./calendarEngine";
+import { getNewsSafetyShieldStatus, detectFlashVolatilitySpike, calculateMacroDirectionalInsight } from "./calendarEngine";
 import { checkCurrencyBasketExposure } from "./strategyOrchestrator";
 import { getCachedPairDivergence } from "./finvizService";
 import { getAdaptiveWeights } from "./db";
@@ -360,6 +360,31 @@ export async function evaluateAssetAutonomous(
       flashSpikeCheck.reason || `⚡ [Flash Volatility Spike] ตรวจพบการกระชาก ${flashSpikeCheck.spikeRatio}x ATR ในแท่งปัจจุบัน พักเข้าเทรด 15 นาที`
     );
     return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+  }
+
+  // ─── [Institutional Macro News Directional Bias Gate] ───
+  const macroInsight = calculateMacroDirectionalInsight(sym, candles);
+  if (macroInsight.hasMacroEvent && macroInsight.assetDirectionalBias !== "NEUTRAL") {
+    const isBuySignal = orderType.includes("BUY");
+    const isSellSignal = orderType.includes("SELL");
+
+    if (macroInsight.assetDirectionalBias === "SELL_ONLY" && isBuySignal && setupGrade !== "A+") {
+      addTelemetryLog(
+        sym,
+        "VETO",
+        `🛡️ [Macro Bias Veto] ข่าว ${macroInsight.eventTitle} หนุนดอลลาร์ (${macroInsight.usdSentiment}) ทิศทาง ${sym} บังคับ SELL_ONLY — สกัดกั้นไม้ BUY ป้องกันการติดดอย`
+      );
+      return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+    }
+
+    if (macroInsight.assetDirectionalBias === "BUY_ONLY" && isSellSignal && setupGrade !== "A+") {
+      addTelemetryLog(
+        sym,
+        "VETO",
+        `🛡️ [Macro Bias Veto] ข่าว ${macroInsight.eventTitle} กดดันดอลลาร์ (${macroInsight.usdSentiment}) ทิศทาง ${sym} บังคับ BUY_ONLY — สกัดกั้นไม้ SELL ป้องกันการโดนลาก`
+      );
+      return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+    }
   }
 
   // ─── Pre-Warning Radar Detection (15-30 mins advance notice) ───

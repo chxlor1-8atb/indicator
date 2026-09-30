@@ -692,3 +692,186 @@ export function detectPostNewsLiquiditySweep(
 
   return { detected: false };
 }
+
+export interface MacroDirectionalInsight {
+  symbol: string;
+  hasMacroEvent: boolean;
+  eventTitle: string;
+  currency: string;
+  impact: CalendarImpact;
+  phase: "PRE_NEWS_FORECAST" | "POST_NEWS_SURPRISE" | "NORMAL";
+  usdSentiment: "BULLISH_USD" | "BEARISH_USD" | "NEUTRAL";
+  assetDirectionalBias: "BUY_ONLY" | "SELL_ONLY" | "NEUTRAL";
+  confidenceScore: number;
+  forecast?: string;
+  previous?: string;
+  actual?: string;
+  deviationSigma?: number;
+  reactionZone?: {
+    zoneHigh: number;
+    zoneLow: number;
+    zoneMid: number; // 50% Equilibrium level
+    zoneType: "NEWS_FVG" | "PRE_NEWS_SWEEP" | "ANCHOR_OB";
+    recommendedAction: "BUY_LIMIT" | "SELL_LIMIT" | "WAIT_PULLBACK";
+  };
+  narrativeExplanation: string;
+}
+
+/**
+ * Calculates Institutional Macro Directional Bias and Price Reaction Zones (FVG / Equilibrium 50%)
+ * based on economic forecasts vs previous and actual surprises.
+ */
+export function calculateMacroDirectionalInsight(
+  symbol: string,
+  candles?: Candle[],
+  precision: number = 2
+): MacroDirectionalInsight {
+  const lastCandle = candles && candles.length > 0 ? candles[candles.length - 1] : undefined;
+  const customDate = lastCandle
+    ? new Date(
+        typeof lastCandle.time === "number"
+          ? (lastCandle.time > 1e11 ? lastCandle.time : lastCandle.time * 1000)
+          : lastCandle.time
+      )
+    : undefined;
+  const safety = getNewsSafetyShieldStatus(symbol, customDate);
+  const event = safety.nextHighImpactEvent || safety.relevantEvents.find((e) => e.impact === "HIGH");
+
+  const canonical = symbol.toUpperCase().trim();
+  const isGold = canonical.includes("XAU") || canonical.includes("GOLD");
+  const isEurUsd = canonical.startsWith("EURUSD");
+  const isGbpUsd = canonical.startsWith("GBPUSD");
+  const isUsdJpy = canonical.startsWith("USDJPY");
+
+  if (!event) {
+    return {
+      symbol,
+      hasMacroEvent: false,
+      eventTitle: "NONE",
+      currency: "USD",
+      impact: "LOW",
+      phase: "NORMAL",
+      usdSentiment: "NEUTRAL",
+      assetDirectionalBias: "NEUTRAL",
+      confidenceScore: 50,
+      narrativeExplanation: "⚪ ไม่มีข่าวเศรษฐกิจกล่องแดงในระยะประชิด กราฟเคลื่อนไหวตามโครงสร้างเทคนิคอล 100%",
+    };
+  }
+
+  // Parse numerical values from strings (handling %, K, M, B)
+  const parseVal = (str?: string): number | null => {
+    if (!str || str === "-" || str === "--") return null;
+    const clean = str.replace(/[^0-9.-]/g, "");
+    const val = parseFloat(clean);
+    return isNaN(val) ? null : val;
+  };
+
+  const act = parseVal(event.actual);
+  const fct = parseVal(event.forecast);
+  const prv = parseVal(event.previous);
+
+  let phase: "PRE_NEWS_FORECAST" | "POST_NEWS_SURPRISE" | "NORMAL" = "NORMAL";
+  let usdSentiment: "BULLISH_USD" | "BEARISH_USD" | "NEUTRAL" = "NEUTRAL";
+  let deviationSigma: number | undefined;
+  let confidenceScore = 60;
+
+  const titleLower = event.title.toLowerCase();
+  const isInverseIndicator = titleLower.includes("unemployment") || titleLower.includes("jobless") || titleLower.includes("claim");
+
+  // Case 1: Post-News with Actual data published
+  if (act !== null && fct !== null) {
+    phase = "POST_NEWS_SURPRISE";
+    const rawDiff = act - fct;
+    deviationSigma = Number((rawDiff / (Math.abs(fct) || 1)).toFixed(2));
+
+    if (Math.abs(rawDiff) > 0.001) {
+      if (isInverseIndicator) {
+        // Higher unemployment = Bad for USD
+        usdSentiment = rawDiff > 0 ? "BEARISH_USD" : "BULLISH_USD";
+      } else {
+        // Higher CPI, NFP, GDP, PMI = Good for USD
+        usdSentiment = rawDiff > 0 ? "BULLISH_USD" : "BEARISH_USD";
+      }
+      confidenceScore = 90;
+    }
+  }
+  // Case 2: Pre-News with Forecast vs Previous
+  else if (fct !== null && prv !== null) {
+    phase = "PRE_NEWS_FORECAST";
+    const rawDiff = fct - prv;
+    deviationSigma = Number((rawDiff / (Math.abs(prv) || 1)).toFixed(2));
+
+    if (Math.abs(rawDiff) > 0.001) {
+      if (isInverseIndicator) {
+        usdSentiment = rawDiff > 0 ? "BEARISH_USD" : "BULLISH_USD";
+      } else {
+        usdSentiment = rawDiff > 0 ? "BULLISH_USD" : "BEARISH_USD";
+      }
+      confidenceScore = 75;
+    }
+  }
+
+  // Map USD sentiment to Asset Directional Bias:
+  // For Gold (XAUUSD), EURUSD, GBPUSD: Inverse to USD
+  // For USDJPY, USDCAD, USDCHF: Proportional to USD
+  let assetDirectionalBias: "BUY_ONLY" | "SELL_ONLY" | "NEUTRAL" = "NEUTRAL";
+  if (isGold || isEurUsd || isGbpUsd) {
+    if (usdSentiment === "BULLISH_USD") assetDirectionalBias = "SELL_ONLY";
+    else if (usdSentiment === "BEARISH_USD") assetDirectionalBias = "BUY_ONLY";
+  } else if (isUsdJpy) {
+    if (usdSentiment === "BULLISH_USD") assetDirectionalBias = "BUY_ONLY";
+    else if (usdSentiment === "BEARISH_USD") assetDirectionalBias = "SELL_ONLY";
+  }
+
+  // Calculate Reaction Zone from recent price action (News FVG or Pre-News Range)
+  let reactionZone: MacroDirectionalInsight["reactionZone"] | undefined;
+  if (candles && candles.length >= 10) {
+    const last10 = candles.slice(-10);
+    const highestBar = Math.max(...last10.map((b) => b.high));
+    const lowestBar = Math.min(...last10.map((b) => b.low));
+    const range = highestBar - lowestBar;
+
+    if (range > 0) {
+      const zoneMid = Number(((highestBar + lowestBar) / 2).toFixed(precision));
+      reactionZone = {
+        zoneHigh: Number(highestBar.toFixed(precision)),
+        zoneLow: Number(lowestBar.toFixed(precision)),
+        zoneMid,
+        zoneType: phase === "POST_NEWS_SURPRISE" ? "NEWS_FVG" : "PRE_NEWS_SWEEP",
+        recommendedAction:
+          assetDirectionalBias === "BUY_ONLY"
+            ? "BUY_LIMIT"
+            : assetDirectionalBias === "SELL_ONLY"
+            ? "SELL_LIMIT"
+            : "WAIT_PULLBACK",
+      };
+    }
+  }
+
+  let narrativeExplanation = "";
+  if (phase === "POST_NEWS_SURPRISE") {
+    narrativeExplanation = `🚨 [Post-News Surprise] ข่าว ${event.title} ออกผลจริง (${event.actual}) เทียบคาดการณ์ (${event.forecast}) ทำให้มุมมองดอลลาร์เป็น ${usdSentiment} 👉 แนะนำเทรด ${symbol} ในทิศทาง ${assetDirectionalBias} ดักจังหวะ Retest โซน Equilibrium 50% ($${reactionZone?.zoneMid || "--"})`;
+  } else if (phase === "PRE_NEWS_FORECAST") {
+    narrativeExplanation = `📊 [Pre-News Consensus] ตลาดคาดการณ์ ${event.title} (${event.forecast}) เทียบครั้งก่อน (${event.previous}) สะท้อนมุมมองดอลลาร์ ${usdSentiment} 👉 กรอบทิศทาง ${symbol} เอนเอียงไปทาง ${assetDirectionalBias}`;
+  } else {
+    narrativeExplanation = `⚪ ข่าว ${event.title} ตัวเลขทรงตัว ตลาดวิ่งตามกรอบแนวรับ-แนวต้านเทคนิคอลปกติ`;
+  }
+
+  return {
+    symbol,
+    hasMacroEvent: true,
+    eventTitle: event.title,
+    currency: event.currency,
+    impact: event.impact,
+    phase,
+    usdSentiment,
+    assetDirectionalBias,
+    confidenceScore,
+    forecast: event.forecast,
+    previous: event.previous,
+    actual: event.actual,
+    deviationSigma,
+    reactionZone,
+    narrativeExplanation,
+  };
+}

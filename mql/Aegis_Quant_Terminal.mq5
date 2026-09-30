@@ -142,6 +142,12 @@ input int                InpNewsPreFreezeMins     = 15;                     // �
 input bool               InpNewsAutoBreakeven     = true;                   // เลื่อน SL มาล็อกหน้าทุนอัตโนมัติก่อนข่าวแดงออก 15 นาที
 input bool               InpEnablePostNewsSniper  = true;                   // เปิดรับสัญญาณดักสไนเปอร์สวนไส้ข่าว (Turtle Soup)
 
+input group "=== 🧭 INSTITUTIONAL MACRO NEWS DIRECTION & ZONES ==="
+input bool               InpEnableMacroBiasFilter = true;                   // กรองทิศทางการเทรดตามข่าวเศรษฐกิจและตัวเลขคาดการณ์ (Macro Directional Bias)
+input bool               InpDrawMacroNewsZone     = true;                   // วาดกรอบโซนราคาตอบรับข่าว (Macro News Reaction Zone / FVG) บนกราฟ
+input color              InpMacroZoneBullColor    = C'20,40,30';            // สีกล่องโซนฝั่ง Buy (Demand FVG)
+input color              InpMacroZoneBearColor    = C'45,20,25';            // สีกล่องโซนฝั่ง Sell (Supply FVG)
+
 input group "=== 🌐 ONE-CHART MULTI-SYMBOL ENGINE ==="
 input bool               InpOneChartMultiSymbol   = false;                  // เปิดโหมดเทรดหลายคู่เงินพร้อมกันจากกราฟเดียว
 input string             InpWatchlistSymbols      = "XAUUSD,EURUSD,GBPUSD,USDJPY,BTCUSD,USOIL"; // รายชื่อคู่เงินที่ต้องการให้ EA เทรด
@@ -182,6 +188,14 @@ string   m_newsState              = "SAFE_TRADING_WINDOW";
 string   m_newsTitle              = "NONE";
 bool     m_newsTradeAllowed       = true;
 string   m_newsTimeStr            = "--:--";
+
+// Institutional Macro Direction & Zones State
+string   m_macroBias              = "NEUTRAL"; // BUY_ONLY, SELL_ONLY, NEUTRAL
+double   m_macroZoneHigh          = 0.0;
+double   m_macroZoneLow           = 0.0;
+double   m_macroZoneMid           = 0.0;
+string   m_macroSentiment         = "NEUTRAL";
+string   m_macroEventTitle        = "NONE";
 
 // Flash Volatility Spike State
 datetime m_spikeFreezeUntil       = 0;
@@ -324,6 +338,8 @@ void OnDeinit(const int reason)
 void ClearChartTradeLevels()
 {
    ObjectsDeleteAll(0, LEVEL_PREFIX);
+   ObjectDelete(0, "Aegis_Macro_Zone");
+   ObjectDelete(0, "Aegis_Macro_Label");
    ChartRedraw();
 }
 
@@ -368,6 +384,40 @@ void DrawChartTradeLevels(string typeStr, double entry, double sl, double tp1, d
       CreateChartHLine("TP2", tp2, InpColorTP2, STYLE_SOLID, 2, StringFormat("Aegis TP2 Target @ %.*f (+2.5R)", digits, tp2));
    }
 
+   ChartRedraw();
+}
+
+//+------------------------------------------------------------------+
+//| Draw Institutional Macro News Reaction Zone & Equilibrium on Chart |
+//+------------------------------------------------------------------+
+void DrawMacroReactionZone()
+{
+   if(!InpDrawMacroNewsZone || m_macroZoneHigh <= 0 || m_macroZoneLow <= 0) return;
+   
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   int barSeconds = PeriodSeconds(_Period);
+   if(barSeconds <= 0) barSeconds = 300;
+   datetime tStart = TimeCurrent() - (barSeconds * 16);
+   datetime tEnd   = TimeCurrent() + (barSeconds * 16);
+   
+   color zoneColor   = (m_macroBias == "BUY_ONLY") ? InpMacroZoneBullColor : (m_macroBias == "SELL_ONLY") ? InpMacroZoneBearColor : C'30,30,40';
+   color borderColor = (m_macroBias == "BUY_ONLY") ? clrMediumSpringGreen : (m_macroBias == "SELL_ONLY") ? clrTomato : clrSlateGray;
+   
+   ObjectDelete(0, "Aegis_Macro_Zone");
+   ObjectCreate(0, "Aegis_Macro_Zone", OBJ_RECTANGLE, 0, tStart, m_macroZoneHigh, tEnd, m_macroZoneLow);
+   ObjectSetInteger(0, "Aegis_Macro_Zone", OBJPROP_COLOR, borderColor);
+   ObjectSetInteger(0, "Aegis_Macro_Zone", OBJPROP_BGCOLOR, zoneColor);
+   ObjectSetInteger(0, "Aegis_Macro_Zone", OBJPROP_FILL, true);
+   ObjectSetInteger(0, "Aegis_Macro_Zone", OBJPROP_STYLE, STYLE_DASHDOT);
+   ObjectSetInteger(0, "Aegis_Macro_Zone", OBJPROP_BACK, true);
+
+   ObjectDelete(0, "Aegis_Macro_Label");
+   ObjectCreate(0, "Aegis_Macro_Label", OBJ_TEXT, 0, tStart, m_macroZoneHigh);
+   string labelText = StringFormat("🧭 MACRO %s (%s) | Eq 50%%: %.*f", m_macroBias, m_macroEventTitle, digits, m_macroZoneMid);
+   ObjectSetString(0, "Aegis_Macro_Label", OBJPROP_TEXT, labelText);
+   ObjectSetInteger(0, "Aegis_Macro_Label", OBJPROP_COLOR, (m_macroBias == "BUY_ONLY") ? clrSpringGreen : clrCoral);
+   ObjectSetInteger(0, "Aegis_Macro_Label", OBJPROP_FONTSIZE, 9);
+   
    ChartRedraw();
 }
 
@@ -925,6 +975,31 @@ void ParseBridgeResponse(string responseText)
          continue;
       }
 
+      // 1b. Check Macro Directional & Reaction Zone Line (#MACRO,sym,bias,high,low,mid,sentiment,title)
+      if(StringFind(line, "#MACRO") == 0)
+      {
+         string mCols[];
+         int mCount = StringSplit(line, ',', mCols);
+         if(mCount >= 8)
+         {
+            string mSym = mCols[1];
+            if(mSym == _Symbol || InpOneChartMultiSymbol)
+            {
+               m_macroBias       = mCols[2];
+               m_macroZoneHigh   = StringToDouble(mCols[3]);
+               m_macroZoneLow    = StringToDouble(mCols[4]);
+               m_macroZoneMid    = StringToDouble(mCols[5]);
+               m_macroSentiment  = mCols[6];
+               m_macroEventTitle = mCols[7];
+               if(InpDrawMacroNewsZone && m_macroZoneHigh > 0 && m_macroZoneLow > 0)
+               {
+                  DrawMacroReactionZone();
+               }
+            }
+         }
+         continue;
+      }
+
       // 2. Parse Order Telemetry & Signals
       string cols[];
       int count = StringSplit(line, ',', cols);
@@ -1050,6 +1125,22 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       {
          PrintFormat("🛡️ [US Open Freeze] Pausing 5M/15M scalp %s during US Open Volatility Spike (%02d:%02d Thai Time) to avoid whipsaw.",
                      orderId, thaiHour, thaiMin);
+         return;
+      }
+   }
+
+   // 1d. Macro Economic Directional Bias Guard (Consensus & Surprise Filter)
+   if(InpEnableMacroBiasFilter && m_macroBias != "" && m_macroBias != "NEUTRAL")
+   {
+      bool isBuyOrder = (StringFind(typeStr, "BUY") >= 0);
+      if(m_macroBias == "SELL_ONLY" && isBuyOrder && m_setupGrade != "A+")
+      {
+         PrintFormat("🛡️ [Macro Bias Guard] Skipping BUY on %s: Macro News (%s | %s) dictates SELL_ONLY bias!", targetSym, m_macroEventTitle, m_macroSentiment);
+         return;
+      }
+      if(m_macroBias == "BUY_ONLY" && !isBuyOrder && m_setupGrade != "A+")
+      {
+         PrintFormat("🛡️ [Macro Bias Guard] Skipping SELL on %s: Macro News (%s | %s) dictates BUY_ONLY bias!", targetSym, m_macroEventTitle, m_macroSentiment);
          return;
       }
    }
@@ -1915,6 +2006,13 @@ void UpdateDashboardGUI()
       newsStr = "[ SAFE 🟢 ] Safe Trading Window";
       newsClr = clrLimeGreen;
    }
+
+   if(m_macroBias != "" && m_macroBias != "NEUTRAL")
+   {
+      string biasBadge = (m_macroBias == "BUY_ONLY") ? "🟢 BUY ONLY" : ((m_macroBias == "SELL_ONLY") ? "🔴 SELL ONLY" : m_macroBias);
+      newsStr += StringFormat(" | %s", biasBadge);
+   }
+
    ObjectSetString(0, GUI_PREFIX + "NewsLbl", OBJPROP_TEXT, newsStr);
    ObjectSetInteger(0, GUI_PREFIX + "NewsLbl", OBJPROP_COLOR, newsClr);
 

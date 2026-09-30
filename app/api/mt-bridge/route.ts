@@ -9,7 +9,7 @@ import {
 } from "@/lib/autonomousEngine";
 import { validatePriceIntegrity, validateSpreadSafety } from "@/lib/priceIntegrity";
 import { sendTelegramMessage } from "@/lib/telegramService";
-import { getNewsSafetyShieldStatus } from "@/lib/calendarEngine";
+import { getNewsSafetyShieldStatus, calculateMacroDirectionalInsight } from "@/lib/calendarEngine";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +109,15 @@ export async function GET(request: NextRequest) {
         .trim();
       const newsLine = `#NEWS,${newsSafety.minutesToNextEvent ?? -999},${newsSafety.state},${newsCleanTitle},${newsSafety.tradeAllowed ? 1 : 0},${newsSafety.nextHighImpactEvent?.timeStr || "--:--"}`;
 
+      // Macro Directional & Reaction Zone Header Line:
+      // #MACRO,SYMBOL,BIAS,ZONE_HIGH,ZONE_LOW,ZONE_MID,SENTIMENT,EVENT_TITLE
+      const macroInsight = calculateMacroDirectionalInsight(symbol || "XAUUSD");
+      const macroCleanTitle = (macroInsight.eventTitle || "NONE")
+        .replace(/,/g, " ")
+        .replace(/[🔴🟠🟡⚪]/g, "")
+        .trim();
+      const macroLine = `#MACRO,${symbol || "XAUUSD"},${macroInsight.assetDirectionalBias},${macroInsight.reactionZone?.zoneHigh || 0},${macroInsight.reactionZone?.zoneLow || 0},${macroInsight.reactionZone?.zoneMid || 0},${macroInsight.usdSentiment},${macroCleanTitle}`;
+
       // Format for MT4/MT5 EA line parser:
       // TICKET_ID,SYMBOL,TYPE,PRICE,SL,TP1,TP2,LOTS,REMAINING_LOTS,STATUS,TRAILING_SL,DEFENSE,TIER,GOVERNOR
       const executableOrders = orders.filter((o) => o.status !== "PENDING_HUMAN_APPROVAL" && o.status !== "CANCELLED");
@@ -116,7 +125,7 @@ export async function GET(request: NextRequest) {
         (o) =>
           `${o.id},${o.symbol},${o.orderType},${o.price},${o.stopLoss},${o.takeProfit1},${o.takeProfit2},${o.lotSize},${o.remainingLots ?? o.lotSize},${o.status},${o.trailingSlPrice ?? o.stopLoss},${o.emergencyDefenseReason ?? "NONE"},${o.tierName ?? "Tier 1"},${o.drawdownGovernorActive ? "GOVERNOR_ACTIVE" : "NORMAL"}`
       );
-      const lines = [newsLine, ...orderLines];
+      const lines = [newsLine, macroLine, ...orderLines];
       return new NextResponse(lines.join("\n"), {
         status: 200,
         headers: {
@@ -126,11 +135,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const macroInsight = calculateMacroDirectionalInsight(symbol || "XAUUSD");
+
     return NextResponse.json(
       {
         success: true,
         count: orders.length,
         orders,
+        macroInsight,
         timestamp: Date.now(),
       },
       {
