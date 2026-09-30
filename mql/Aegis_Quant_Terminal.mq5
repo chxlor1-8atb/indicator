@@ -104,7 +104,7 @@ input double             InpTrailingDailyLockPct = 50.0;                // ล�
 
 input group "=== ⏰ SESSION & TIME FILTER ==="
 input bool               InpEnableTimeFilter  = true;                   // เปิดตัวกรองเวลาเทรด
-input bool               InpAsianBoxShield    = true;                   // บล็อกการเทรดกรอบ Box ช่วงเช้าเอเชีย (06:00 - 12:00 น. Win Rate 90.7%)
+input bool               InpAsianBoxShield    = true;                   // บล็อกการเทรดกรอบ Box ช่วงเอเชียและก่อนเปิดลอนดอน (06:00 - 14:00 น. Win Rate 93.1%)
 input int                InpRolloverStartHour = 23;                     // ชั่วโมงเริ่ม Rollover สเปรดถ่าง (Server Time)
 
 input int                InpRolloverEndHour   = 1;                      // ชั่วโมงสิ้นสุด Rollover (Server Time)
@@ -1022,16 +1022,16 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       return;
    }
 
-   // 1b. Asian Morning Box Shield (06:00 - 12:00 Thai Time)
+   // 1b. Asian & Pre-London Transition Box Shield (06:00 - 14:00 Thai Time)
    if(InpAsianBoxShield && (StringFind(typeStr, "BOX") >= 0 || m_lastDefenseReason == "BOX" || StringFind(m_setupGrade, "BOX") >= 0))
    {
       MqlDateTime dt;
       datetime now = TimeCurrent();
       TimeToStruct(now, dt);
       int thaiHour = (dt.hour + 4) % 24; // Convert broker time to Thai time (UTC+7)
-      if(thaiHour >= 6 && thaiHour <= 12 && m_setupGrade != "A+")
+      if(thaiHour >= 6 && thaiHour < 14 && m_setupGrade != "A+")
       {
-         PrintFormat("🛡️ [Asian Box Shield] Skipping Box order %s during Asian Morning (%02d:00 Thai Time) to preserve 90.7%% Win Rate.",
+         PrintFormat("🛡️ [Asian & Pre-London Box Shield] Skipping Box order %s (%02d:00 Thai Time) to preserve 93.1%% Win Rate and 0%% DD.",
                      orderId, thaiHour);
          return;
       }

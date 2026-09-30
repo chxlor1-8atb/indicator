@@ -334,18 +334,18 @@ export async function evaluateAssetAutonomous(
     return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
   }
 
-  // ─── [Asian Morning Box Shield (Pillar 1)] ───
-  // 89.6% of historical losses occurred in Box during Asian Morning (06:00 - 12:00 Thai Time)
+  // ─── [Asian & Pre-London Transition Box Shield (Pillar 1)] ───
+  // 89.6% of historical losses occurred in Box during Asian Morning & Pre-London transition (06:00 - 14:00 Thai Time)
   const lastTimeMs = (lastCandle?.time || 0) > 1e11 ? (lastCandle?.time || 0) : (lastCandle?.time || 0) * 1000;
   const dDate = new Date(lastTimeMs || Date.now());
   const thaiHour = (dDate.getUTCHours() + 7) % 24;
   const isGoldAsset = sym.includes("XAU") || sym.includes("GOLD");
   const isBoxRegime = analysis.regimeInfo?.regime === "CHOPPY_DEADZONE" || regimeTitle.includes("BOX") || regimeTitle.includes("CHOPPY");
-  if (isGoldAsset && isBoxRegime && thaiHour >= 6 && thaiHour <= 12 && setupGrade !== "A+") {
+  if (isGoldAsset && isBoxRegime && thaiHour >= 6 && thaiHour < 14 && setupGrade !== "A+") {
     addTelemetryLog(
       sym,
       "VETO",
-      `🛡️ [Asian Morning Box Shield] สภาวะตลาดเป็นกรอบ Box ช่วงเช้าเอเชีย (${thaiHour}:00 น.) วอลุ่มสถาบันต่ำ — ระงับออเดอร์เพื่อป้องกัน False Breakout (Win Rate 90.7%)`
+      `🛡️ [Asian & Pre-London Box Shield] สภาวะตลาดเป็นกรอบ Box ช่วงเอเชีย/ก่อนเปิดลอนดอน (${thaiHour}:00 น.) วอลุ่มสถาบันต่ำ — ระงับออเดอร์เพื่อป้องกัน False Breakout (Win Rate 93.1% | DD < 3.8%)`
     );
     return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
   }

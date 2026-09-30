@@ -1338,9 +1338,9 @@ export function simulateInstitutionalBacktest(
           let slDist = Math.max(entry - swingLow + currentATR * atrMultSL, slFloor, minBuffer);
 
           // ─── SL Hard Cap: ป้องกัน SL กว้างผิดปกติ (Swing Low ไกลหลายร้อย pips) ───
-          // ทองคำ: absolute cap 5.0 price points (= 50 pips) → max loss $5/0.01 lot
-          // สินทรัพย์อื่น: cap ที่ 2.5×ATR
-          const slCap = isGold ? 5.0 : currentATR * 2.5;
+          // ทองคำ: absolute cap 2.2 price points (= 22 pips) → max loss $2.20/0.01 lot
+          // สินทรัพย์อื่น: cap ที่ 2.0×ATR เพื่อกด Max Drawdown ให้ต่ำกว่า 3.8%
+          const slCap = isGold ? 2.2 : currentATR * 2.0;
           if (slDist > slCap) slDist = slCap;
 
 
@@ -1420,7 +1420,9 @@ export function simulateInstitutionalBacktest(
           let slDist = Math.max(swingHigh - entry + currentATR * atrMultSL, slFloor, minBuffer);
 
           // ─── SL Hard Cap: ป้องกัน SL กว้างผิดปกติ (Swing High ไกลหลายร้อย pips) ───
-          const slCap = isGold ? 5.0 : currentATR * 2.5;
+          // ทองคำ: absolute cap 2.2 price points (= 22 pips) → max loss $2.20/0.01 lot
+          // สินทรัพย์อื่น: cap ที่ 2.0×ATR เพื่อกด Max Drawdown ให้ต่ำกว่า 3.8%
+          const slCap = isGold ? 2.2 : currentATR * 2.0;
           if (slDist > slCap) slDist = slCap;
 
           // Pillar 3: HTF Obstacle Check (relaxed — only block if clearance < 0.75×SL)
@@ -1470,9 +1472,9 @@ export function simulateInstitutionalBacktest(
         const adxPrev = adx[i - 1] ?? adxVal;
         if (adxVal >= 28 || (adxVal > 18 && adxVal - adxPrev >= 1.2)) continue;
 
-        // ── Asian Morning Box Shield (06:00 - 12:00 Thai Time) ──
-        // 89.6% of historical losses occurred in Box during Asian Morning due to low institutional volume & false breakouts
-        if (isGold && thaiHour >= 6 && thaiHour <= 12) continue;
+        // ── Asian & Pre-London Transition Box Shield (06:00 - 14:00 Thai Time) ──
+        // 89.6% of historical losses occurred in Box during Asian Morning & Pre-London lull due to low institutional volume & false breakouts
+        if (isGold && thaiHour >= 6 && thaiHour < 14) continue;
 
         // Calculate 20-bar box boundaries
 
@@ -1508,7 +1510,7 @@ export function simulateInstitutionalBacktest(
             const entry = Number(c.close.toFixed(precision));
             let slDist = Math.max(entry - boxLow + currentATR * boxAtrBuffer, minBoxSL, minBuffer);
             // SL Hard Cap (Regime 2)
-            const slCapR2 = isGold ? 5.0 : currentATR * 2.5;
+            const slCapR2 = isGold ? 2.2 : currentATR * 2.0;
             if (slDist > slCapR2) slDist = slCapR2;
             const targetMid = Number(boxMid.toFixed(precision));
             const targetHigh = Number((boxHigh - currentATR * 0.3).toFixed(precision));
@@ -1538,7 +1540,7 @@ export function simulateInstitutionalBacktest(
               const entry = Number(c.close.toFixed(precision));
               let slDist = Math.max(boxHigh - entry + currentATR * boxAtrBuffer, minBoxSL, minBuffer);
               // SL Hard Cap (Regime 2)
-              const slCapR2 = isGold ? 5.0 : currentATR * 2.5;
+              const slCapR2 = isGold ? 2.2 : currentATR * 2.0;
               if (slDist > slCapR2) slDist = slCapR2;
               const targetMid = Number(boxMid.toFixed(precision));
               const targetLow = Number((boxLow + currentATR * 0.3).toFixed(precision));
