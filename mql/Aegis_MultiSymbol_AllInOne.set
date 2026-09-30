@@ -1,12 +1,14 @@
-; Aegis Quant Terminal EA v3.0 - Preset for Forex Major Pairs (EURUSD, GBPUSD, USDJPY)
-; Designed for Standard USD Account ($100 - $10,000+)
+; ==============================================================================
+; Aegis Quant Terminal EA v3.0 - One-Chart Multi-Symbol Master Preset
+; Attach to 1 Chart Only (e.g. XAUUSD 15M) to trade up to 8 assets simultaneously!
+; ==============================================================================
 
 InpServerUrl=http://localhost:3000
 InpPollIntervalSec=2
-InpMagicNumber=777889
+InpMagicNumber=777890
 InpExecMode=0
 InpAccountMode=0
-InpMaxSpreadPips=1.8
+InpMaxSpreadPips=3.5
 InpSlippagePips=10
 InpMaxMarginPct=20.0
 InpShowGUI=true
@@ -14,9 +16,11 @@ InpGuiX=20
 InpGuiY=35
 InpSoundAlerts=true
 InpPushAlerts=false
+
+; Milestone Compounding & Early Harvest
 InpEnableEarlyHarvest=true
 InpHarvestMinR=0.75
-InpHarvestMinPips=10.0
+InpHarvestMinPips=12.0
 InpSingleLotMode=0
 
 ; Flash Volatility Spike Guard
@@ -24,18 +28,22 @@ InpEnableFlashSpikeGuard=true
 InpFlashSpikeATRMult=3.0
 InpSpikeFreezeMinutes=15
 
-; Institutional Safeguards & Pending Router
+; Institutional Drawdown Governor
 InpEnableDailyGuard=true
-InpMaxDailyLossPct=3.5
+InpMaxDailyLossPct=4.0
 InpTrailingDailyLockPct=50.0
+
+; Session Time Filter
 InpEnableTimeFilter=true
 InpRolloverStartHour=23
 InpRolloverEndHour=1
-InpCloseFridayNight=true
+InpCloseFridayNight=false
 InpFridayCloseHour=22
+
+; Pending Router
 InpUsePendingOrders=true
 InpPendingExpiryHours=4
-InpMarketExecBufferPips=1.5
+InpMarketExecBufferPips=2.0
 InpDrawChartLevels=true
 
 ; Forex Factory News Calendar Shield
@@ -44,14 +52,15 @@ InpNewsPreFreezeMins=15
 InpNewsAutoBreakeven=true
 InpEnablePostNewsSniper=true
 
-; One-Chart Multi-Symbol Engine
-InpOneChartMultiSymbol=false
+; One-Chart Multi-Symbol Engine (ENABLED)
+InpOneChartMultiSymbol=true
 InpWatchlistSymbols=XAUUSD,EURUSD,GBPUSD,USDJPY,BTCUSD,USOIL
 
 ; Smart Retry Execution Engine
 InpMaxOrderRetries=3
 InpRetryDelayMs=300
 
+; Offline Standalone Fallback
 InpOfflineFallback=true
 InpMaxLossCooldownTrades=2
 InpCooldownMinutes=60

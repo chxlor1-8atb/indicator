@@ -1,4 +1,4 @@
-; Aegis Quant Terminal EA - Preset for Gold (XAUUSD) Cent Account ($10 - $50)
+; Aegis Quant Terminal EA v3.0 - Preset for Gold (XAUUSD) Cent Account ($10 - $50)
 ; Designed for 1,000 - 5,000 USC Capital with Sniper Micro-SL Protection
 
 InpServerUrl=http://localhost:3000
@@ -37,6 +37,21 @@ InpUsePendingOrders=true
 InpPendingExpiryHours=4
 InpMarketExecBufferPips=2.5
 InpDrawChartLevels=true
+
+; Forex Factory News Calendar Shield
+InpEnableNewsShield=true
+InpNewsPreFreezeMins=15
+InpNewsAutoBreakeven=true
+InpEnablePostNewsSniper=true
+
+; One-Chart Multi-Symbol Engine
+InpOneChartMultiSymbol=false
+InpWatchlistSymbols=XAUUSD,EURUSD,GBPUSD,USDJPY,BTCUSD,USOIL
+
+; Smart Retry Execution Engine
+InpMaxOrderRetries=3
+InpRetryDelayMs=300
+
 InpOfflineFallback=true
 InpMaxLossCooldownTrades=2
 InpCooldownMinutes=60
