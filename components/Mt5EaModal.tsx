@@ -16,6 +16,7 @@ import {
   BookOpen,
   CheckCircle2,
   Terminal,
+  Target,
 } from "lucide-react";
 
 interface Mt5EaModalProps {
@@ -243,6 +244,32 @@ export default function Mt5EaModal({ isOpen, onClose }: Mt5EaModalProps) {
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>โหลด Preset ทองคำ ($10+)</span>
+                </a>
+              </div>
+
+              {/* Card 2b: 5M / 15M High-Precision Sniper Scalp Preset */}
+              <div className="p-3 rounded-xl bg-surface-100/90 border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between gap-2.5">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                      <Target className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-white">Aegis_Sniper_Scalp_5M.set</h5>
+                      <span className="text-[10px] text-cyan-300 font-medium">สไนเปอร์ Scalping 5M / 15M (Fast BE + MTF Gate)</span>
+                    </div>
+                  </div>
+                  <p className="text-[10.5px] text-slate-400">
+                    Fast-Track BE (+8 pips) + US Open Freeze + Time-Decay Stop คุมความเสี่ยงพอร์ต $10-$50
+                  </p>
+                </div>
+                <a
+                  href="/api/download-ea?type=set_scalp_5m"
+                  download="Aegis_Sniper_Scalp_5M.set"
+                  className="w-full py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>โหลด Preset Sniper Scalp 5M (.set)</span>
                 </a>
               </div>
 

@@ -25,6 +25,9 @@ export async function GET(request: NextRequest) {
     } else if (type === "set_multisymbol" || type === "set_std") {
       filename = "Aegis_MultiSymbol_AllInOne.set";
       contentType = "text/plain; charset=utf-8";
+    } else if (type === "set_scalp_5m" || type === "set_scalp") {
+      filename = "Aegis_Sniper_Scalp_5M.set";
+      contentType = "text/plain; charset=utf-8";
     } else if (type === "installer" || type === "ps1") {
       filename = "install-mt5-ea.ps1";
       fileFolder = "scripts";
@@ -39,6 +42,7 @@ export async function GET(request: NextRequest) {
         files: [
           { type: "ex5", filename: "Aegis_Quant_Terminal.ex5", label: "MT5 Compiled Expert Advisor (พร้อมรัน ไม่ต้องคอมไพล์)" },
           { type: "mq5", filename: "Aegis_Quant_Terminal.mq5", label: "MT5 Expert Advisor (Source Code)" },
+          { type: "set_scalp_5m", filename: "Aegis_Sniper_Scalp_5M.set", label: "Preset: 5M/15M Sniper Scalper (Fast BE + MTF Gate)" },
           { type: "set_gold_compound", filename: "Aegis_Gold_Standard_Compound.set", label: "Preset: Gold Compounding ($10-$50)" },
           { type: "set_multisymbol", filename: "Aegis_MultiSymbol_AllInOne.set", label: "Preset: One-Chart Multi-Symbol Master" },
           { type: "installer", filename: "install-mt5-ea.ps1", label: "1-Click Auto Installer Script" },

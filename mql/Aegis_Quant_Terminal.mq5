@@ -111,6 +111,19 @@ input int                InpRolloverEndHour   = 1;                      // ช�
 input bool               InpCloseFridayNight  = false;                  // สั่งปิดทุกไม้ก่อนวันหยุดสุดสัปดาห์ (ศุกร์กลางคืน)
 input int                InpFridayCloseHour   = 22;                     // ชั่วโมงปิดไม้วันศุกร์ (Server Time)
 
+input group "=== 🎯 SNIPER SCALPING & HIGH-PRECISION (5M/15M) ==="
+input bool               InpEnableScalpSniper     = true;                   // เปิดโหมด Sniper Scalping ความแม่นยำสูง (5M / 15M)
+input bool               InpEnableMtfFilter       = true;                   // กรองทิศทางไม่ให้สวนเทรนด์ H1 (1H EMA21 vs EMA55)
+input bool               InpEnableLiquiditySweep  = true;                   // ตรวจจับไส้กวาดสภาพคล่องสถาบัน (Turtle Soup Sweep)
+input bool               InpRequireLiquiditySweep = false;                  // บังคับเฉพาะไม้ที่กวาด Sweep ชัดเจนเท่านั้น (โหมด Conservative)
+input bool               InpUsOpenSpikeFreeze     = true;                   // ฟรีซคำสั่งช่วงเปิดตลาดหุ้นสหรัฐฯ (20:25 - 21:45 น. เวลาไทย)
+input bool               InpEnableFastTrackBE     = true;                   // เปิดระบบเลื่อน SL ล็อกหน้าทุนเร็วพิเศษสำหรับ Scalper
+input double             InpFastTrackBePips       = 8.0;                    // ขยับ SL ล็อกหน้าทุนทันทีเมื่อบวกถึง (+8.0 pips)
+input double             InpFastTrackLockPips     = 1.5;                    // ระยะล็อกกำไรหน้าทุน (+1.5 pips)
+input bool               InpEnableTimeStop        = true;                   // เปิดระบบตัดออเดอร์หมดอายุเวลา (Time-Decay Stop)
+input int                InpTimeStopBars          = 4;                      // ปิดออเดอร์ทันทีหากผ่านไป N แท่ง (เช่น 4 แท่ง 5M = 20 นาที) แล้วราคานิ่ง
+input double             InpMaxScalpSpreadPips    = 2.5;                    // สเปรดสูงสุดที่ยอมรับได้สำหรับ Scalp (ทองคำไม่เกิน 2.5 pips)
+
 input group "=== 🎯 PENDING ORDERS & ROUTER ==="
 input bool               InpUsePendingOrders  = true;                   // รองรับ Buy/Sell Limit ดักราคาที่ Order Block
 input int                InpPendingExpiryHours = 4;                     // อายุของ Pending Order ก่อนยกเลิก (ชั่วโมง)
@@ -151,6 +164,8 @@ int            hRSI   = INVALID_HANDLE;
 int            hEMA20 = INVALID_HANDLE;
 int            hEMA50 = INVALID_HANDLE;
 int            hATR   = INVALID_HANDLE;
+int            hMtfEMA21 = INVALID_HANDLE;
+int            hMtfEMA55 = INVALID_HANDLE;
 
 //--- State Variables
 datetime m_lastPollTime           = 0;
@@ -272,6 +287,8 @@ int OnInit()
    hEMA20 = iMA(_Symbol, _Period, 20, 0, MODE_EMA, PRICE_CLOSE);
    hEMA50 = iMA(_Symbol, _Period, 50, 0, MODE_EMA, PRICE_CLOSE);
    hATR   = iATR(_Symbol, _Period, 14);
+   hMtfEMA21 = iMA(_Symbol, PERIOD_H1, 21, 0, MODE_EMA, PRICE_CLOSE);
+   hMtfEMA55 = iMA(_Symbol, PERIOD_H1, 55, 0, MODE_EMA, PRICE_CLOSE);
 
    if(InpShowGUI)
    {
@@ -293,6 +310,8 @@ void OnDeinit(const int reason)
    if(hEMA20 != INVALID_HANDLE) { IndicatorRelease(hEMA20); hEMA20 = INVALID_HANDLE; }
    if(hEMA50 != INVALID_HANDLE) { IndicatorRelease(hEMA50); hEMA50 = INVALID_HANDLE; }
    if(hATR != INVALID_HANDLE)   { IndicatorRelease(hATR);   hATR = INVALID_HANDLE; }
+   if(hMtfEMA21 != INVALID_HANDLE) { IndicatorRelease(hMtfEMA21); hMtfEMA21 = INVALID_HANDLE; }
+   if(hMtfEMA55 != INVALID_HANDLE) { IndicatorRelease(hMtfEMA55); hMtfEMA55 = INVALID_HANDLE; }
    
    ClearChartTradeLevels();
    DestroyDashboardGUI();
@@ -496,6 +515,90 @@ bool HasPendingOrder(string orderId, string sym = "")
       }
    }
    return false;
+}
+
+//+------------------------------------------------------------------+
+//| Check Institutional Liquidity Sweep (Turtle Soup) on Symbol/TF   |
+//+------------------------------------------------------------------+
+bool CheckLiquiditySweep(string sym, ENUM_TIMEFRAMES tf, bool isBuy)
+{
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   if(CopyRates(sym, tf, 0, 22, rates) < 22) return false;
+
+   double priorExtremum = isBuy ? rates[2].low : rates[2].high;
+   for(int i = 3; i <= 21; i++)
+   {
+      if(isBuy) {
+         if(rates[i].low < priorExtremum) priorExtremum = rates[i].low;
+      } else {
+         if(rates[i].high > priorExtremum) priorExtremum = rates[i].high;
+      }
+   }
+
+   for(int barIdx = 1; barIdx >= 0; barIdx--)
+   {
+      double high = rates[barIdx].high;
+      double low = rates[barIdx].low;
+      double open = rates[barIdx].open;
+      double close = rates[barIdx].close;
+      double totalRange = high - low;
+      if(totalRange <= 0) continue;
+
+      if(isBuy)
+      {
+         bool pierced = (low < priorExtremum && close > priorExtremum);
+         double lowerWick = MathMin(open, close) - low;
+         bool pinbarRejection = (lowerWick / totalRange) >= 0.38;
+         if(pierced && pinbarRejection) return true;
+      }
+      else
+      {
+         bool pierced = (high > priorExtremum && close < priorExtremum);
+         double upperWick = high - MathMax(open, close);
+         bool pinbarRejection = (upperWick / totalRange) >= 0.38;
+         if(pierced && pinbarRejection) return true;
+      }
+   }
+
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Check 1H Macro Trend Alignment (3-Screen MTF Gatekeeper)         |
+//+------------------------------------------------------------------+
+bool IsMtfTrendAligned(string sym, bool isBuy)
+{
+   if(!InpEnableMtfFilter) return true;
+
+   int emaFastHandle = (sym == _Symbol && hMtfEMA21 != INVALID_HANDLE) ? hMtfEMA21 : iMA(sym, PERIOD_H1, 21, 0, MODE_EMA, PRICE_CLOSE);
+   int emaSlowHandle = (sym == _Symbol && hMtfEMA55 != INVALID_HANDLE) ? hMtfEMA55 : iMA(sym, PERIOD_H1, 55, 0, MODE_EMA, PRICE_CLOSE);
+
+   if(emaFastHandle == INVALID_HANDLE || emaSlowHandle == INVALID_HANDLE) return true;
+
+   double fast[1], slow[1];
+   if(CopyBuffer(emaFastHandle, 0, 0, 1, fast) != 1 || CopyBuffer(emaSlowHandle, 0, 0, 1, slow) != 1)
+   {
+      if(sym != _Symbol)
+      {
+         IndicatorRelease(emaFastHandle);
+         IndicatorRelease(emaSlowHandle);
+      }
+      return true;
+   }
+
+   if(sym != _Symbol)
+   {
+      IndicatorRelease(emaFastHandle);
+      IndicatorRelease(emaSlowHandle);
+   }
+
+   // For BUY: 1H EMA21 must be >= 1H EMA55
+   // For SELL: 1H EMA21 must be <= 1H EMA55
+   if(isBuy && fast[0] < slow[0]) return false;
+   if(!isBuy && fast[0] > slow[0]) return false;
+
+   return true;
 }
 
 //+------------------------------------------------------------------+
@@ -934,6 +1037,23 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       }
    }
 
+   // 1c. US Cash Open Volatility Spike Freeze (20:25 - 21:45 Thai Time)
+   if(InpEnableScalpSniper && InpUsOpenSpikeFreeze && _Period <= PERIOD_M15)
+   {
+      MqlDateTime dt;
+      datetime now = TimeCurrent();
+      TimeToStruct(now, dt);
+      int thaiHour = (dt.hour + 4) % 24; // Convert broker time to Thai time (UTC+7)
+      int thaiMin = dt.min;
+      bool isUsOpenSpike = (thaiHour == 20 && thaiMin >= 25) || (thaiHour == 21 && thaiMin <= 45);
+      if(isUsOpenSpike && m_setupGrade != "A+")
+      {
+         PrintFormat("🛡️ [US Open Freeze] Pausing 5M/15M scalp %s during US Open Volatility Spike (%02d:%02d Thai Time) to avoid whipsaw.",
+                     orderId, thaiHour, thaiMin);
+         return;
+      }
+   }
+
    // 2. Forex Factory News Shield Pre-News Freeze Guard
 
    bool isPostNewsSniper = (StringFind(typeStr, "POST_NEWS") >= 0 || StringFind(orderId, "POST_NEWS") >= 0 || m_lastDefenseReason == "POST_NEWS_SNIPER");
@@ -976,6 +1096,12 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       return;
    }
 
+   if(InpEnableScalpSniper && _Period <= PERIOD_M15 && currentSpread > InpMaxScalpSpreadPips)
+   {
+      PrintFormat("🛑 [Scalp Spread Armor] Spread on %s is %.1f pips (exceeds Scalp limit %.1f). Order skipped.", targetSym, currentSpread, InpMaxScalpSpreadPips);
+      return;
+   }
+
    // 4b. Dynamic Market-Adaptive Lot Scaling based on Live MT5 Balance & Market Regime
    if(InpEnableAutoLotScale)
    {
@@ -992,8 +1118,27 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       return;
    }
 
-
    bool isBuy = (StringFind(typeStr, "BUY") >= 0);
+
+   // 5b. Sniper Scalping Multi-Timeframe (MTF) & Liquidity Sweep Guards
+   if(InpEnableScalpSniper && _Period <= PERIOD_M15)
+   {
+      if(InpEnableMtfFilter && !IsMtfTrendAligned(targetSym, isBuy))
+      {
+         PrintFormat("🛡️ [MTF Gatekeeper] Skipping %s on %s: 1H Macro Trend disagrees with 5M/15M scalp direction!", typeStr, targetSym);
+         return;
+      }
+
+      if(InpRequireLiquiditySweep)
+      {
+         bool hasSweep = CheckLiquiditySweep(targetSym, _Period, isBuy);
+         if(!hasSweep && m_setupGrade != "A+")
+         {
+            PrintFormat("🛡️ [Liquidity Sweep Guard] Skipping %s on %s: Required institutional sweep not confirmed.", typeStr, targetSym);
+            return;
+         }
+      }
+   }
    sl    = NormalizeDouble(sl, digits);
    tp1   = NormalizeDouble(tp1, digits);
    tp2   = NormalizeDouble(tp2, digits);
@@ -1240,6 +1385,58 @@ void ManageActivePositions()
                   if(InpEnableStealthMode) m_stealthSL = newsBeSL;
                   m_trade.PositionModify(ticket, newsBeSL, m_position.TakeProfit());
                   currentSL = newsBeSL;
+               }
+            }
+
+            // 0c. Fast-Track Breakeven Ratchet for Scalper (+8.0 pips -> Lock +1.5 pips)
+            if(InpEnableScalpSniper && InpEnableFastTrackBE && (posSym == _Symbol || InpOneChartMultiSymbol))
+            {
+               double currentPnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
+               double currentPnlPips = currentPnlPoints * pipMult;
+
+               if(currentPnlPips >= InpFastTrackBePips)
+               {
+                  double fastBeSL = isBuy ? openPrice + (InpFastTrackLockPips * point * pipMult)
+                                          : openPrice - (InpFastTrackLockPips * point * pipMult);
+                  fastBeSL = NormalizeDouble(fastBeSL, digits);
+
+                  bool needsFastBe = isBuy ? (currentSL < fastBeSL && currentPrice > fastBeSL)
+                                           : ((currentSL > fastBeSL || currentSL == 0) && currentPrice < fastBeSL);
+                  if(needsFastBe)
+                  {
+                     PrintFormat("🎯 [Fast-Track BE] Scalp on %s reached +%.1f pips! Locking risk-free SL to +%.1f pips on ticket #%I64d.",
+                                 posSym, currentPnlPips, InpFastTrackLockPips, ticket);
+                     if(InpEnableStealthMode) m_stealthSL = fastBeSL;
+                     m_trade.PositionModify(ticket, fastBeSL, m_position.TakeProfit());
+                     currentSL = fastBeSL;
+                  }
+               }
+            }
+
+            // 0d. Time-Decay Stop for Scalping (Exit if stagnant after N bars on M5/M15)
+            if(InpEnableScalpSniper && InpEnableTimeStop && _Period <= PERIOD_M15 && (posSym == _Symbol || InpOneChartMultiSymbol))
+            {
+               int secondsPerBar = PeriodSeconds(_Period);
+               if(secondsPerBar <= 0) secondsPerBar = 300;
+               datetime posOpenTime = (datetime)PositionGetInteger(POSITION_TIME);
+               int barsHeld = (int)((TimeCurrent() - posOpenTime) / secondsPerBar);
+
+               if(barsHeld >= InpTimeStopBars)
+               {
+                  double currentPnlPoints = isBuy ? (currentPrice - openPrice) : (openPrice - currentPrice);
+                  double currentPnlPips = currentPnlPoints * pipMult;
+
+                  // If stagnant (between -6.0 and +6.0 pips, neither hit SL nor TP)
+                  if(currentPnlPips > -6.0 && currentPnlPips < 6.0)
+                  {
+                     PrintFormat("⏱️ [Time-Decay Stop] Scalp ticket #%I64d held for %d bars on %s with stagnant PnL (%.1f pips). Closing to recycle capital.",
+                                 ticket, barsHeld, posSym, currentPnlPips);
+                     if(m_trade.PositionClose(ticket))
+                     {
+                        NotifyBridgeOrderEvent(m_lastOrderId, "TIME_STOP_EXIT", currentPrice, currentPnlPips, posSym);
+                        continue;
+                     }
+                  }
                }
             }
 

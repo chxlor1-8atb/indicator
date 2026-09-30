@@ -1,0 +1,99 @@
+; ==============================================================================
+; Aegis Quant Terminal EA v3.0 - High-Precision 5M / 15M Sniper Scalping Preset
+; Optimized for: XAUUSD (Gold) & High-Liquidity FX on M5 and M15 Timeframes
+; Account Capital: $10 - $50 Initial (Standard USD Account - Non-Cent)
+; Strategy: Multi-Timeframe Institutional Flow + Liquidity Sweep + Fast-Track BE
+; ==============================================================================
+
+InpServerUrl=http://localhost:3000
+InpPollIntervalSec=2
+InpMagicNumber=777888
+InpExecMode=0
+InpAccountMode=0
+InpMaxSpreadPips=2.5
+InpSlippagePips=10
+InpMaxMarginPct=20.0
+InpShowGUI=true
+InpGuiX=20
+InpGuiY=35
+InpSoundAlerts=true
+InpPushAlerts=false
+
+; Milestone Compounding & 0.01 Lot Harvest Mode (Pillar 1)
+InpEnableEarlyHarvest=true
+InpHarvestMinR=0.75
+InpHarvestMinPips=10.0
+InpSingleLotMode=1
+
+; Flash Volatility Spike Guard
+InpEnableFlashSpikeGuard=true
+InpFlashSpikeATRMult=3.0
+InpSpikeFreezeMinutes=15
+
+; Institutional Drawdown Governor (Circuit Breaker)
+InpEnableDailyGuard=true
+InpMaxDailyLossPct=4.0
+InpTrailingDailyLockPct=50.0
+
+; Session Time Filter
+InpEnableTimeFilter=true
+InpRolloverStartHour=23
+InpRolloverEndHour=1
+InpCloseFridayNight=false
+InpFridayCloseHour=22
+
+; Sniper Scalping & High-Precision (5M / 15M)
+InpEnableScalpSniper=true
+InpEnableMtfFilter=true
+InpEnableLiquiditySweep=true
+InpRequireLiquiditySweep=false
+InpUsOpenSpikeFreeze=true
+InpEnableFastTrackBE=true
+InpFastTrackBePips=8.0
+InpFastTrackLockPips=1.5
+InpEnableTimeStop=true
+InpTimeStopBars=4
+InpMaxScalpSpreadPips=2.5
+
+; Pending Router
+InpUsePendingOrders=true
+InpPendingExpiryHours=2
+InpMarketExecBufferPips=2.0
+InpDrawChartLevels=true
+
+; Forex Factory News Calendar Shield (Pillar 1)
+InpEnableNewsShield=true
+InpNewsPreFreezeMins=15
+InpNewsAutoBreakeven=true
+InpEnablePostNewsSniper=true
+
+; One-Chart Multi-Symbol Engine
+InpOneChartMultiSymbol=false
+InpWatchlistSymbols=XAUUSD,EURUSD,GBPUSD,USDJPY,BTCUSD,USOIL
+
+; Smart Retry Execution Engine (Pillar 3)
+InpMaxOrderRetries=3
+InpRetryDelayMs=300
+
+; Offline Standalone Fallback
+InpOfflineFallback=true
+InpMaxLossCooldownTrades=2
+InpCooldownMinutes=60
+
+; Market-Adaptive Dynamic Lot Scaling & Profit Martingale
+InpEnableAutoLotScale=true
+InpLotCompoundMode=1
+InpBaseRiskPct=1.5
+InpMaxLotCap=10.0
+InpRegimeLotBoost=true
+InpEnableProfitMartingale=true
+InpStreak2Multiplier=1.5
+InpStreak3Multiplier=2.0
+
+; Stealth / Virtual SL & TP Engine (Hidden from Broker)
+InpEnableStealthMode=true
+InpUseDisasterSL=true
+InpDisasterSLPips=150.0
+
+; Asian Morning Box Shield (06:00 - 12:00 Thai Time)
+InpAsianBoxShield=true
