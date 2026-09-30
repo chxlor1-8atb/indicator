@@ -430,7 +430,14 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
     else if (accountBalance >= 100 && accountBalance < 200 && calculatedLotSize < 0.10) calculatedLotSize = 0.10;
     else if (accountBalance >= 200 && accountBalance < 350 && calculatedLotSize < 0.20) calculatedLotSize = 0.20;
     else if (accountBalance >= 350 && accountBalance < 500 && calculatedLotSize < 0.35) calculatedLotSize = 0.35;
-    else if (accountBalance >= 500 && calculatedLotSize < 0.50) calculatedLotSize = 0.50;
+    else if (accountBalance >= 500 && accountBalance < 1000 && calculatedLotSize < 0.50) calculatedLotSize = 0.50;
+    else if (accountBalance >= 1000 && accountBalance < 2500 && calculatedLotSize < 1.00) calculatedLotSize = 1.00;
+    else if (accountBalance >= 2500 && accountBalance < 5000 && calculatedLotSize < 2.50) calculatedLotSize = 2.50;
+    else if (accountBalance >= 5000 && accountBalance < 10000 && calculatedLotSize < 5.00) calculatedLotSize = 5.00;
+    else if (accountBalance >= 10000) {
+      const dynamicHouseMoneyLot = Math.min(30.0, Math.floor((accountBalance / 1000.0) * 1.0 * 100) / 100);
+      calculatedLotSize = Math.max(calculatedLotSize, dynamicHouseMoneyLot);
+    }
   }
 
   // 6. Margin Capacity Ceiling (Free Margin Safety Cap: max 20% margin usage)

@@ -67,13 +67,18 @@ function simulateRollingWindow(trades, config, startCapital = 10.0) {
 
     // Manual Scalper / House Money Compounding Sizing ($10 base)
     let lot = 0.01;
-    if (bal >= 20 && bal < 35) lot = 0.02;
-    else if (bal >= 35 && bal < 60) lot = 0.03;
-    else if (bal >= 60 && bal < 100) lot = 0.05;
-    else if (bal >= 100 && bal < 200) lot = 0.10;
-    else if (bal >= 200 && bal < 300) lot = 0.15;
-    else if (bal >= 300 && bal < 500) lot = 0.25;
-    else if (bal >= 500) lot = Math.min(2.0, Math.floor((bal * 0.05 / 20.0) * 100) / 100);
+    if (bal < 20.0) lot = 0.01;
+    else if (bal < 35.0) lot = 0.02;
+    else if (bal < 60.0) lot = 0.03;
+    else if (bal < 100.0) lot = 0.05;
+    else if (bal < 200.0) lot = 0.10;
+    else if (bal < 350.0) lot = 0.20;
+    else if (bal < 500.0) lot = 0.35;
+    else if (bal < 1000.0) lot = 0.50;
+    else if (bal < 2500.0) lot = 1.00;
+    else if (bal < 5000.0) lot = 2.50;
+    else if (bal < 10000.0) lot = 5.00;
+    else lot = Math.min(30.0, Math.floor((bal / 1000.0) * 1.0 * 100.0) / 100.0);
 
     const dollar = Number((lot * pips * 10.0).toFixed(2));
     if (dollar > 0) grossProfit += dollar;

@@ -2173,7 +2173,11 @@ double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice,
       // ทุน $100 - $199: 0.10 lot
       // ทุน $200 - $349: 0.20 lot
       // ทุน $350 - $499: 0.35 lot
-      // ทุน $500+: 0.50 lot (หรือ 5% equity risk)
+      // ทุน $500 - $999: 0.50 lot
+      // ทุน $1,000 - $2,499: 1.00 lot
+      // ทุน $2,500 - $4,999: 2.50 lots
+      // ทุน $5,000 - $9,999: 5.00 lots
+      // ทุน $10,000+: 10.00 lots ขึ้นไป (ขยายตามสัดส่วนเงินตลาดสูงสุดถึง 30.0 lots)
       if(balance < 20.0) targetLot = MathMax(targetLot, 0.01);
       else if(balance < 35.0) targetLot = MathMax(targetLot, 0.02);
       else if(balance < 60.0) targetLot = MathMax(targetLot, 0.03);
@@ -2181,7 +2185,11 @@ double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice,
       else if(balance < 200.0) targetLot = MathMax(targetLot, 0.10);
       else if(balance < 350.0) targetLot = MathMax(targetLot, 0.20);
       else if(balance < 500.0) targetLot = MathMax(targetLot, 0.35);
-      else targetLot = MathMax(targetLot, MathMin(10.0, MathMax(0.50, MathFloor((balance * 0.05 / 20.0) * 100.0) / 100.0)));
+      else if(balance < 1000.0) targetLot = MathMax(targetLot, 0.50);
+      else if(balance < 2500.0) targetLot = MathMax(targetLot, 1.00);
+      else if(balance < 5000.0) targetLot = MathMax(targetLot, 2.50);
+      else if(balance < 10000.0) targetLot = MathMax(targetLot, 5.00);
+      else targetLot = MathMax(targetLot, MathMin(30.0, MathFloor((balance / 1000.0) * 1.0 * 100.0) / 100.0));
    }
    else
    {
