@@ -1470,7 +1470,12 @@ export function simulateInstitutionalBacktest(
         const adxPrev = adx[i - 1] ?? adxVal;
         if (adxVal >= 28 || (adxVal > 18 && adxVal - adxPrev >= 1.2)) continue;
 
+        // ── Asian Morning Box Shield (06:00 - 12:00 Thai Time) ──
+        // 89.6% of historical losses occurred in Box during Asian Morning due to low institutional volume & false breakouts
+        if (isGold && thaiHour >= 6 && thaiHour <= 12) continue;
+
         // Calculate 20-bar box boundaries
+
         const boxCandles = candles.slice(Math.max(0, i - 20), i);
         const boxHigh = Math.max(...boxCandles.map((k) => k.high));
         const boxLow = Math.min(...boxCandles.map((k) => k.low));

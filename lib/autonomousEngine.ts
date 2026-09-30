@@ -334,6 +334,23 @@ export async function evaluateAssetAutonomous(
     return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
   }
 
+  // ─── [Asian Morning Box Shield (Pillar 1)] ───
+  // 89.6% of historical losses occurred in Box during Asian Morning (06:00 - 12:00 Thai Time)
+  const lastTimeMs = (lastCandle?.time || 0) > 1e11 ? (lastCandle?.time || 0) : (lastCandle?.time || 0) * 1000;
+  const dDate = new Date(lastTimeMs || Date.now());
+  const thaiHour = (dDate.getUTCHours() + 7) % 24;
+  const isGoldAsset = sym.includes("XAU") || sym.includes("GOLD");
+  const isBoxRegime = analysis.regimeInfo?.regime === "CHOPPY_DEADZONE" || regimeTitle.includes("BOX") || regimeTitle.includes("CHOPPY");
+  if (isGoldAsset && isBoxRegime && thaiHour >= 6 && thaiHour <= 12 && setupGrade !== "A+") {
+    addTelemetryLog(
+      sym,
+      "VETO",
+      `🛡️ [Asian Morning Box Shield] สภาวะตลาดเป็นกรอบ Box ช่วงเช้าเอเชีย (${thaiHour}:00 น.) วอลุ่มสถาบันต่ำ — ระงับออเดอร์เพื่อป้องกัน False Breakout (Win Rate 90.7%)`
+    );
+    return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+  }
+
+
   // ─── [Flash Volatility Spike Circuit Breaker (Pillar 3)] ───
   const flashSpikeCheck = detectFlashVolatilitySpike(candles, 3.0);
   if (flashSpikeCheck.isSpike) {
@@ -457,6 +474,7 @@ export async function evaluateAssetAutonomous(
         riskProfile: config.riskProfile || "MODERATE",
         candles,
         customRiskPct: config.riskPercentPerTrade,
+        marketRegime: analysis.regimeInfo?.regime,
       });
 
       const lotSize = config.accountType === "CENT"

@@ -65,3 +65,23 @@ InpRetryDelayMs=300
 InpOfflineFallback=true
 InpMaxLossCooldownTrades=2
 InpCooldownMinutes=60
+
+; Market-Adaptive Dynamic Lot Scaling & Profit Martingale
+InpEnableAutoLotScale=true
+InpLotCompoundMode=1
+InpBaseRiskPct=1.8
+InpMaxLotCap=15.0
+InpRegimeLotBoost=true
+InpEnableProfitMartingale=true
+InpStreak2Multiplier=1.5
+InpStreak3Multiplier=2.0
+
+; Stealth / Virtual SL & TP Engine (Hidden from Broker)
+InpEnableStealthMode=true
+InpUseDisasterSL=true
+InpDisasterSLPips=150.0
+
+; Asian Morning Box Shield (06:00 - 12:00 Thai Time)
+InpAsianBoxShield=true
+
+

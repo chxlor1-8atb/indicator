@@ -25,6 +25,7 @@ export interface DynamicPositionSizeOptions {
   confluenceScore?: number;
   accountType?: "STANDARD" | "CENT";
   leverage?: number;
+  marketRegime?: MarketRegimeType | string;
 }
 
 export interface MilestoneTierInfo {
@@ -54,6 +55,7 @@ export interface DynamicPositionSizeResult {
   tierRange?: string;
   nextMilestoneUSD?: number;
   gradeMultiplier?: number;
+  regimeMultiplier?: number;
   drawdownGovernorActive?: boolean;
   marginRequiredUSD?: number;
   marginUtilizationPct?: number;
@@ -327,13 +329,14 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
   effectiveSlDist = Math.max(0.0001, effectiveSlDist || 1.0);
 
   const sym = symbol.toUpperCase();
-  const isJpyOrGold = sym.includes("JPY") || sym === "XAUUSD" || sym.startsWith("XAU") || sym === "GOLD";
-  const isForex = !isJpyOrGold && ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some(
+  const isGold = sym.includes("XAU") || sym.includes("GOLD");
+  const isJpy = sym.includes("JPY");
+  const isForex = !isGold && !isJpy && ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some(
     (c) => sym.startsWith(c) || sym.endsWith(c)
   );
 
-  const pipMultiplier = isForex ? 10000 : isJpyOrGold ? 100 : sym.endsWith("USDT") ? 1 : 10000;
-  const pipValuePerStandardLot = isForex || sym === "XAUUSD" ? 10.0 : 1.0;
+  const pipMultiplier = isForex ? 10000 : isGold ? 10 : isJpy ? 100 : sym.endsWith("USDT") ? 1 : 10000;
+  const pipValuePerStandardLot = isForex || isGold ? 10.0 : 1.0;
 
   // 1. Milestone Tier & Base Risk Percentage
   const tierInfo = evaluateMilestoneTier(accountBalance);
@@ -398,7 +401,18 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
     else gradeMultiplier = 0.35;
   }
 
-  const effectiveRiskPct = Number((baseRiskPct * volatilityScaleRatio * drawdownThrottle * drawdownGovernorFactor * gradeMultiplier).toFixed(2));
+  // 5b. Market Regime Adaptive Multiplier (ปรับขนาด Lot ตามสภาพตลาดและโมเมนตัมสถาบัน)
+  let regimeMultiplier = 1.0;
+  const regimeStr = (options.marketRegime || "").toUpperCase();
+  if (regimeStr.includes("EXPLOSIVE") || regimeStr.includes("TREND")) {
+    regimeMultiplier = 1.25; // ตลาดเทรนด์โมเมนตัมแรง สถาบันไหลเข้า เร่งขนาด Lot +25%
+  } else if (regimeStr.includes("PULLBACK")) {
+    regimeMultiplier = 1.15; // จุดพักตัวในเทรนด์ใหญ่ Win rate สูง เร่งขนาด Lot +15%
+  } else if (regimeStr.includes("CHOPPY") || regimeStr.includes("BOX") || regimeStr.includes("DEADZONE")) {
+    regimeMultiplier = 0.70; // สภาวะไซด์เวย์กรอบแคบ ลดขนาด Lot -30% เพื่อรักษาทุน
+  }
+
+  const effectiveRiskPct = Number((baseRiskPct * volatilityScaleRatio * drawdownThrottle * drawdownGovernorFactor * gradeMultiplier * regimeMultiplier).toFixed(2));
   const dollarRisk = Number(((accountBalance * effectiveRiskPct) / 100).toFixed(2));
 
   const slPips = Math.max(5, Math.round(effectiveSlDist * pipMultiplier));
@@ -444,7 +458,7 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
     }
   }
 
-  const rationale = `[${tierInfo.tierName}] ${riskProfile} (${baseRiskPct}% base -> ${effectiveRiskPct}% eff) | Grade: ${gradeMultiplier}x | Vol: ${volatilityScaleRatio}x | DD Gov: ${drawdownGovernorActive ? `${drawdownGovernorFactor}x (Active)` : "Normal"}${isSmallAccount ? ` | Micro-Capital ($${accountBalance})` : ""}`;
+  const rationale = `[${tierInfo.tierName}] ${riskProfile} (${baseRiskPct}% base -> ${effectiveRiskPct}% eff) | Regime: ${regimeMultiplier}x | Grade: ${gradeMultiplier}x | Vol: ${volatilityScaleRatio}x | DD Gov: ${drawdownGovernorActive ? `${drawdownGovernorFactor}x (Active)` : "Normal"}${isSmallAccount ? ` | Micro-Capital ($${accountBalance})` : ""}`;
 
   return {
     calculatedLotSize,
@@ -465,11 +479,13 @@ export function calculateDynamicPositionSize(options: DynamicPositionSizeOptions
     tierRange: tierInfo.tierRange,
     nextMilestoneUSD: tierInfo.nextMilestoneUSD,
     gradeMultiplier,
+    regimeMultiplier,
     drawdownGovernorActive,
     marginRequiredUSD,
     marginUtilizationPct,
   };
 }
+
 
 /**
  * Calculates Multi-Stage Adaptive Trailing Stop based on profit progression (R-multiples)

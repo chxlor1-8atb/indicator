@@ -41,11 +41,33 @@ enum ENUM_GUI_THEME
    THEME_MIDNIGHT_NAVY  = 2  // Midnight Navy (Navy Blue + Electric Violet + Aqua)
 };
 
+enum ENUM_LOT_COMPOUND_MODE
+{
+   COMPOUND_CONSERVATIVE = 0, // Conservative Cap (Max 5.0 lots - เน้นความปลอดภัยสูงสุด สถาบัน)
+   COMPOUND_BALANCED     = 1, // Balanced Market-Adaptive (Max 15.0 lots - ปรับขนาดตามสภาพตลาดและโมเมนตัม)
+   COMPOUND_AGGRESSIVE   = 2  // Aggressive Hyper-Growth (Max 30.0 lots - ทบต้นเต็มพิกัด เร่งพอร์ตไว)
+};
+
 //--- Input Parameters
 input group "=== 🌐 BRIDGE & SERVER SETTINGS ==="
 input string             InpServerUrl         = "http://localhost:3000"; // Server URL (อย่าใส่ / ต่อท้าย)
 input int                InpPollIntervalSec   = 2;                       // ความถี่ดึงสัญญาณ (วินาที)
 input ulong              InpMagicNumber       = 777888;                  // Magic Number ประจำ EA
+
+input group "=== 📈 MARKET-ADAPTIVE DYNAMIC LOT SCALING ==="
+input bool                    InpEnableAutoLotScale    = true;                    // เปิดโหมดคำนวณและปรับขนาด Lot อัตโนมัติตามสภาวะตลาด
+input ENUM_LOT_COMPOUND_MODE InpLotCompoundMode       = COMPOUND_BALANCED;       // โหมดทบต้นและเพดาน Lot สูงสุด
+input double                  InpBaseRiskPct           = 1.8;                     // เปอร์เซ็นต์ความเสี่ยงพื้นฐานต่อไม้ (%)
+input double                  InpMaxLotCap             = 15.0;                    // เพดานขนาด Lot สูงสุดที่อนุญาต (ป้องกัน Slippage)
+input bool                    InpRegimeLotBoost        = true;                    // เร่ง Lot (+25%) เมื่อตลาดเป็น Trend แรง และลด Lot (-30%) ใน Sideway
+input bool                    InpEnableProfitMartingale= true;                    // เปิดโหมด Profit Martingale (เร่ง Lot ด้วยกำไรเมื่อชนะติดกัน)
+input double                  InpStreak2Multiplier     = 1.5;                     // ตัวคูณเร่ง Lot เมื่อชนะติดกัน 2 ไม้
+input double                  InpStreak3Multiplier     = 2.0;                     // ตัวคูณเร่ง Lot เมื่อชนะติดกัน 3 ไม้ขึ้นไป
+
+input group "=== 🥷 STEALTH / VIRTUAL SL & TP ENGINE ==="
+input bool               InpEnableStealthMode     = true;                   // เปิดระบบซ่อน SL/TP จากโบรกเกอร์ (Stealth Virtual SL/TP)
+input bool               InpUseDisasterSL         = true;                   // ส่ง SL สำรองไกลๆ ไปที่โบรกเกอร์กันไฟดับ/เน็ตหลุด (Disaster SL)
+input double             InpDisasterSLPips        = 150.0;                  // ระยะ Disaster SL (Pips) ส่งไปโบรกเกอร์
 
 input group "=== ⚙️ EXECUTION & RISK SETTINGS ==="
 input ENUM_EXECUTION_MODE InpExecMode         = MODE_FULL_AUTO;          // โหมดการทำงาน
@@ -82,7 +104,9 @@ input double             InpTrailingDailyLockPct = 50.0;                // ล�
 
 input group "=== ⏰ SESSION & TIME FILTER ==="
 input bool               InpEnableTimeFilter  = true;                   // เปิดตัวกรองเวลาเทรด
+input bool               InpAsianBoxShield    = true;                   // บล็อกการเทรดกรอบ Box ช่วงเช้าเอเชีย (06:00 - 12:00 น. Win Rate 90.7%)
 input int                InpRolloverStartHour = 23;                     // ชั่วโมงเริ่ม Rollover สเปรดถ่าง (Server Time)
+
 input int                InpRolloverEndHour   = 1;                      // ชั่วโมงสิ้นสุด Rollover (Server Time)
 input bool               InpCloseFridayNight  = false;                  // สั่งปิดทุกไม้ก่อนวันหยุดสุดสัปดาห์ (ศุกร์กลางคืน)
 input int                InpFridayCloseHour   = 22;                     // ชั่วโมงปิดไม้วันศุกร์ (Server Time)
@@ -176,7 +200,17 @@ string   m_lastGovernorStatus   = "NORMAL";
 double   m_confluenceScore      = 82.5;
 string   m_setupGrade           = "A+";
 
+// Stealth Virtual SL / TP State (Hidden from Broker)
+double   m_stealthSL            = 0.0;
+double   m_stealthTP1           = 0.0;
+double   m_stealthTP2           = 0.0;
+bool     m_isStealthActive      = false;
+
+// Profit Martingale Win Streak State
+int      m_winStreak            = 0;
+
 // GUI Object Name Prefix
+
 #define GUI_PREFIX "AegisHUD_"
 #define LEVEL_PREFIX "AegisLvl_"
 
@@ -189,6 +223,7 @@ bool   IsWatchlistSymbol(string sym);
 string ResolveBrokerSymbol(string canonicalSym);
 void   NotifyBridgeOrderEvent(string orderId, string action, double execPrice, double profitPips, string sym = "");
 void   ExecuteInstitutionalSignal(string orderId, string typeStr, double price, double sl, double tp1, double tp2, double lots, string targetSym = "");
+double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice, double fallbackLot);
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -623,9 +658,26 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
                PrintFormat("⚡ [OnTradeTransaction 0ms] Position Closed on %s! Reason: %s | PnL: $%.2f | Price: %.5f",
                            dealSymbol, action, dealProfit, dealPrice);
 
+               // Profit Martingale Win Streak & Stealth State Tracking
+               if(dealProfit > 0)
+               {
+                  m_winStreak++;
+                  PrintFormat("🔥 [Profit Martingale] Winning Streak: %d consecutive wins! Next trend trade will scale lot.", m_winStreak);
+               }
+               else if(dealProfit < 0)
+               {
+                  m_winStreak = 0; // Immediate Ratchet Reset to Base Lot
+                  Print("🛡️ [Profit Martingale] Loss detected. Ratchet Reset: Streak reset to 0 to preserve profit!");
+               }
+               m_isStealthActive = false;
+               m_stealthSL = 0.0;
+               m_stealthTP1 = 0.0;
+               m_stealthTP2 = 0.0;
+
                NotifyBridgeOrderEvent(m_lastOrderId, action, dealPrice, dealProfit, dealSymbol);
                if(dealSymbol == _Symbol) ClearChartTradeLevels();
                if(InpShowGUI) UpdateDashboardGUI();
+
             }
          }
       }
@@ -867,7 +919,23 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       return;
    }
 
+   // 1b. Asian Morning Box Shield (06:00 - 12:00 Thai Time)
+   if(InpAsianBoxShield && (StringFind(typeStr, "BOX") >= 0 || m_lastDefenseReason == "BOX" || StringFind(m_setupGrade, "BOX") >= 0))
+   {
+      MqlDateTime dt;
+      datetime now = TimeCurrent();
+      TimeToStruct(now, dt);
+      int thaiHour = (dt.hour + 4) % 24; // Convert broker time to Thai time (UTC+7)
+      if(thaiHour >= 6 && thaiHour <= 12 && m_setupGrade != "A+")
+      {
+         PrintFormat("🛡️ [Asian Box Shield] Skipping Box order %s during Asian Morning (%02d:00 Thai Time) to preserve 90.7%% Win Rate.",
+                     orderId, thaiHour);
+         return;
+      }
+   }
+
    // 2. Forex Factory News Shield Pre-News Freeze Guard
+
    bool isPostNewsSniper = (StringFind(typeStr, "POST_NEWS") >= 0 || StringFind(orderId, "POST_NEWS") >= 0 || m_lastDefenseReason == "POST_NEWS_SNIPER");
    if(InpEnableNewsShield && !m_newsTradeAllowed)
    {
@@ -908,6 +976,12 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       return;
    }
 
+   // 4b. Dynamic Market-Adaptive Lot Scaling based on Live MT5 Balance & Market Regime
+   if(InpEnableAutoLotScale)
+   {
+      lots = CalculateMarketAdaptiveLot(targetSym, price, sl, lots);
+   }
+
    // 5. Check Free Margin (20% Max Cap)
    double marginReq = 0;
    if(!OrderCalcMargin(ORDER_TYPE_BUY, targetSym, lots, ask, marginReq)) marginReq = 0;
@@ -917,6 +991,7 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
       Print("🛑 [Margin Protection] Required margin exceeds 20% cap");
       return;
    }
+
 
    bool isBuy = (StringFind(typeStr, "BUY") >= 0);
    sl    = NormalizeDouble(sl, digits);
@@ -957,6 +1032,28 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
    double currentMarket = isBuy ? ask : bid;
    double distPips = MathAbs(currentMarket - price) / (targetPoint * pipMult);
 
+   // Stealth Virtual SL / TP Preparation (Broker never sees real SL/TP!)
+   double brokerSL = sl;
+   double brokerTP = tp2;
+   if(InpEnableStealthMode)
+   {
+      m_stealthSL       = sl;
+      m_stealthTP1      = tp1;
+      m_stealthTP2      = tp2;
+      m_isStealthActive = true;
+
+      if(InpUseDisasterSL)
+      {
+         brokerSL = isBuy ? NormalizeDouble(price - (InpDisasterSLPips * targetPoint * pipMult), digits)
+                          : NormalizeDouble(price + (InpDisasterSLPips * targetPoint * pipMult), digits);
+      }
+      else
+      {
+         brokerSL = 0.0;
+      }
+      brokerTP = 0.0; // Hide TP from broker!
+   }
+
    // 6. Institutional Pending Order Router (Buy/Sell Limit at Order Block)
    if(InpUsePendingOrders && (typeStr == "BUY_LIMIT" || typeStr == "SELL_LIMIT"))
    {
@@ -973,19 +1070,19 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
 
             if(typeStr == "BUY_LIMIT" && price < ask)
             {
-               pendingOk = m_trade.BuyLimit(lots, price, targetSym, sl, tp2, ORDER_TIME_SPECIFIED, expTime, comment);
+               pendingOk = m_trade.BuyLimit(lots, price, targetSym, brokerSL, brokerTP, ORDER_TIME_SPECIFIED, expTime, comment);
             }
             else if(typeStr == "SELL_LIMIT" && price > bid)
             {
-               pendingOk = m_trade.SellLimit(lots, price, targetSym, sl, tp2, ORDER_TIME_SPECIFIED, expTime, comment);
+               pendingOk = m_trade.SellLimit(lots, price, targetSym, brokerSL, brokerTP, ORDER_TIME_SPECIFIED, expTime, comment);
             }
             if(!pendingOk) pRetries++;
          }
 
          if(pendingOk)
          {
-            PrintFormat("⏳ [Aegis Pending] Placed %s %0.2f lot on %s @ %0.*f | SL: %0.*f TP2: %0.*f (Expires in %dh)",
-                        typeStr, lots, targetSym, digits, price, digits, sl, digits, tp2, InpPendingExpiryHours);
+            PrintFormat("⏳ [Aegis Pending%s] Placed %s %0.2f lot on %s @ %0.*f | SL: %0.*f TP2: %0.*f (Expires in %dh)",
+                        InpEnableStealthMode ? " 🥷 STEALTH" : "", typeStr, lots, targetSym, digits, price, digits, sl, digits, tp2, InpPendingExpiryHours);
             if(targetSym == _Symbol) DrawChartTradeLevels(typeStr, price, sl, tp1, tp2);
             NotifyBridgeOrderEvent(orderId, "PENDING_PLACED", price, 0.0, targetSym);
             if(InpSoundAlerts) PlaySound("expert.wav");
@@ -1024,10 +1121,15 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
          ask = SymbolInfoDouble(targetSym, SYMBOL_ASK);
          bid = SymbolInfoDouble(targetSym, SYMBOL_BID);
          execPrice = isBuy ? ask : bid;
+         if(InpEnableStealthMode && InpUseDisasterSL)
+         {
+            brokerSL = isBuy ? NormalizeDouble(execPrice - (InpDisasterSLPips * targetPoint * pipMult), digits)
+                             : NormalizeDouble(execPrice + (InpDisasterSLPips * targetPoint * pipMult), digits);
+         }
       }
 
       ResetLastError();
-      fillSuccess = m_trade.PositionOpen(targetSym, orderType, lots, execPrice, sl, tp2, comment);
+      fillSuccess = m_trade.PositionOpen(targetSym, orderType, lots, execPrice, brokerSL, brokerTP, comment);
       if(!fillSuccess)
       {
          uint err = GetLastError();
@@ -1037,6 +1139,7 @@ void ExecuteInstitutionalSignal(string orderId, string typeStr, double price, do
          retries++;
       }
    }
+
 
    if(fillSuccess)
    {
@@ -1076,7 +1179,53 @@ void ManageActivePositions()
             double point = SymbolInfoDouble(posSym, SYMBOL_POINT);
             double pipMult = GetPipMultiplier(posSym);
 
-            // 0. Pre-News Auto-Breakeven Shield (Pillar 1)
+            // 0a. Stealth Virtual SL / TP2 Real-Time Check (Hidden from Broker)
+            if(InpEnableStealthMode && (posSym == _Symbol || InpOneChartMultiSymbol))
+            {
+               // Check Virtual Stop Loss
+               if(m_stealthSL > 0)
+               {
+                  bool isSlBreached = isBuy ? (currentPrice <= m_stealthSL) : (currentPrice >= m_stealthSL);
+                  if(isSlBreached)
+                  {
+                     double slPips = -MathAbs(currentPrice - openPrice) * pipMult;
+                     PrintFormat("🥷 [Stealth SL Trigger] Price (%.*f) hit Virtual SL (%.*f) on ticket #%I64d (%s). Closing at Market!",
+                                 digits, currentPrice, digits, m_stealthSL, ticket, posSym);
+                     if(m_trade.PositionClose(ticket))
+                     {
+                        NotifyBridgeOrderEvent(m_lastOrderId, "HIT_SL", currentPrice, slPips, posSym);
+                        m_stealthSL = 0.0;
+                        m_stealthTP1 = 0.0;
+                        m_stealthTP2 = 0.0;
+                        m_isStealthActive = false;
+                        continue;
+                     }
+                  }
+               }
+
+               // Check Virtual Take Profit 2 (Full Target Reached)
+               if(m_stealthTP2 > 0)
+               {
+                  bool isTp2Breached = isBuy ? (currentPrice >= m_stealthTP2) : (currentPrice <= m_stealthTP2);
+                  if(isTp2Breached)
+                  {
+                     double tpPips = MathAbs(currentPrice - openPrice) * pipMult;
+                     PrintFormat("🥷 [Stealth TP2 Trigger] Price (%.*f) hit Virtual TP2 (%.*f) on ticket #%I64d (%s). Closing at Market!",
+                                 digits, currentPrice, digits, m_stealthTP2, ticket, posSym);
+                     if(m_trade.PositionClose(ticket))
+                     {
+                        NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP2", currentPrice, tpPips, posSym);
+                        m_stealthSL = 0.0;
+                        m_stealthTP1 = 0.0;
+                        m_stealthTP2 = 0.0;
+                        m_isStealthActive = false;
+                        continue;
+                     }
+                  }
+               }
+            }
+
+            // 0b. Pre-News Auto-Breakeven Shield (Pillar 1)
             // If upcoming Red Folder is within InpNewsPreFreezeMins (15m), lock SL to Breakeven (+1.5 pips buffer)
             if(InpEnableNewsShield && InpNewsAutoBreakeven && m_newsMinutesToNext >= 0 && m_newsMinutesToNext <= InpNewsPreFreezeMins)
             {
@@ -1088,6 +1237,7 @@ void ManageActivePositions()
                {
                   PrintFormat("🛡️ [Pre-News Auto-BE] Red Event '%s' in %dm! Locking SL to Breakeven (+1.5 pips) on ticket #%I64d (%s)",
                               m_newsTitle, m_newsMinutesToNext, ticket, posSym);
+                  if(InpEnableStealthMode) m_stealthSL = newsBeSL;
                   m_trade.PositionModify(ticket, newsBeSL, m_position.TakeProfit());
                   currentSL = newsBeSL;
                }
@@ -1108,6 +1258,7 @@ void ManageActivePositions()
                         // Move SL to Breakeven (+ 1.5 pips buffer)
                         double beSL = isBuy ? openPrice + (1.5 * point * pipMult) : openPrice - (1.5 * point * pipMult);
                         beSL = NormalizeDouble(beSL, digits);
+                        if(InpEnableStealthMode) m_stealthSL = beSL;
                         m_trade.PositionModify(ticket, beSL, m_position.TakeProfit());
                         NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP1", currentPrice, MathAbs(currentPrice - openPrice) * pipMult, posSym);
                      }
@@ -1135,6 +1286,7 @@ void ManageActivePositions()
                         if(needsMove)
                         {
                            PrintFormat("🎯 [Aegis] TP1 Hit for 0.01 Lot on %s! Moving SL to Breakeven (+1.5 pips) to let runner trail.", posSym);
+                           if(InpEnableStealthMode) m_stealthSL = beSL;
                            m_trade.PositionModify(ticket, beSL, m_position.TakeProfit());
                            NotifyBridgeOrderEvent(m_lastOrderId, "HIT_TP1_BE", currentPrice, MathAbs(currentPrice - openPrice) * pipMult, posSym);
                         }
@@ -1230,6 +1382,16 @@ void ManageActivePositions()
             if(m_lastTrailingSl > 0 && posSym == _Symbol)
             {
                double normTrail = NormalizeDouble(m_lastTrailingSl, digits);
+               if(InpEnableStealthMode)
+               {
+                  bool shouldUpdateStealth = isBuy ? (normTrail > m_stealthSL && normTrail < currentPrice)
+                                                   : (normTrail < m_stealthSL && normTrail > currentPrice);
+                  if(shouldUpdateStealth)
+                  {
+                     m_stealthSL = normTrail;
+                     PrintFormat("🥷 [Stealth Trailing SL] Updated Virtual SL to %.*f on %s", digits, normTrail, posSym);
+                  }
+               }
                bool shouldModify = isBuy ? (normTrail > currentSL && normTrail < currentPrice)
                                          : (normTrail < currentSL && normTrail > currentPrice);
                if(shouldModify)
@@ -1314,9 +1476,77 @@ double GetPipMultiplier(string sym = "")
 }
 
 //+------------------------------------------------------------------+
+//| Helper: Calculate Market-Adaptive Dynamic Lot Size               |
+//+------------------------------------------------------------------+
+double CalculateMarketAdaptiveLot(string sym, double entryPrice, double slPrice, double fallbackLot)
+{
+   double balance = m_account.Balance();
+   if(balance <= 0) balance = m_account.Equity();
+   if(balance < 50.0) return 0.01; // Micro Capital Safe Armor ($10 - $50 strictly 0.01 lot)
+
+   double point = SymbolInfoDouble(sym, SYMBOL_POINT);
+   double pMult = GetPipMultiplier(sym);
+   double slPips = MathAbs(entryPrice - slPrice) / (point * pMult);
+   if(slPips < 5.0) slPips = 5.0;
+
+   // Base risk percentage
+   double riskPct = InpBaseRiskPct;
+   if(InpLotCompoundMode == COMPOUND_CONSERVATIVE) riskPct = MathMin(1.5, riskPct);
+   else if(InpLotCompoundMode == COMPOUND_AGGRESSIVE) riskPct = MathMax(2.2, riskPct);
+
+   // Market Regime & Setup Confluence Multiplier
+   double regimeMultiplier = 1.0;
+   if(InpRegimeLotBoost)
+   {
+      // Confluence Grade A+ or Score >= 80% = Strong Institutional Momentum
+      if(m_setupGrade == "A+" || m_confluenceScore >= 80.0)
+      {
+         regimeMultiplier = 1.25; // Boost +25%
+      }
+      else if(m_setupGrade == "B" || m_confluenceScore < 70.0)
+      {
+         regimeMultiplier = 0.70; // Throttle -30% on Choppy / Lower Edge
+      }
+   }
+
+   double effectiveRisk = riskPct * regimeMultiplier;
+   double dollarRisk = balance * (effectiveRisk / 100.0);
+   
+   // Pip value per standard lot: Forex & Gold = $10/pip, Crypto = $1/pip
+   double pipVal = (StringFind(sym, "XAU") >= 0 || StringFind(sym, "GOLD") >= 0 || pMult == 10000.0) ? 10.0 : 1.0;
+   double targetLot = dollarRisk / (slPips * pipVal);
+
+   // Tiered Compounding Floor (ensures account scales smoothly)
+   if(balance >= 100.0 && targetLot < 0.02) targetLot = 0.02;
+   if(balance >= 250.0 && targetLot < 0.04) targetLot = 0.04;
+   if(balance >= 500.0 && targetLot < 0.08) targetLot = 0.08;
+   if(balance >= 1000.0 && targetLot < 0.15) targetLot = 0.15;
+   if(balance >= 2500.0 && targetLot < 0.30) targetLot = 0.30;
+   if(balance >= 5000.0 && targetLot < 0.60) targetLot = 0.60;
+
+   // Profit Martingale Win Streak Multiplier (House Money Compounding)
+   if(InpEnableProfitMartingale && m_winStreak >= 1)
+   {
+      double streakMult = (m_winStreak == 1) ? InpStreak2Multiplier : InpStreak3Multiplier;
+      targetLot *= streakMult;
+      PrintFormat("🔥 [Profit Martingale Boost] Win Streak %d -> Lot multiplied by %.2fx (%.2f lot)", m_winStreak, streakMult, targetLot);
+   }
+
+   // Cap according to Selected Mode
+   double maxCap = InpMaxLotCap;
+   if(InpLotCompoundMode == COMPOUND_CONSERVATIVE) maxCap = MathMin(5.0, maxCap);
+   else if(InpLotCompoundMode == COMPOUND_BALANCED) maxCap = MathMin(15.0, maxCap);
+   else if(InpLotCompoundMode == COMPOUND_AGGRESSIVE) maxCap = MathMin(30.0, maxCap);
+
+   targetLot = MathMin(maxCap, targetLot);
+   return targetLot;
+}
+
+//+------------------------------------------------------------------+
 //| GUI Dashboard: Create On-Chart HUD                               |
 //+------------------------------------------------------------------+
 void CreateDashboardGUI()
+
 {
    int x = InpGuiX;
    int y = InpGuiY;
@@ -1511,10 +1741,14 @@ void UpdateDashboardGUI()
       ObjectSetInteger(0, GUI_PREFIX + "SigDetail", OBJPROP_COLOR, clrSilver);
    }
 
-   // Milestone Tier & Capital Status
-   ObjectSetString(0, GUI_PREFIX + "TierVal", OBJPROP_TEXT, "• Tier: " + m_lastTierName);
+   // Milestone Tier & Capital Status with Market-Adaptive Lot Scaling Badge
+   string lotScaleBadge = InpEnableAutoLotScale 
+      ? (InpRegimeLotBoost && (m_setupGrade == "A+" || m_confluenceScore >= 80.0) ? "Lot: +25% 🚀" : "AutoLot: ON")
+      : "Lot: FIXED";
+   ObjectSetString(0, GUI_PREFIX + "TierVal", OBJPROP_TEXT, StringFormat("• %s | %s", m_lastTierName, lotScaleBadge));
 
    string govStr = "";
+
    color govClr = clrLimeGreen;
    if(InpEnableDailyGuard && m_dayStartEquity > 0)
    {

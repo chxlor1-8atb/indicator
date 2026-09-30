@@ -1,4 +1,4 @@
-﻿[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Aegis Quant Terminal - MT5 1-Click Auto Installer"
 
 Write-Host "=======================================================================" -ForegroundColor Cyan
@@ -29,6 +29,7 @@ $installedCount = 0
 $metaEditorPaths = @(
     "C:\Program Files\MetaTrader 5\metaeditor64.exe",
     "C:\Program Files (x86)\MetaTrader 5\metaeditor64.exe",
+    "C:\Program Files\Weltrade MT5 Terminal\MetaEditor64.exe",
     "C:\Program Files\Weltrade MetaTrader 5\metaeditor64.exe",
     "C:\Program Files\XM Global MT5\metaeditor64.exe",
     "C:\Program Files\Exness MT5 Terminal\metaeditor64.exe",
@@ -69,10 +70,13 @@ if (Test-Path $terminalBase) {
                 Write-Host "    [*] Compiling .mq5 -> .ex5 with MetaEditor ($meFound)..." -ForegroundColor Yellow
                 $targetMq5 = Join-Path $expertsDir "Aegis_Quant_Terminal.mq5"
                 $logFile = Join-Path $expertsDir "compile.log"
-                Start-Process -FilePath $meFound -ArgumentList "/compile:`"$targetMq5`" /log:`"$logFile`"" -Wait
+                $incArg = "/inc:$mql5Dir"
+                $compileArg = "/compile:$targetMq5"
+                $logArg = "/log:$logFile"
+                Start-Process -FilePath $meFound -ArgumentList @($compileArg, $incArg, $logArg) -Wait
                 $targetEx5 = Join-Path $expertsDir "Aegis_Quant_Terminal.ex5"
                 if (Test-Path $targetEx5) {
-                    Write-Host "    [✓] Compiled .ex5 is ready!" -ForegroundColor Green
+                    Write-Host "    [OK] Compiled .ex5 is ready!" -ForegroundColor Green
                 } else {
                     Write-Host "    [!] Compilation completed. You can also press F7 in MetaEditor." -ForegroundColor Yellow
                 }
@@ -84,12 +88,12 @@ if (Test-Path $terminalBase) {
 Write-Host ""
 if ($installedCount -gt 0) {
     Write-Host "=======================================================================" -ForegroundColor Green
-    Write-Host "  Success! Installed EA & Presets to $installedCount MT5 terminal(s)!" -ForegroundColor Green
+    Write-Host "  Success! Installed EA and Presets to $installedCount MT5 terminal(s)!" -ForegroundColor Green
     Write-Host "=======================================================================" -ForegroundColor Green
 } else {
     Write-Host "[!] No active MT5 Terminal folder detected in AppData." -ForegroundColor Yellow
     Write-Host "[*] Opening EA folder so you can copy to MT5..." -ForegroundColor Cyan
-    Start-Process "explorer.exe" -ArgumentList "`"$mqlDir`""
+    Start-Process "explorer.exe" -ArgumentList $mqlDir
 }
 
 Write-Host ""
@@ -103,8 +107,8 @@ Write-Host "  3. In Navigator window (press Ctrl + N):" -ForegroundColor White
 Write-Host "     - Right-click 'Expert Advisors' -> Click 'Refresh'" -ForegroundColor White
 Write-Host "  4. Drag 'Aegis_Quant_Terminal' onto XAUUSD chart (15M or 1H)" -ForegroundColor White
 Write-Host "     - In Inputs tab, click 'Load' to select preset if desired:" -ForegroundColor Gray
-Write-Host "       * Aegis_Gold_Standard_Compound.set ($10-$50 Compounding)" -ForegroundColor Gray
-Write-Host "       * Aegis_MultiSymbol_AllInOne.set (One-Chart Multi-Symbol)" -ForegroundColor Gray
+Write-Host '       * Aegis_Gold_Standard_Compound.set ($10-$50 Compounding)' -ForegroundColor Gray
+Write-Host '       * Aegis_MultiSymbol_AllInOne.set (One-Chart Multi-Symbol)' -ForegroundColor Gray
 Write-Host "  5. Click OK and ensure the top 'Algo Trading' button is GREEN!" -ForegroundColor Green
 Write-Host "  6. The Dark Glassmorphism HUD will appear on chart: BRIDGE: ONLINE" -ForegroundColor Green
 Write-Host "=======================================================================" -ForegroundColor Cyan
