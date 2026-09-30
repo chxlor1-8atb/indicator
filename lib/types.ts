@@ -249,6 +249,13 @@ export interface SREntry {
   strength: number; // 1-100
   type: "SUPPORT" | "RESISTANCE";
   distancePips: number;
+  // ─── 8-IMAGE S/R ZONE ENHANCEMENTS ───
+  zoneMin?: number; // Lower boundary of the zone
+  zoneMax?: number; // Upper boundary of the zone
+  zoneThicknessPips?: number;
+  isRoleReversed?: boolean; // S-R Flip (ภาพที่ 7)
+  reversalPattern?: "BULLISH_PINBAR" | "BEARISH_PINBAR" | "BULLISH_ENGULFING" | "BEARISH_ENGULFING" | "NONE";
+  testedCount?: number;
 }
 
 export interface ClusteredSRInfo {
@@ -258,6 +265,11 @@ export interface ClusteredSRInfo {
   nearestResistance?: SREntry;
   channelWidthPips: number;
   description: string;
+  // ─── 8-IMAGE S/R ZONE MATRIX ───
+  activeZoneState?: "INSIDE_SUPPORT_ZONE" | "INSIDE_RESISTANCE_ZONE" | "BETWEEN_ZONES";
+  srFlipDetected?: boolean;
+  nextTargetLevel?: number;
+  tacticalAdvice?: string;
 }
 
 export interface AutoFibonacciInfo {
@@ -380,6 +392,21 @@ export interface OrderBlockValidatorInfo {
   description: string;
 }
 
+// [SMC Plan] Institutional Order Block Price Action Reversal Confirmation
+export interface OrderBlockPAReversalInfo {
+  detected: boolean;
+  type: "BULLISH_OB_REVERSAL" | "BEARISH_OB_REVERSAL" | "NONE";
+  obType: "BULLISH_OB" | "BEARISH_OB" | "NONE";
+  reversalPattern: "PIN_BAR_HAMMER" | "SHOOTING_STAR" | "BULLISH_ENGULFING" | "BEARISH_ENGULFING" | "TURTLE_SOUP_SWEEP" | "WICK_REJECTION" | "NONE";
+  obZone: { min: number; max: number };
+  rejectionWickPct: number;
+  entryPrice: number;
+  sniperStopLoss: number;
+  riskPips: number;
+  confidence: number;
+  description: string;
+}
+
 // [แผน 25] Multi-Source Price Feed Divergence & Fair Market Value
 export interface PriceFeedIntegrityInfo {
   fairMarketValue: number;
@@ -470,6 +497,27 @@ export interface MarketStructureShiftInfo {
   displacementVelocity: "EXPLOSIVE" | "MODERATE" | "WEAK";
   mssCandleIndex: number;
   description: string;
+  // ─── 8-IMAGE TREND & MARKET STRUCTURE ENHANCEMENTS ───
+  structureType?: "UPTREND" | "DOWNTREND" | "SIDEWAYS";
+  lastHH?: number; // Higher High
+  lastHL?: number; // Higher Low
+  lastLH?: number; // Lower High
+  lastLL?: number; // Lower Low
+  tacticalPlan?: string;
+}
+
+// Quasimodo Pattern (QML + CHoCH + BOS + Retest & Hold)
+export interface QuasimodoInfo {
+  detected: boolean;
+  type: "BULLISH_QM" | "BEARISH_QM" | "NONE";
+  qmlPrice: number;
+  headPrice: number;
+  necklinePrice: number;
+  isQmlHeld: boolean; // มาถึง QM แล้วไม่หลุด QM (Hold / Rejection confirmed)
+  status: "ARMED" | "HELD" | "TRIGGERED" | "NONE";
+  rejectionQuality: number; // Rejection wick ratio (0 - 1)
+  targetBOSPrice: number; // Break of Structure target level
+  tacticalRationale: string;
 }
 
 // [แผน 33] Premium vs Discount Array Matrix & Dealing Range
@@ -968,6 +1016,7 @@ export interface IndicatorData {
   anchoredVwap?: AnchoredVWAPInfo;
   cvd?: CVDInfo;
   orderBlocks?: OrderBlockValidatorInfo;
+  obPAReversal?: OrderBlockPAReversalInfo;
   priceFeedIntegrity?: PriceFeedIntegrityInfo;
   sessionSweep?: SessionSweepInfo;
   fibonacciCluster?: FibonacciClusterInfo;
@@ -976,6 +1025,7 @@ export interface IndicatorData {
   correlationShield?: CorrelationShieldInfo;
   fvgMitigation?: FVGMitigationInfo;
   marketStructureShift?: MarketStructureShiftInfo;
+  quasimodo?: QuasimodoInfo;
   premiumDiscount?: PremiumDiscountInfo;
   keyLevelTargets?: KeyLevelTargetsInfo;
   orderFlowVelocity?: OrderFlowVelocityInfo;
@@ -1051,6 +1101,9 @@ export interface IndicatorData {
   footprintAnalysis?: FootprintAnalysisInfo;
   // [แผน 54] Higher Timeframe Confluence Analysis (Simplified)
   mtfConfluence?: MTFConfluenceInfo;
+  // [E-Book Trade 10-Module Institutional Suite]
+  pullbackQuality?: PullbackQualityInfo;
+  rsiInstitutional?: RSIInstitutionalAnalysisInfo;
 }
 
 export interface NewsItem {
@@ -1153,6 +1206,8 @@ export interface AnalysisResult {
   volumeDelta?: VolumeDeltaInfo;
   breakevenAdvice?: BreakevenAdvice;
   roundLevel?: RoundLevelInfo;
+  clusteredSR?: ClusteredSRInfo;
+  pivotPoints?: PivotPointsInfo;
   volumeProfile?: VolumeProfileInfo;
   advancedVolumeProfile?: AdvancedVolumeProfileInfo;
   footprintAnalysis?: FootprintAnalysisInfo;
@@ -1171,6 +1226,7 @@ export interface AnalysisResult {
   anchoredVwap?: AnchoredVWAPInfo;
   cvd?: CVDInfo;
   orderBlocks?: OrderBlockValidatorInfo;
+  obPAReversal?: OrderBlockPAReversalInfo;
   priceFeedIntegrity?: PriceFeedIntegrityInfo;
   kellySizing?: KellySizingInfo;
   sessionSweep?: SessionSweepInfo;
@@ -1180,6 +1236,7 @@ export interface AnalysisResult {
   correlationShield?: CorrelationShieldInfo;
   fvgMitigation?: FVGMitigationInfo;
   marketStructureShift?: MarketStructureShiftInfo;
+  quasimodo?: QuasimodoInfo;
   premiumDiscount?: PremiumDiscountInfo;
   keyLevelTargets?: KeyLevelTargetsInfo;
   orderFlowVelocity?: OrderFlowVelocityInfo;
@@ -1325,6 +1382,7 @@ export interface AnalysisResult {
     anchoredVwap?: AnchoredVWAPInfo;
     cvd?: CVDInfo;
     orderBlocks?: OrderBlockValidatorInfo;
+    obPAReversal?: OrderBlockPAReversalInfo;
     sessionSweep?: SessionSweepInfo;
     fibonacciCluster?: FibonacciClusterInfo;
     realizedVolatility?: RealizedVolatilityInfo;
@@ -1332,6 +1390,7 @@ export interface AnalysisResult {
     correlationShield?: CorrelationShieldInfo;
     fvgMitigation?: FVGMitigationInfo;
     marketStructureShift?: MarketStructureShiftInfo;
+    quasimodo?: QuasimodoInfo;
     premiumDiscount?: PremiumDiscountInfo;
     keyLevelTargets?: KeyLevelTargetsInfo;
     orderFlowVelocity?: OrderFlowVelocityInfo;
@@ -1454,13 +1513,25 @@ export interface AnalysisResult {
       balance10k: number;
     };
     invalidationNote: string;
+    // [E-Book Trade 10-Module Suite Integration]
+    pullbackQuality?: PullbackQualityInfo;
+    netSpreadAnalysis?: NetSpreadAnalysisInfo;
+    preTradeChecklist?: PreTradeChecklistInfo;
+    rsiInstitutionalAnalysis?: RSIInstitutionalAnalysisInfo;
+    drawdownProtection?: DrawdownRecoveryInfo;
+    srRoleReversal?: SRRoleReversalInfo;
   };
-  pivotPoints?: PivotPointsInfo;
-  clusteredSR?: ClusteredSRInfo;
   autoFibonacci?: AutoFibonacciInfo;
   fiveCorePillars?: FiveCorePillarsEvaluation;
   institutionalQuant?: Institutional5LayerHub;
   orchestrator?: OrchestratorDecisionInfo;
+  // [E-Book Trade 10-Module Suite Top-Level Access]
+  pullbackQuality?: PullbackQualityInfo;
+  netSpreadAnalysis?: NetSpreadAnalysisInfo;
+  preTradeChecklist?: PreTradeChecklistInfo;
+  rsiInstitutionalAnalysis?: RSIInstitutionalAnalysisInfo;
+  drawdownProtection?: DrawdownRecoveryInfo;
+  srRoleReversal?: SRRoleReversalInfo;
 }
 
 // ─── ANTI-CLASH ORCHESTRATOR & STRATEGY PERSONA TYPES ───
@@ -1960,6 +2031,27 @@ export interface CandlestickPatternMatch {
   confidence: number; // 0 - 100%
   candleIndex: number;
   description: string;
+  isZoneAnchored?: boolean; // True if formed at Key Support/Resistance or Value Zone
+  anchoredSRZone?: string;  // Description of the anchoring zone
+}
+
+export interface CandleColorRatioInfo {
+  lookback: number;
+  bullishCount: number;
+  bearishCount: number;
+  dojiCount: number;
+  bullRatio: number; // 0.0 - 1.0 (e.g. 0.65 = 65% green candles)
+  bearRatio: number; // 0.0 - 1.0
+  dominantBias: "BULLISH" | "BEARISH" | "NEUTRAL";
+  isHealthyTrend: boolean; // >= 60% one-sided
+}
+
+export interface TwoBarConfirmationInfo {
+  isConfirmed: boolean;
+  type: "BULLISH_CONFIRMATION" | "BEARISH_CONFIRMATION" | "NONE";
+  setupPattern?: string; // e.g. "HAMMER", "BULLISH_ENGULFING", "INVERTED_HAMMER"
+  confirmationCandleIndex?: number;
+  detail: string;
 }
 
 export interface CandlestickScanResult {
@@ -1967,6 +2059,8 @@ export interface CandlestickScanResult {
   dominantSignal: "BULLISH" | "BEARISH" | "NEUTRAL";
   overallScore: number; // -100 to +100
   description?: string;
+  candleColorRatio?: CandleColorRatioInfo;
+  twoBarConfirmation?: TwoBarConfirmationInfo;
 }
 
 export interface MasterIndicatorSuite {
@@ -2344,6 +2438,13 @@ export interface MtBridgeOrder {
   trailingSlPrice?: number;
   trailingStage?: number;
   emergencyDefenseReason?: string;
+  /** Institutional Safe Compounding & Drawdown Governor */
+  tierName?: string;
+  tierRange?: string;
+  drawdownGovernorActive?: boolean;
+  gradeMultiplier?: number;
+  marginRequiredUSD?: number;
+  marginUtilizationPct?: number;
 }
 
 export interface TelemetryLog {
@@ -2374,6 +2475,16 @@ export interface AutonomousPilotConfig {
    * - "SIGNAL_ONLY" = ไม่สร้าง order เลย ส่งเฉพาะ Telegram alert
    */
   approvalMode: "AUTO" | "SEMI_AUTO" | "SIGNAL_ONLY";
+  /** [E-Book Folder 8] Rule 1-3-1 Discipline: Max 3 trades/day, Max 2% cumulative risk */
+  enforceRule131Guard?: boolean;
+  maxDailyTrades?: number; // Default 3
+  maxDailyRiskPct?: number; // Default 2.0%
+  accountBalance?: number;
+  peakBalance?: number;
+  /** Institutional Scalping Suite: Timeframe for execution */
+  scalpTimeframe?: "15m" | "1h" | "5m";
+  /** Enable dynamic early profit harvesting before TP */
+  enableEarlyHarvest?: boolean;
 }
 
 export interface ClassicTrioInfo {
@@ -2417,6 +2528,108 @@ export interface BacktestTrade {
   pnlPips: number;
   entryTime: number;
   exitTime: number;
+  regime?: "TREND" | "BOX";
+}
+
+// ─── [E-BOOK TRADE 10-MODULE INSTITUTIONAL SUITE INTERFACES] ───
+
+export interface PullbackQualityInfo {
+  state: "HEALTHY_VALUE_ZONE" | "SHALLOW_PULLBACK" | "DEEP_PULLBACK" | "FOMO_OVEREXTENDED" | "NO_PULLBACK";
+  valueZoneType: "EMA_RIBBON" | "SR_FLIP_ZONE" | "CONFLUENCE_ZONE" | "NONE";
+  pullbackDepthPct: number; // e.g., 38.2, 50, 61.8, 78.6
+  fomoDistanceAtr: number; // Price distance from EMA20 in multiples of ATR
+  isFomoChasing: boolean; // true if fomoDistanceAtr > 2.0 (FOMO chasing penalty)
+  rejectionConfirmed: boolean; // true if rejection wick or engulfing candle bounced out of Value Zone
+  pullbackScore: number; // 0 - 100
+  summary: string;
+  tacticalAdvice: string;
+  trapsAvoided?: {
+    shallowFomoWarning: boolean; // ❌ กับดัก 1: ตลาดไม่ถึงแนวรับสำคัญแล้วรีบเข้า
+    noConfirmationWarning: boolean; // ❌ กับดัก 2: ไม่มีสัญญาณกลับตัวยืนยัน (เสี่ยงทะลุต่อ)
+    counterTrendWarning: boolean; // ❌ กับดัก 3: เทรดสวนเทรนด์หลัก
+    activeTrapWarning?: string;
+  };
+  fourPillars?: {
+    trendConfirmed: boolean; // เสา 1: ระบุเทรนด์หลักชัดเจน
+    valueZoneReached: boolean; // เสา 2: รอราคาย่อตัวเข้า Value Zone
+    reversalSignalDetected: boolean; // เสา 3: รอสัญญาณกลับตัวยืนยัน (Pin Bar / Engulfing)
+    riskManagementPlanned: boolean; // เสา 4: วาง SL/TP คุมความเสี่ยงทุกครั้ง
+  };
+}
+
+export interface NetSpreadAnalysisInfo {
+  symbol: string;
+  bidPrice: number;
+  askPrice: number;
+  spreadPips: number;
+  pipValueUSD: number; // per standard lot
+  spreadCostPerLotUSD: number;
+  slDistancePips: number;
+  spreadFrictionRatio: number; // spreadPips / slDistancePips (e.g. 0.15 = 15%)
+  spreadAlertLevel: "LOW_FRICTION" | "MODERATE_WARNING" | "EXCESSIVE_BLOCKED"; // EXCESSIVE if > 0.20 (20% rule)
+  grossRiskRewardRatio: number;
+  netRiskRewardRatio: number; // R:R after factoring spread cost friction
+  isTradeCostEfficient: boolean;
+  spreadGuidance: string;
+}
+
+export interface PreTradeChecklistItem {
+  id: number;
+  title: string;
+  description: string;
+  passed: boolean;
+  score: number; // out of 20
+  institutionalRule: string;
+}
+
+export interface PreTradeChecklistInfo {
+  items: PreTradeChecklistItem[];
+  passedCount: number; // 0 - 5
+  totalScore: number; // 0 - 100
+  disciplineStatus: "DISCIPLINE_PERFECT" | "PROCEED_WITH_DISCIPLINE" | "WAIT_DISCIPLINE_BREACH";
+  rule131Status: {
+    maxDailyTrades: number; // 3
+    currentEstimatedTrades: number;
+    maxDailyRiskPct: number; // 2%
+    cooldownActive: boolean;
+    disciplineAdvice: string;
+  };
+  executiveVerdict: string;
+}
+
+export interface RSIInstitutionalAnalysisInfo {
+  currentRSI: number;
+  prevRSI: number;
+  hookState: "BULLISH_EXIT_HOOK" | "BEARISH_EXIT_HOOK" | "BULLISH_TREND_SUPPORT" | "BEARISH_TREND_RESISTANCE" | "NEUTRAL";
+  marketRegimeRange: "BULL_MARKET_RANGE_40_80" | "BEAR_MARKET_RANGE_20_60" | "SIDEWAYS_RANGE_30_70";
+  divergenceAtZone: "BULLISH_DIVERGENCE_AT_SUPPORT" | "BEARISH_DIVERGENCE_AT_RESISTANCE" | "NONE";
+  momentumConvictionScore: number; // 0 - 100
+  rsiSummary: string;
+}
+
+export interface DrawdownRecoveryInfo {
+  accountBalance: number;
+  riskCapitalUSD: number;
+  riskPct: number;
+  consecutiveLosses: number;
+  drawdownThrottleMultiplier: number; // e.g. 1.0, 0.75, 0.50
+  asymmetricRecoveryMatrix: {
+    drawdownPct: number; // e.g. 10, 20, 30, 50
+    requiredGainPct: number; // 11.1, 25.0, 42.9, 100.0
+    psychologicalPressure: "LOW" | "MODERATE" | "HIGH" | "CATASTROPHIC";
+  }[];
+  consecutiveLossProtectionAdvice: string;
+}
+
+export interface SRRoleReversalInfo {
+  isFlipDetected: boolean;
+  flipType: "RESISTANCE_BECOMES_SUPPORT" | "SUPPORT_BECOMES_RESISTANCE" | "NONE";
+  flipLevel: number;
+  touchCount: number;
+  retestState: "RETEST_BOUNCED" | "RETESTING" | "RETEST_FAILED" | "NONE";
+  zoneBand: { min: number; max: number; thicknessPips: number };
+  roleReversalConviction: number; // 0 - 100
+  summary: string;
 }
 
 export type {

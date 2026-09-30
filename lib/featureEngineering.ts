@@ -409,10 +409,10 @@ export function extractFeatureVector24D(
 
   for (const f of features) {
     if (f.signal === "BULLISH") {
-      totalBullWeights += Math.abs(f.value || 0.5);
+      totalBullWeights += Math.abs(f.value ?? 0.5);
       categoryCounts[f.category].bull += 1;
     } else if (f.signal === "BEARISH") {
-      totalBearWeights += Math.abs(f.value || 0.5);
+      totalBearWeights += Math.abs(f.value ?? 0.5);
       categoryCounts[f.category].bear += 1;
     }
   }

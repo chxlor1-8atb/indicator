@@ -1,0 +1,42 @@
+; Aegis Quant Terminal EA - Preset for Gold (XAUUSD) Cent Account ($10 - $50)
+; Designed for 1,000 - 5,000 USC Capital with Sniper Micro-SL Protection
+
+InpServerUrl=http://localhost:3000
+InpPollIntervalSec=2
+InpMagicNumber=777888
+InpExecMode=0
+InpAccountMode=1
+InpMaxSpreadPips=4.5
+InpSlippagePips=15
+InpMaxMarginPct=20.0
+InpShowGUI=true
+InpGuiX=20
+InpGuiY=35
+InpSoundAlerts=true
+InpPushAlerts=false
+InpEnableEarlyHarvest=true
+InpHarvestMinR=0.75
+InpHarvestMinPips=12.0
+InpSingleLotMode=0
+
+; Flash Volatility Spike Guard
+InpEnableFlashSpikeGuard=true
+InpFlashSpikeATRMult=3.0
+InpSpikeFreezeMinutes=15
+
+; Institutional Safeguards & Pending Router
+InpEnableDailyGuard=true
+InpMaxDailyLossPct=4.0
+InpTrailingDailyLockPct=50.0
+InpEnableTimeFilter=true
+InpRolloverStartHour=23
+InpRolloverEndHour=1
+InpCloseFridayNight=false
+InpFridayCloseHour=22
+InpUsePendingOrders=true
+InpPendingExpiryHours=4
+InpMarketExecBufferPips=2.5
+InpDrawChartLevels=true
+InpOfflineFallback=true
+InpMaxLossCooldownTrades=2
+InpCooldownMinutes=60

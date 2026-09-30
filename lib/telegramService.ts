@@ -319,6 +319,18 @@ export interface SendTelegramOptions {
   currentPrice?: number;
   orderId?: number | string;
   dailyOrderNumber?: number;
+  force?: boolean; // Set to true only for explicit connection tests
+}
+
+// ─── MASTER TELEGRAM KILL SWITCH (Disabled per user request: "ไม่ต้องส่ง Telegram") ───
+let _telegramGloballyEnabled = false;
+
+export function setTelegramGloballyEnabled(enabled: boolean): void {
+  _telegramGloballyEnabled = enabled;
+}
+
+export function isTelegramGloballyEnabled(): boolean {
+  return _telegramGloballyEnabled;
 }
 
 // ─── DEDUPLICATION DISPATCH SHIELD (60s window per chat + fingerprint) ───
@@ -351,6 +363,11 @@ function isHourlyLimitExceeded(chatId: string): boolean {
 }
 
 export async function sendTelegramMessage(options: SendTelegramOptions): Promise<{ success: boolean; messageId?: number; error?: string }> {
+  // Master kill switch: disabled completely unless force is true (e.g. Test Bot Connection modal)
+  if (!_telegramGloballyEnabled && !options.force) {
+    return { success: true, error: "Telegram dispatch is disabled per user request." };
+  }
+
   const botToken = options.botToken || process.env.TELEGRAM_BOT_TOKEN || DEFAULT_TELEGRAM_BOT_TOKEN;
   const chatId = options.chatId || process.env.TELEGRAM_CHAT_ID || DEFAULT_TELEGRAM_CHAT_ID;
   const { message, analysis, isPreWarning, orderResult, rawHtml, currentPrice, orderId } = options;

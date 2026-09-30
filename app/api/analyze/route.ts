@@ -55,21 +55,35 @@ export async function POST(request: NextRequest) {
     // 4. Save AI Signal to Neon DB with deduplication for UI Journal & Win-rate tracking
     // Note: Automatic Telegram broadcast is centralized in the Autonomous Scanner (/api/autonomous-scanner)
     // to prevent duplicate double-alerts when users browse assets on the dashboard.
-    if (analysis.signal !== "WAIT" && analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER") {
+    const isActionable =
+      analysis.signal !== "WAIT" &&
+      analysis.tradeSetup?.orderType !== "WAIT_NO_ORDER" &&
+      analysis.tradeSetup?.action !== "NO_TRADE" &&
+      (analysis.masterConfluence?.totalScore ?? 0) >= 70 &&
+      !analysis.setupGrade.includes("C") &&
+      !analysis.setupGrade.includes("Wait");
+
+    if (isActionable) {
       await saveAiSignal(analysis).catch((err) => {
         console.error("Save AI signal error:", err);
       });
     }
 
-    // 5. Continuous Real-time Win Rate & Backtest Sync into Neon DB (Non-blocking)
+    // 5. Continuous Real-time Win Rate & Backtest Sync into Neon DB (Background Fire-and-Forget)
     const candles500 = candles.slice(-500);
     if (candles500.length >= 35) {
-      const btTrades = simulateInstitutionalBacktest(symbol, candles500);
-      if (btTrades.length > 0) {
-        saveBacktestResults(symbol, timeframe, btTrades).catch((e) =>
-          console.warn(`Real-time backtest sync warning for ${symbol}:`, e)
-        );
-      }
+      setTimeout(() => {
+        try {
+          const btTrades = simulateInstitutionalBacktest(symbol, candles500);
+          if (btTrades.length > 0) {
+            saveBacktestResults(symbol, timeframe, btTrades).catch((e) =>
+              console.warn(`Real-time backtest sync warning for ${symbol}:`, e)
+            );
+          }
+        } catch (e) {
+          console.warn(`Background backtest sync warning for ${symbol}:`, e);
+        }
+      }, 0);
     }
 
     return NextResponse.json({

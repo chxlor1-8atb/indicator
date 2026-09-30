@@ -1,5 +1,18 @@
 import { Candle, SessionORB } from "./types";
 
+export type TradingSessionPhase = "MORNING" | "AFTERNOON" | "NIGHT" | "DEAD_ZONE";
+
+export interface SessionPhaseInfo {
+  phase: TradingSessionPhase;
+  label: string;
+  thaiLabel: string;
+  description: string;
+  recommendedRegime: "RANGE_BOX" | "TREND_SWING" | "STAND_DOWN";
+  tpMultiplierBonus: number;
+  beTriggerRatio: number;
+  allowNewTrades: boolean;
+}
+
 export interface SessionStatus {
   thaiTimeStr: string;
   hour: number;
@@ -21,6 +34,7 @@ export interface SessionStatus {
   tradeAllowed: boolean;
   confidenceModifier: number;
   isWeekendCloseFreeze?: boolean;
+  sessionPhase?: SessionPhaseInfo;
   orb?: SessionORB;
 }
 
@@ -74,12 +88,83 @@ export function getThaiTimeParts(date: Date = new Date()) {
   return { hour, minute, day, month, year, dayOfWeek };
 }
 
+/**
+ * Categorize current time into 3 primary trading zones + 1 rollover dead zone (Thai Time GMT+7)
+ */
+export function getTradingSessionPhase(dateOrTimestamp?: Date | number): SessionPhaseInfo {
+  let thaiHour = 0;
+  if (typeof dateOrTimestamp === "number") {
+    const d = new Date(dateOrTimestamp > 1e11 ? dateOrTimestamp : dateOrTimestamp * 1000);
+    thaiHour = (d.getUTCHours() + 7) % 24;
+  } else if (dateOrTimestamp instanceof Date) {
+    thaiHour = (dateOrTimestamp.getUTCHours() + 7) % 24;
+  } else {
+    const parts = getThaiTimeParts(new Date());
+    thaiHour = parts.hour;
+  }
+
+  // 1. Dead Zone / Bank Rollover: 01:00 - 06:00 น. (ครอบคลุมช่วง 05:00 น. สเปรดถ่างสลับตลาด)
+  if (thaiHour >= 1 && thaiHour < 6) {
+    return {
+      phase: "DEAD_ZONE",
+      label: "🛑 Dead Zone / Rollover",
+      thaiLabel: "ช่วงดึกสงัด / ปิดเคลียริ่ง (01:00 - 06:00 น.)",
+      description: "ช่วงปิดระบบเคลียริ่งธนาคาร สเปรดถ่างสูง วอลุ่มต่ำ เสี่ยงโดนลากกิน SL ควรงดเปิดออเดอร์ใหม่",
+      recommendedRegime: "STAND_DOWN",
+      tpMultiplierBonus: 0,
+      beTriggerRatio: 0.50,
+      allowNewTrades: false,
+    };
+  }
+
+  // 2. Morning Session (Tokyo / Asian): 06:00 - 13:00 น.
+  if (thaiHour >= 6 && thaiHour < 13) {
+    return {
+      phase: "MORNING",
+      label: "🌅 Morning Asian Range",
+      thaiLabel: "รอบเช้า ตลาดเอเชีย (06:00 - 13:00 น.)",
+      description: "ตลาดมักแกว่งตัวสะสมของในกรอบ Sideway สเปรดต่ำ เหมาะกับการเทรด Range Box ซื้อแนวรับ ขายแนวต้าน",
+      recommendedRegime: "RANGE_BOX",
+      tpMultiplierBonus: 0,
+      beTriggerRatio: 0.32,
+      allowNewTrades: true,
+    };
+  }
+
+  // 3. Afternoon Session (London Open): 13:00 - 18:00 น.
+  if (thaiHour >= 13 && thaiHour < 18) {
+    return {
+      phase: "AFTERNOON",
+      label: "🏙️ Afternoon London Open",
+      thaiLabel: "รอบบ่าย ตลาดยุโรปเปิด (13:00 - 18:00 น.)",
+      description: "วอลุ่มยุโรปเริ่มเข้า มีจังหวะ Judas Swing สลัดเม่า เน้นรอคอนเฟิร์ม CHoCH ก่อนเข้าเทรนด์ตามน้ำ",
+      recommendedRegime: "TREND_SWING",
+      tpMultiplierBonus: 0.2,
+      beTriggerRatio: 0.38,
+      allowNewTrades: true,
+    };
+  }
+
+  // 4. Night Session (Prime US / London Overlap): 18:00 - 01:00 น.
+  return {
+    phase: "NIGHT",
+    label: "🔥 Night Prime US Session",
+    thaiLabel: "รอบค่ำ/ดึก ตลาดสหรัฐฯ พีกสุด (18:00 - 01:00 น.)",
+    description: "ช่วงเวลากำไรคำโต! วอลุ่มสถาบันมหาศาล กราฟวิ่งทะลุเทรนด์ยาว รันกำไรคำใหญ่ด้วย TP2 กว้างขึ้น",
+    recommendedRegime: "TREND_SWING",
+    tpMultiplierBonus: 0.5,
+    beTriggerRatio: 0.42,
+    allowNewTrades: true,
+  };
+}
+
 export function getMarketSessionStatus(symbol: string, customDate?: Date, candles?: Candle[]): SessionStatus {
   const now = customDate || new Date();
   
   // Convert to Thailand Time (GMT+7) with Serverless-safe Intl format
   const { hour, minute, dayOfWeek } = getThaiTimeParts(now);
   const isDST = isDaylightSavingTime(now);
+  const sessionPhase = getTradingSessionPhase(now);
 
   const thaiTimeStr = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} น.`;
 
@@ -312,6 +397,7 @@ export function getMarketSessionStatus(symbol: string, customDate?: Date, candle
     tradeAllowed,
     confidenceModifier,
     isWeekendCloseFreeze,
+    sessionPhase,
     orb,
   };
 }

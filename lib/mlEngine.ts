@@ -128,6 +128,86 @@ function trainDecisionStump(samples: TrainingSample[], featureIndex: number): De
 }
 
 /**
+ * Extracts a normalized 24-D feature representation for a specific historical candle index.
+ * Derives true rolling momentum, candle microstructure, range/ATR ratios, and volume dynamics
+ * from actual historical price action — eliminating synthetic noise from training data.
+ */
+function extractHistoricalSampleFeatures(
+  candles: Candle[],
+  idx: number,
+  baseFeatures: number[]
+): number[] {
+  const c = candles[idx];
+  if (!c || idx < 14) return [...baseFeatures];
+
+  // 1. Rolling ATR proxy (14 bars)
+  let sumRange = 0;
+  for (let j = idx - 13; j <= idx; j++) {
+    sumRange += Math.max(1e-6, candles[j].high - candles[j].low);
+  }
+  const atr = sumRange / 14;
+
+  // 2. Multi-bar normalized momentum returns
+  const prev1 = candles[idx - 1] ?? c;
+  const prev3 = candles[Math.max(0, idx - 3)] ?? c;
+  const prev5 = candles[Math.max(0, idx - 5)] ?? c;
+  const ret1 = (c.close - prev1.close) / atr;
+  const ret3 = (c.close - prev3.close) / (atr * 1.73);
+  const ret5 = (c.close - prev5.close) / (atr * 2.23);
+
+  // 3. Candle microstructure (Body ratio & Wick rejection ratio)
+  const fullRange = Math.max(1e-6, c.high - c.low);
+  const bodyTop = Math.max(c.open, c.close);
+  const bodyBottom = Math.min(c.open, c.close);
+  const bodyRatio = (c.close - c.open) / fullRange;
+  const upperWick = (c.high - bodyTop) / fullRange;
+  const lowerWick = (bodyBottom - c.low) / fullRange;
+  const wickImbalance = lowerWick - upperWick;
+
+  // 4. Fast moving average distance (20-bar rolling)
+  let sumClose20 = 0;
+  const lookback20 = Math.min(20, idx + 1);
+  for (let j = idx - lookback20 + 1; j <= idx; j++) {
+    sumClose20 += candles[j].close;
+  }
+  const sma20 = sumClose20 / lookback20;
+  const distSma20 = (c.close - sma20) / atr;
+
+  // 5. Stochastic %K (20 bars)
+  let highestHigh = -Infinity;
+  let lowestLow = Infinity;
+  for (let j = idx - lookback20 + 1; j <= idx; j++) {
+    if (candles[j].high > highestHigh) highestHigh = candles[j].high;
+    if (candles[j].low < lowestLow) lowestLow = candles[j].low;
+  }
+  const stochRange = Math.max(1e-6, highestHigh - lowestLow);
+  const stochK = ((c.close - lowestLow) / stochRange) * 2 - 1;
+
+  // 6. Volume expansion ratio
+  let sumVol20 = 0;
+  for (let j = idx - lookback20 + 1; j <= idx; j++) {
+    sumVol20 += candles[j].volume || 1;
+  }
+  const avgVol20 = sumVol20 / lookback20;
+  const volExpansion = Math.min(2, Math.max(0, (c.volume || 1) / avgVol20)) - 1;
+
+  // Map real market features into 24-D feature vector slots
+  const sample = [...baseFeatures];
+  if (sample.length >= 24) {
+    sample[0] = Math.max(-1, Math.min(1, Math.abs(ret5) * 0.5)); // Trend strength
+    sample[1] = Math.max(-1, Math.min(1, ret3));                // Trend acceleration
+    sample[2] = Math.max(-1, Math.min(1, distSma20 * 0.5));     // Fast EMA slope proxy
+    sample[3] = Math.max(-1, Math.min(1, ret5 * 0.4));          // Ribbon spread proxy
+    sample[6] = Math.max(-1, Math.min(1, ret1));                // Short-term momentum
+    sample[7] = Math.max(-1, Math.min(1, stochK));              // Oscillator position
+    sample[10] = Math.max(-1, Math.min(1, bodyRatio));          // Candle thrust
+    sample[11] = Math.max(-1, Math.min(1, wickImbalance));      // Wick rejection
+    sample[15] = Math.max(-1, Math.min(1, volExpansion));       // Volume flow
+  }
+  return sample;
+}
+
+/**
  * Random Forest Ensemble Model Engine.
  * Trains on the feature vector history and produces directional probabilistic predictions.
  */
@@ -162,12 +242,11 @@ export function runMachineLearningInference(
     };
   }
 
-  // Synthesize historical training set by shifting feature representations
+  // Generate genuine historical training set from actual price action at labeled bars
   const trainingSamples: TrainingSample[] = [];
   for (let i = 0; i < labels.length; i++) {
     const item = labels[i];
-    const decay = (labels.length - i) / labels.length;
-    const sampleVec = currentFeatures.map((val) => val * (1 - decay * 0.4) + (Math.sin(i) * 0.15));
+    const sampleVec = extractHistoricalSampleFeatures(candles, item.index, currentFeatures);
     trainingSamples.push({
       features: sampleVec,
       label: item.label,

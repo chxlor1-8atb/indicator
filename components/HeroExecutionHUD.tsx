@@ -19,7 +19,16 @@ import {
   Target,
   Globe,
   Flame,
+  Percent,
+  Compass,
+  TrendingUp,
+  CheckCircle2,
+  XCircle,
+  Scale,
+  ShieldAlert,
+  TrendingDown,
 } from "lucide-react";
+import { evaluateMilestoneTier } from "@/lib/riskEngine";
 
 interface HeroExecutionHUDProps {
   analysis: AnalysisResult;
@@ -96,6 +105,14 @@ function HeroExecutionHUD({
   const isPostNewsSniper = cal?.state === "POST_NEWS_SNIPER_ACTIVE" || Boolean(ts.isPostNewsSniper);
 
   const isExecutionLocked = isFreeze || !isActionable;
+
+  // E-Book Trade 10-Module Suite Integration Fields
+  const pullback = ts.pullbackQuality || analysis.pullbackQuality;
+  const spreadAnalysis = ts.netSpreadAnalysis || analysis.netSpreadAnalysis;
+  const checklist = ts.preTradeChecklist || analysis.preTradeChecklist;
+  const drawdownMetrics = ts.drawdownProtection || analysis.drawdownProtection;
+  const srReversal = ts.srRoleReversal || analysis.srRoleReversal;
+  const rsiInst = ts.rsiInstitutionalAnalysis || analysis.rsiInstitutionalAnalysis;
   const isBuy = hasBuySignal;
   const isSell = hasSellSignal;
   const isLimit = isActionable && (ts.orderType?.includes("LIMIT") || ts.orderType === "BUY_LIMIT" || ts.orderType === "SELL_LIMIT");
@@ -128,6 +145,7 @@ function HeroExecutionHUD({
 
   // Lot Calculator Variables
   const balance = Math.max(1, Number(customBalance) || 10);
+  const milestoneTier = evaluateMilestoneTier(balance);
   const slPipsVal = Math.max(5, displaySLPips);
   const tp1PipsVal = Math.max(5, displayTP1Pips);
   const tp2PipsVal = Math.max(10, displayTP2Pips);
@@ -474,6 +492,174 @@ function HeroExecutionHUD({
             <div className="mt-2 text-[11px] font-mono text-slate-300 flex items-center gap-1.5 bg-surface-50/50 p-1.5 rounded-lg border border-slate-800/80">
               <span className="text-primary font-bold shrink-0">คำแนะนำ:</span>
               <span className="truncate">{ts.breakoutConfirmation.tacticalAdvice}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── 1.3 8-IMAGE S/R ZONE & S-R FLIP MATRIX HUD ─── */}
+      {analysis.clusteredSR && (
+        <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+              <Target className="w-3.5 h-3.5 text-teal-400" />
+              <span>S/R Zone & Role Reversal Matrix</span>
+            </span>
+            <div className="flex items-center gap-2">
+              {analysis.clusteredSR.srFlipDetected && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                  ⚡ S-R Flip ยืนยัน
+                </span>
+              )}
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
+                analysis.clusteredSR.activeZoneState === "INSIDE_SUPPORT_ZONE"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : analysis.clusteredSR.activeZoneState === "INSIDE_RESISTANCE_ZONE"
+                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                  : "bg-surface-50 text-slate-400 border-slate-700"
+              }`}>
+                {analysis.clusteredSR.activeZoneState === "INSIDE_SUPPORT_ZONE" ? "🟢 อยู่ใน Support Zone" :
+                 analysis.clusteredSR.activeZoneState === "INSIDE_RESISTANCE_ZONE" ? "🔴 อยู่ใน Resistance Zone" : "⚪ ระหว่างโซน"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
+            {/* Support Zone Band */}
+            <div className="p-2 rounded-lg bg-emerald-950/20 border border-emerald-500/30 space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-emerald-400 font-bold flex items-center gap-1">
+                  <span>🛡️ Support Zone (แนวรับ)</span>
+                  {analysis.clusteredSR.nearestSupport?.isRoleReversed && <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 rounded">S-R Flip</span>}
+                </span>
+                <span className="text-slate-400 text-[10px]">
+                  {analysis.clusteredSR.nearestSupport?.touchCount || 0}x สัมผัส
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-300">
+                  [{analysis.clusteredSR.nearestSupport?.zoneMin ?? "-"} — {analysis.clusteredSR.nearestSupport?.zoneMax ?? "-"}]
+                </span>
+                <span className="text-emerald-300 font-bold">
+                  {analysis.clusteredSR.nearestSupport?.price}
+                </span>
+              </div>
+              {analysis.clusteredSR.nearestSupport?.reversalPattern && analysis.clusteredSR.nearestSupport.reversalPattern !== "NONE" && (
+                <div className="text-[10px] text-teal-300 pt-0.5">
+                  แท่งกลับตัว: {analysis.clusteredSR.nearestSupport.reversalPattern}
+                </div>
+              )}
+            </div>
+
+            {/* Resistance Zone Band */}
+            <div className="p-2 rounded-lg bg-rose-950/20 border border-rose-500/30 space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-rose-400 font-bold flex items-center gap-1">
+                  <span>🚧 Resistance Zone (แนวต้าน)</span>
+                  {analysis.clusteredSR.nearestResistance?.isRoleReversed && <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 rounded">S-R Flip</span>}
+                </span>
+                <span className="text-slate-400 text-[10px]">
+                  {analysis.clusteredSR.nearestResistance?.touchCount || 0}x สัมผัส
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-300">
+                  [{analysis.clusteredSR.nearestResistance?.zoneMin ?? "-"} — {analysis.clusteredSR.nearestResistance?.zoneMax ?? "-"}]
+                </span>
+                <span className="text-rose-300 font-bold">
+                  {analysis.clusteredSR.nearestResistance?.price}
+                </span>
+              </div>
+              {analysis.clusteredSR.nearestResistance?.reversalPattern && analysis.clusteredSR.nearestResistance.reversalPattern !== "NONE" && (
+                <div className="text-[10px] text-rose-300 pt-0.5">
+                  แท่งกลับตัว: {analysis.clusteredSR.nearestResistance.reversalPattern}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {analysis.clusteredSR.tacticalAdvice && (
+            <div className="text-[10.5px] font-mono text-slate-300 bg-surface-50 p-1.5 rounded border border-slate-800">
+              💡 {analysis.clusteredSR.tacticalAdvice}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── 1.4 8-IMAGE TREND & MARKET STRUCTURE MATRIX HUD (HH/HL/LH/LL & MSS) ─── */}
+      {analysis.marketStructureShift && (
+        <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+              <Compass className="w-3.5 h-3.5 text-amber-400" />
+              <span>Trend & Market Structure Matrix (HH/HL/LH/LL)</span>
+            </span>
+            <div className="flex items-center gap-2">
+              {analysis.marketStructureShift.detected && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 animate-pulse">
+                  ⚡ {analysis.marketStructureShift.type.replace(/_/g, " ")} ({analysis.marketStructureShift.displacementVelocity})
+                </span>
+              )}
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
+                analysis.marketStructureShift.structureType === "UPTREND"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : analysis.marketStructureShift.structureType === "DOWNTREND"
+                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                  : "bg-surface-50 text-amber-300 border-amber-500/30"
+              }`}>
+                {analysis.marketStructureShift.structureType === "UPTREND" ? "📈 UPTREND (HH + HL)" :
+                 analysis.marketStructureShift.structureType === "DOWNTREND" ? "📉 DOWNTREND (LH + LL)" : "↔️ SIDEWAY (Range S/R)"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+            {/* Higher High / Lower High */}
+            <div className="p-2 rounded-lg bg-surface-50 border border-slate-800 space-y-1">
+              <div className="text-[10px] text-slate-400">
+                {analysis.marketStructureShift.structureType === "UPTREND" ? "Higher High (HH)" : "Lower High (LH)"}
+              </div>
+              <div className="font-bold text-slate-200">
+                {analysis.marketStructureShift.structureType === "UPTREND"
+                  ? (analysis.marketStructureShift.lastHH ?? "-")
+                  : (analysis.marketStructureShift.lastLH ?? analysis.marketStructureShift.lastHH ?? "-")}
+              </div>
+            </div>
+
+            {/* Higher Low / Lower Low */}
+            <div className="p-2 rounded-lg bg-surface-50 border border-slate-800 space-y-1">
+              <div className="text-[10px] text-slate-400">
+                {analysis.marketStructureShift.structureType === "UPTREND" ? "Higher Low (HL)" : "Lower Low (LL)"}
+              </div>
+              <div className="font-bold text-slate-200">
+                {analysis.marketStructureShift.structureType === "UPTREND"
+                  ? (analysis.marketStructureShift.lastHL ?? "-")
+                  : (analysis.marketStructureShift.lastLL ?? analysis.marketStructureShift.lastHL ?? "-")}
+              </div>
+            </div>
+
+            {/* BOS Break Level */}
+            <div className="p-2 rounded-lg bg-surface-50 border border-slate-800 space-y-1">
+              <div className="text-[10px] text-slate-400">จุด Break โครงสร้าง:</div>
+              <div className="font-bold text-teal-300">
+                {analysis.marketStructureShift.breakPrice > 0 ? analysis.marketStructureShift.breakPrice : "ดำเนินตามกรอบ"}
+              </div>
+            </div>
+
+            {/* Displacement Power */}
+            <div className="p-2 rounded-lg bg-surface-50 border border-slate-800 space-y-1">
+              <div className="text-[10px] text-slate-400">Displacement สถาบัน:</div>
+              <div className={`font-bold ${analysis.marketStructureShift.isTrueDisplacement ? "text-emerald-300" : "text-slate-400"}`}>
+                {analysis.marketStructureShift.displacementMultiplier > 0
+                  ? `${analysis.marketStructureShift.displacementMultiplier}x ATR`
+                  : "แรงสปีดปกติ"}
+              </div>
+            </div>
+          </div>
+
+          {analysis.marketStructureShift.tacticalPlan && (
+            <div className="text-[10.5px] font-mono text-slate-300 bg-surface-50 p-1.5 rounded border border-slate-800">
+              💡 {analysis.marketStructureShift.tacticalPlan}
             </div>
           )}
         </div>
@@ -839,6 +1025,453 @@ function HeroExecutionHUD({
         </div>
       )}
 
+      {/* ─── 4.1 TREND PULLBACK & VALUE ZONE RADAR (E-Book Module 4 & 5) ─── */}
+      {pullback && (
+        <div className="p-3.5 rounded-xl bg-surface-50/80 border border-slate-800 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-lg border ${
+                pullback.state === "HEALTHY_VALUE_ZONE"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : pullback.isFomoChasing
+                  ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              }`}>
+                <Compass className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>📐 สแกนแต้มต่อ Pullback & Value Zone</span>
+                  <span className="text-[10px] font-mono text-slate-400">(Module 4 & 5)</span>
+                </h5>
+                <p className="text-[10.5px] text-slate-400">ตรวจสอบจุดย่อเข้าโซนสถาบัน (EMA 20/50 Ribbon, S/R Flip, Golden Pocket 50-61.8%)</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 self-start sm:self-center">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                pullback.state === "HEALTHY_VALUE_ZONE"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : pullback.state === "SHALLOW_PULLBACK"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : pullback.state === "FOMO_OVEREXTENDED"
+                  ? "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                  : "bg-purple-500/20 text-purple-300 border-purple-500/40"
+              }`}>
+                {pullback.state === "HEALTHY_VALUE_ZONE"
+                  ? "🟢 Healthy Value Zone"
+                  : pullback.state === "SHALLOW_PULLBACK"
+                  ? "🟡 Shallow Retest"
+                  : pullback.state === "FOMO_OVEREXTENDED"
+                  ? "🔴 Overextended (FOMO Risk)"
+                  : pullback.state === "DEEP_PULLBACK"
+                  ? "🟣 Deep Breakdown"
+                  : "⚪ No Pullback"}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-surface-100 border border-slate-800 font-mono text-[10px] text-amber-300 font-bold">
+                {pullback.pullbackScore}/100
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">ระยะห่างจาก EMA20</span>
+              <span className={`text-xs font-mono font-bold block ${
+                pullback.isFomoChasing ? "text-rose-400" : "text-cyan-300"
+              }`}>
+                {pullback.fomoDistanceAtr > 0 ? `+${pullback.fomoDistanceAtr}` : pullback.fomoDistanceAtr}x ATR
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                {pullback.isFomoChasing ? "⚠️ ไกลเกิน 2.0x (ห้ามไล่ราคา)" : "✅ อยู่ในระยะปลอดภัย"}
+              </span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">S/R Role Reversal Flip</span>
+              <span className={`text-xs font-mono font-bold block ${
+                pullback.valueZoneType === "SR_FLIP_ZONE" || pullback.valueZoneType === "CONFLUENCE_ZONE"
+                  ? "text-emerald-300"
+                  : "text-slate-400"
+              }`}>
+                {pullback.valueZoneType === "SR_FLIP_ZONE" || pullback.valueZoneType === "CONFLUENCE_ZONE"
+                  ? "✅ Flip Confirmed"
+                  : "➖ No Flip"}
+              </span>
+              <span className="text-[8.5px] text-slate-500 block truncate">
+                {srReversal?.flipType && srReversal.flipType !== "NONE"
+                  ? srReversal.flipType.replace(/_/g, " ")
+                  : "แนวรับ-ต้านเดิม"}
+              </span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">Golden Pocket (50-61.8%)</span>
+              <span className={`text-xs font-mono font-bold block ${
+                pullback.pullbackDepthPct >= 50 && pullback.pullbackDepthPct <= 68
+                  ? "text-emerald-300"
+                  : "text-slate-400"
+              }`}>
+                {pullback.pullbackDepthPct >= 50 && pullback.pullbackDepthPct <= 68
+                  ? "🎯 In Golden Zone"
+                  : `${pullback.pullbackDepthPct}% Retrace`}
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">Fibonacci Confluence</span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">RSI Institutional Hook</span>
+              <span className={`text-xs font-mono font-bold block ${
+                rsiInst?.hookState?.includes("HOOK") ? "text-emerald-300" : "text-slate-400"
+              }`}>
+                {rsiInst?.hookState?.includes("HOOK")
+                  ? "🪝 Exit Extreme Hook"
+                  : rsiInst?.marketRegimeRange?.replace(/_/g, " ") || "Normal"}
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                {rsiInst?.currentRSI ? `RSI: ${rsiInst.currentRSI}` : "Momentum"}
+              </span>
+            </div>
+          </div>
+
+          {/* 3 Avoided Traps Alert */}
+          {pullback.trapsAvoided?.activeTrapWarning && (
+            <div className="p-2 rounded-lg bg-rose-950/30 border border-rose-500/40 text-[11px] text-rose-200 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+              <p className="leading-snug font-medium">{pullback.trapsAvoided.activeTrapWarning}</p>
+            </div>
+          )}
+
+          {/* 4 Pillars of Pullback Execution */}
+          {pullback.fourPillars && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] font-mono">
+              <div className={`p-1.5 rounded border flex items-center justify-between ${pullback.fourPillars.trendConfirmed ? "bg-emerald-950/30 border-emerald-500/30 text-emerald-300" : "bg-surface-100 border-slate-800 text-slate-400"}`}>
+                <span>1. เทรนด์หลัก:</span>
+                <span className="font-bold">{pullback.fourPillars.trendConfirmed ? "✅ ชัดเจน" : "⚪ ไม่ชัด"}</span>
+              </div>
+              <div className={`p-1.5 rounded border flex items-center justify-between ${pullback.fourPillars.valueZoneReached ? "bg-emerald-950/30 border-emerald-500/30 text-emerald-300" : "bg-surface-100 border-slate-800 text-slate-400"}`}>
+                <span>2. Value Zone:</span>
+                <span className="font-bold">{pullback.fourPillars.valueZoneReached ? "✅ ถึงโซน" : "⚪ นอกโซน"}</span>
+              </div>
+              <div className={`p-1.5 rounded border flex items-center justify-between ${pullback.fourPillars.reversalSignalDetected ? "bg-emerald-950/30 border-emerald-500/30 text-emerald-300" : "bg-surface-100 border-slate-800 text-slate-400"}`}>
+                <span>3. สัญญาณกลับตัว:</span>
+                <span className="font-bold">{pullback.fourPillars.reversalSignalDetected ? "✅ ยืนยัน" : "⏳ รอแท่งเทียน"}</span>
+              </div>
+              <div className="p-1.5 rounded border flex items-center justify-between bg-emerald-950/30 border-emerald-500/30 text-emerald-300">
+                <span>4. คุม SL/TP:</span>
+                <span className="font-bold">✅ พร้อม</span>
+              </div>
+            </div>
+          )}
+
+          <div className="p-2 rounded-lg bg-surface-100/60 border border-slate-800/80 text-[11px] text-slate-300 flex items-start gap-2">
+            <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="leading-snug">{pullback.summary}</p>
+              {pullback.tacticalAdvice && (
+                <p className="text-amber-300/90 font-mono text-[10.5px]">💡 {pullback.tacticalAdvice}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 4.2 PIP-LOT-SPREAD FRICTION & NET R:R METER (E-Book Module 2 & 6) ─── */}
+      {spreadAnalysis && (
+        <div className="p-3.5 rounded-xl bg-surface-50/80 border border-slate-800 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-lg border ${
+                spreadAnalysis.spreadAlertLevel === "LOW_FRICTION"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : spreadAnalysis.spreadAlertLevel === "MODERATE_WARNING"
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                  : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+              }`}>
+                <Scale className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>⚖️ ตรวจสอบต้นทุนสเปรด & Net Risk:Reward สุทธิ</span>
+                  <span className="text-[10px] font-mono text-slate-400">(Module 2 & 6)</span>
+                </h5>
+                <p className="text-[10.5px] text-slate-400">คำนวณสเปรดที่หักออกจากระยะ TP/SL จริง เพื่อป้องกันออเดอร์กินทุนโดยไม่รู้ตัว</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 self-start sm:self-center">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                spreadAnalysis.spreadAlertLevel === "LOW_FRICTION"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : spreadAnalysis.spreadAlertLevel === "MODERATE_WARNING"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+              }`}>
+                {spreadAnalysis.spreadAlertLevel === "LOW_FRICTION"
+                  ? "🟢 Low Friction (<12% SL)"
+                  : spreadAnalysis.spreadAlertLevel === "MODERATE_WARNING"
+                  ? "🟡 Moderate Spread (12-20% SL)"
+                  : "🔴 Excessive Spread (>20% SL Blocked)"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">สเปรดปัจจุบัน</span>
+              <span className="text-xs font-mono font-bold text-white block">
+                {spreadAnalysis.spreadPips} pips
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                ≈ ${spreadAnalysis.spreadCostPerLotUSD.toFixed(2)}/lot
+              </span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">สัดส่วนสเปรดต่อ SL</span>
+              <span className={`text-xs font-mono font-bold block ${
+                spreadAnalysis.spreadFrictionRatio >= 0.20
+                  ? "text-rose-400"
+                  : spreadAnalysis.spreadFrictionRatio >= 0.12
+                  ? "text-amber-300"
+                  : "text-emerald-300"
+              }`}>
+                {(spreadAnalysis.spreadFrictionRatio * 100).toFixed(1)}% ของ SL
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                ระยะ SL: {spreadAnalysis.slDistancePips} pips
+              </span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">Gross R:R ➔ Net R:R</span>
+              <span className="text-xs font-mono font-bold text-emerald-300 block">
+                1:{spreadAnalysis.grossRiskRewardRatio} ➔ 1:{spreadAnalysis.netRiskRewardRatio}
+              </span>
+              <span className="text-[8.5px] text-rose-400 block font-mono">
+                หักสเปรด: -{(spreadAnalysis.grossRiskRewardRatio - spreadAnalysis.netRiskRewardRatio).toFixed(2)}R
+              </span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">ความคุ้มค่าเชิงสถาบัน</span>
+              <span className={`text-xs font-mono font-bold block ${
+                spreadAnalysis.isTradeCostEfficient ? "text-emerald-300" : "text-rose-400"
+              }`}>
+                {spreadAnalysis.isTradeCostEfficient ? "✅ Net R:R คุ้มค่า" : "❌ สเปรดกินหัวคิว"}
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                {spreadAnalysis.isTradeCostEfficient ? "เทรดได้ตามปกติ" : "แนะนำรอสเปรดแคบลง"}
+              </span>
+            </div>
+          </div>
+
+          {spreadAnalysis.spreadGuidance && (
+            <div className={`p-2 rounded-lg border text-[11px] flex items-start gap-2 ${
+              spreadAnalysis.isTradeCostEfficient
+                ? "bg-surface-100/60 border-slate-800/80 text-slate-300"
+                : "bg-rose-950/30 border-rose-500/40 text-rose-200"
+            }`}>
+              <AlertTriangle className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
+                spreadAnalysis.isTradeCostEfficient ? "text-amber-400" : "text-rose-400"
+              }`} />
+              <p className="leading-snug">{spreadAnalysis.spreadGuidance}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── 4.3 PRE-TRADE 5-POINT INSTITUTIONAL CHECKLIST (E-Book Module 6 & 8) ─── */}
+      {checklist && (
+        <div className="p-3.5 rounded-xl bg-surface-50/80 border border-slate-800 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-lg border ${
+                checklist.disciplineStatus === "DISCIPLINE_PERFECT"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : checklist.disciplineStatus === "PROCEED_WITH_DISCIPLINE"
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                  : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+              }`}>
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>🛡️ เช็คลิสต์ 5 เสาหลักก่อนออกออเดอร์ (Pre-Trade Checklist)</span>
+                  <span className="text-[10px] font-mono text-slate-400">(Module 6 & 8)</span>
+                </h5>
+                <p className="text-[10.5px] text-slate-400">กฎความปลอดภัยระดับสถาบัน 5 ข้อ: ต้องผ่านเกณฑ์เพื่อลด Over-trading และความเสี่ยง</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 self-start sm:self-center">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                checklist.disciplineStatus === "DISCIPLINE_PERFECT"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : checklist.disciplineStatus === "PROCEED_WITH_DISCIPLINE"
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+              }`}>
+                {checklist.disciplineStatus === "DISCIPLINE_PERFECT"
+                  ? "🟢 High Conviction (ผ่านครบ 5 ข้อ)"
+                  : checklist.disciplineStatus === "PROCEED_WITH_DISCIPLINE"
+                  ? "🟡 Acceptable Pass (ผ่านเกณฑ์ขั้นต่ำ)"
+                  : "🔴 Hard Gate Blocked (ติดเงื่อนไขห้ามเทรด)"}
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-surface-100 border border-slate-800 font-mono text-[10px] text-amber-300 font-bold">
+                {checklist.passedCount}/{checklist.items.length} ข้อ
+              </span>
+            </div>
+          </div>
+
+          {/* 5 Checklist Items Grid */}
+          <div className="space-y-1.5">
+            {checklist.items.map((item) => (
+              <div
+                key={item.id}
+                className={`p-2 rounded-lg border text-xs flex items-start justify-between gap-2 transition-colors ${
+                  item.passed
+                    ? "bg-surface-100/80 border-slate-800"
+                    : "bg-rose-950/20 border-rose-500/30"
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <div className="mt-0.5 shrink-0">
+                    {item.passed ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
+                  <div className="space-y-0.5">
+                    <span className="font-semibold text-slate-200 block text-[11px] leading-tight">
+                      {item.title}
+                    </span>
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                    item.passed
+                      ? "bg-emerald-500/20 text-emerald-300"
+                      : "bg-rose-500/20 text-rose-300"
+                  }`}>
+                    {item.passed ? "PASS" : "FAIL"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {checklist.disciplineStatus === "WAIT_DISCIPLINE_BREACH" && (
+            <div className="p-2 rounded-lg bg-rose-950/40 border border-rose-500/60 text-xs text-rose-200 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+              <span><strong>⚠️ คำเตือนสถาบัน:</strong> แผนเทรดนี้ยังไม่ผ่านเกณฑ์ครบถ้วน แนะนำวางเฉพาะ Pending Limit ที่โซนปลอดภัย หรือลดความเสี่ยงเหลือ 0.5%</span>
+            </div>
+          )}
+
+          {/* Price Action Golden Rules Banner (TRADER PROFESSIONAL Suite) */}
+          <div className="p-2 rounded-lg bg-surface-100/90 border border-teal-500/30 text-[10.5px] font-mono flex flex-wrap items-center justify-between gap-1.5 text-slate-300">
+            <span className="font-bold text-teal-300 flex items-center gap-1">
+              <span>💡 กฎทอง 4 เสาหลัก:</span>
+            </span>
+            <div className="flex items-center gap-1 sm:gap-2 flex-wrap text-[10px]">
+              <span className="text-emerald-400 font-semibold">📈 เทรนด์เป็นตัวนำ</span>
+              <span className="text-slate-600">➔</span>
+              <span className="text-cyan-400 font-semibold">🎯 โซนเป็นตัวกำหนด</span>
+              <span className="text-slate-600">➔</span>
+              <span className="text-amber-300 font-semibold">✅ สัญญาณยืนยันเป็นตัวเข้าจริง</span>
+              <span className="text-slate-600">➔</span>
+              <span className="text-rose-400 font-semibold">🛡️ จัดการความเสี่ยงทุกครั้ง</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 4.4 ASYMMETRIC DRAWDOWN RECOVERY & CAPITAL DISCIPLINE (E-Book Module 6 & 8) ─── */}
+      {drawdownMetrics && (
+        <div className="p-3.5 rounded-xl bg-surface-50/80 border border-slate-800 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <Percent className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>🧠 วินัยจิตวิทยา & Asymmetric Drawdown Recovery</span>
+                  <span className="text-[10px] font-mono text-slate-400">(Module 6 & 8)</span>
+                </h5>
+                <p className="text-[10.5px] text-slate-400">หลักคณิตศาสตร์ Ralph Vince & วินัย Mark Douglas: กู้พอร์ตด้วยการลดความเสี่ยง ไม่ใช่เบิ้ลล็อต</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 self-start sm:self-center">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                drawdownMetrics.consecutiveLosses === 0
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : drawdownMetrics.consecutiveLosses <= 2
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+              }`}>
+                {drawdownMetrics.consecutiveLosses === 0
+                  ? "🟢 DD Recovery Normal"
+                  : drawdownMetrics.consecutiveLosses <= 2
+                  ? "🟡 DD Recovery Alert"
+                  : "🔴 Severe DD Recovery Mode"}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">ความเสี่ยงต่อไม้</span>
+              <span className="text-xs font-mono font-bold text-cyan-300 block">
+                {drawdownMetrics.riskPct}% ของพอร์ต
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                เสี่ยง ${drawdownMetrics.riskCapitalUSD} USD
+              </span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">กำไรคืนทุน (-20% DD)</span>
+              <span className="text-xs font-mono font-bold text-amber-300 block">
+                +{drawdownMetrics.asymmetricRecoveryMatrix[1]?.requiredGainPct || 25}%
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                สูตร 1/(1-L) - 1
+              </span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">Anti-Martingale Scaling</span>
+              <span className="text-xs font-mono font-bold text-cyan-300 block">
+                {(drawdownMetrics.drawdownThrottleMultiplier * 100).toFixed(0)}% ของ Lot ปกติ
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                {drawdownMetrics.consecutiveLosses > 0 ? `แพ้ติดกัน: ${drawdownMetrics.consecutiveLosses} ไม้` : "ไร้ประวัติแพ้ติดกัน"}
+              </span>
+            </div>
+
+            <div className="p-2 rounded-lg bg-surface-100 border border-slate-800 space-y-0.5">
+              <span className="text-[9.5px] text-slate-400 block">กฎเหล็ก 1-3-1 Guard</span>
+              <span className={`text-xs font-mono font-bold block ${
+                checklist?.rule131Status?.cooldownActive ? "text-rose-400" : "text-emerald-300"
+              }`}>
+                {checklist?.rule131Status?.cooldownActive ? "🔒 Cool-down Lockout" : "✅ Ready to Trade"}
+              </span>
+              <span className="text-[8.5px] text-slate-500 block">
+                เพดาน: {checklist?.rule131Status?.maxDailyTrades || 3} ไม้/วัน (Max {checklist?.rule131Status?.maxDailyRiskPct || 2}%)
+              </span>
+            </div>
+          </div>
+
+          <div className="p-2 rounded-lg bg-surface-100/60 border border-slate-800/80 text-[11px] text-slate-300 flex items-start gap-2">
+            <Info className="w-3.5 h-3.5 text-purple-400 shrink-0 mt-0.5" />
+            <p className="leading-snug">{drawdownMetrics.consecutiveLossProtectionAdvice}</p>
+          </div>
+        </div>
+      )}
+
       {/* ─── 5. INTERACTIVE LOT SIZE & RISK CALCULATOR (เริ่ม $10 USD) ─── */}
       <div className="p-3.5 rounded-xl bg-surface-50/80 border border-slate-800 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
@@ -872,6 +1505,23 @@ function HeroExecutionHUD({
             >
               🪙 Cent (USC พอร์ตเล็ก)
             </button>
+          </div>
+        </div>
+
+        {/* Milestone Scaling & Compounding Target Badge */}
+        <div className="px-3 py-2 rounded-lg bg-surface-100/90 border border-slate-800/90 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              🏆 {milestoneTier.tierName}
+            </span>
+            <span className="text-[10.5px] text-slate-300">
+              ช่วงพอร์ต: <strong className="text-white font-mono">{milestoneTier.tierRange}</strong> (ความเสี่ยงมาตรฐาน {milestoneTier.baseRiskPct}%)
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10.5px]">
+            <span className="text-slate-400">เป้าสเกลล็อตถัดไป:</span>
+            <strong className="text-amber-300 font-mono font-bold">${milestoneTier.nextMilestoneUSD} USD</strong>
+            <span className="text-[9.5px] text-slate-500 font-medium">(Auto Step-up)</span>
           </div>
         </div>
 

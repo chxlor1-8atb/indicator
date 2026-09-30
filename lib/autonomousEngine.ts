@@ -15,14 +15,83 @@ import {
   calculateDynamicPositionSize,
   calculateAdaptiveTrailingStop,
   calculatePartialTpPlan,
+  evaluateEarlyProfitHarvest,
 } from "./riskEngine";
-import { getNewsSafetyShieldStatus } from "./calendarEngine";
+import { getNewsSafetyShieldStatus, detectFlashVolatilitySpike } from "./calendarEngine";
+import { checkCurrencyBasketExposure } from "./strategyOrchestrator";
 import { getCachedPairDivergence } from "./finvizService";
+import { getAdaptiveWeights } from "./db";
+import { getTradingSessionPhase, TradingSessionPhase } from "./sessionEngine";
 
 // ─── IN-MEMORY AUTONOMOUS STATE BUS ───
 const activeOrdersStore = new Map<string, MtBridgeOrder>();
 const telemetryLogsStore: TelemetryLog[] = [];
 const MAX_LOGS = 60;
+
+// ─── [Institutional Safe Compounding Equity & High-Water Mark Tracker] ───
+export interface AccountEquityState {
+  balanceUSD: number;
+  peakBalanceUSD: number;
+}
+const accountEquityState: AccountEquityState = {
+  balanceUSD: 1000,
+  peakBalanceUSD: 1000,
+};
+
+export function getAccountEquityState(): AccountEquityState {
+  return { ...accountEquityState };
+}
+
+export function updateAccountEquity(balanceUSD: number): void {
+  accountEquityState.balanceUSD = Math.max(0, Number(balanceUSD.toFixed(2)));
+  if (accountEquityState.balanceUSD > accountEquityState.peakBalanceUSD) {
+    accountEquityState.peakBalanceUSD = accountEquityState.balanceUSD;
+  }
+}
+
+export function resetAccountEquity(initialBalanceUSD = 1000): void {
+  accountEquityState.balanceUSD = initialBalanceUSD;
+  accountEquityState.peakBalanceUSD = initialBalanceUSD;
+}
+
+// ─── [Tri-Session Multi-Asset Scalping Suite: 10-20 Trades/Day Distributed by Sessions] ───
+export interface DailyAccountTracker {
+  dateStr: string; // YYYY-MM-DD
+  tradeCount: number;
+  morningTrades: number;   // 06:00 - 13:00 น. (Asian Range / Scalp)
+  afternoonTrades: number; // 13:00 - 18:00 น. (London Breakout / CHoCH)
+  nightTrades: number;     // 18:00 - 01:00 น. (NY High-Volume Waves)
+  cumulativeRiskPct: number;
+}
+const dailyTrackerMap = new Map<string, DailyAccountTracker>();
+
+export function getDailyTradeTracker(accountKey = "default"): DailyAccountTracker {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const current = dailyTrackerMap.get(accountKey);
+  if (!current || current.dateStr !== todayStr) {
+    const fresh: DailyAccountTracker = {
+      dateStr: todayStr,
+      tradeCount: 0,
+      morningTrades: 0,
+      afternoonTrades: 0,
+      nightTrades: 0,
+      cumulativeRiskPct: 0,
+    };
+    dailyTrackerMap.set(accountKey, fresh);
+    return fresh;
+  }
+  return current;
+}
+
+export function recordDailyTradeExecution(riskPct: number, accountKey = "default", sessionPhase?: TradingSessionPhase) {
+  const tracker = getDailyTradeTracker(accountKey);
+  tracker.tradeCount += 1;
+  tracker.cumulativeRiskPct += riskPct;
+  const phase = sessionPhase || getTradingSessionPhase().phase;
+  if (phase === "MORNING") tracker.morningTrades += 1;
+  else if (phase === "AFTERNOON") tracker.afternoonTrades += 1;
+  else if (phase === "NIGHT") tracker.nightTrades += 1;
+}
 
 // Watchlist of top high-conviction institutional assets tradable on MT5 (Gold, Oil, Silver, Forex Majors & Crosses)
 // Optimized to 8 core assets to stay well within Vercel Serverless CPU limits
@@ -37,21 +106,25 @@ export const AUTONOMOUS_WATCHLIST = [
   "GBPJPY",
   "AUDUSD",
   "USOIL",
-  "XAGUSD",
 ];
 
 export const DEFAULT_PILOT_CONFIG: AutonomousPilotConfig = {
   isEnabled: true,
-  autoDispatchTelegram: true,
+  autoDispatchTelegram: false, // Disabled per user instruction
   autoFocusHighestConfluence: false,
-  minConfluenceThreshold: 52, // Grade B / B+ / 5-Pillars actionable entry
-  riskPercentPerTrade: 1.5,
+  minConfluenceThreshold: 62, // Grade B+ / A / A+ (ปลดล็อคให้สแกนพบ 10-20 ออเดอร์ต่อวัน)
+  riskPercentPerTrade: 1.0,   // คุม 1% ต่อไม้ เพื่อความปลอดภัยในโหมดเทรดบ่อย
   accountType: "STANDARD",
   scanIntervalMs: 8000,
   /**
    * SIGNAL_ONLY = Pure Web AI Signal Trading + Telegram Alerts (ไม่มีการส่ง order ไป MT4/MT5)
    */
   approvalMode: "SIGNAL_ONLY",
+  enforceRule131Guard: false, // ปลดล็อคเพดาน 3 ไม้ เพื่อให้เทรดได้ 10-20 ไม้ตามที่ต้องการ
+  maxDailyTrades: 20,         // รองรับ 10 - 20 ออเดอร์ต่อวัน
+  maxDailyRiskPct: 15.0,      // เพดานความเสี่ยงสะสมรายวัน
+  scalpTimeframe: "15m",
+  enableEarlyHarvest: true,
 };
 
 /**
@@ -100,6 +173,13 @@ export function getActiveBridgeOrders(symbol?: string): MtBridgeOrder[] {
   const orders = Array.from(activeOrdersStore.values());
   if (!symbol) return orders;
   return orders.filter((o) => o.symbol.toUpperCase() === symbol.toUpperCase());
+}
+
+/**
+ * Register an active bridge order directly (used for testing and bridge injection)
+ */
+export function registerBridgeOrder(order: MtBridgeOrder): void {
+  activeOrdersStore.set(order.id, order);
 }
 
 /**
@@ -154,8 +234,9 @@ export async function evaluateAssetAutonomous(
   const indicators = calculateAllIndicators(candles, sym);
 
   // 2. Execute Unified Institutional Rule-Based Analysis Core (Single Source of Truth)
-  // Evaluates all 100 indicators, 23 confluence pillars, 25 safety locks & Anti-Clash Orchestrator
-  const analysis = generateRuleBasedAnalysis(sym, timeframe, candles, indicators, []);
+  // Evaluates all 100 indicators, 23 confluence pillars, 25 safety locks & Anti-Clash Orchestrator with Self-Evolving Weights
+  const adaptiveConfig = await getAdaptiveWeights(sym).catch(() => undefined);
+  const analysis = generateRuleBasedAnalysis(sym, timeframe, candles, indicators, [], adaptiveConfig);
 
   const totalScore = analysis.masterConfluence?.totalScore ?? 50;
   const setupGrade = analysis.setupGrade;
@@ -229,14 +310,38 @@ export async function evaluateAssetAutonomous(
   const fivePillars = analysis.fiveCorePillars;
   const isPillarsReady = fivePillars ? fivePillars.passedPillarsCount >= 2 : true;
   const isConfluenceEligible =
-    (setupGrade === "A+" ||
-      setupGrade === "A" ||
-      (setupGrade === "B" && totalScore >= 68)) &&
-    totalScore >= Math.max(65, config.minConfluenceThreshold);
+    (setupGrade === "A+" || setupGrade === "A" || setupGrade === "B" || totalScore >= (config.minConfluenceThreshold ?? 62)) &&
+    totalScore >= (config.minConfluenceThreshold ?? 62);
 
   // ─── Filter Out Low-Quality Choppy Pairs (Protects Overall Win-Rate > 75-80%) ───
-  const isChoppyPair = sym === "EURGBP" || (analysis.regimeInfo?.adxValue != null && analysis.regimeInfo.adxValue < 20);
+  const isChoppyPair =
+    sym === "EURGBP" ||
+    sym === "XAGUSD" ||
+    sym === "AUDNZD" ||
+    (analysis.regimeInfo?.adxValue != null && analysis.regimeInfo.adxValue < 20);
   if (isChoppyPair && setupGrade !== "A+" && setupGrade !== "A") {
+    return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+  }
+
+  // ─── [E-Book Folder 1: False Breakout Trap Veto] ───
+  const breakoutTrap = analysis.tradeSetup?.breakoutConfirmation;
+  if (breakoutTrap && breakoutTrap.breakoutType === "FALSE_BREAKOUT_TRAP") {
+    addTelemetryLog(
+      sym,
+      "VETO",
+      `🛡️ [False Breakout Trap Shield] ตรวจพบไส้เทียนต้าน ${Math.round((breakoutTrap.oppositeWickRatio ?? 0.4) * 100)}% ขาด Volume หนุน — ระงับออเดอร์อัตโนมัติป้องกัน Stop Hunt`
+    );
+    return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+  }
+
+  // ─── [Flash Volatility Spike Circuit Breaker (Pillar 3)] ───
+  const flashSpikeCheck = detectFlashVolatilitySpike(candles, 3.0);
+  if (flashSpikeCheck.isSpike) {
+    addTelemetryLog(
+      sym,
+      "VETO",
+      flashSpikeCheck.reason || `⚡ [Flash Volatility Spike] ตรวจพบการกระชาก ${flashSpikeCheck.spikeRatio}x ATR ในแท่งปัจจุบัน พักเข้าเทรด 15 นาที`
+    );
     return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
   }
 
@@ -292,12 +397,61 @@ export async function evaluateAssetAutonomous(
         return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
       }
 
+      // ─── [Currency Basket Exposure Governor (Pillar 2)] ───
+      const activeOrdersList = getActiveBridgeOrders();
+      const basketCheck = checkCurrencyBasketExposure(
+        sym,
+        tradeSetup.action as "BUY" | "SELL",
+        activeOrdersList,
+        2
+      );
+      if (!basketCheck.allowed) {
+        addTelemetryLog(
+          sym,
+          "VETO",
+          basketCheck.reason || `🛑 [Basket Exposure Governor] ความเสี่ยงตะกร้าค่าเงินเต็มเพดาน (2 ไม้)`
+        );
+        return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+      }
+
+      // ─── [Tri-Session Distribution Guard: 10-20 Trades/Day Across Morning, Afternoon & Night] ───
+      if (config.enforceRule131Guard) {
+        const tracker = getDailyTradeTracker();
+        const maxTrades = config.maxDailyTrades ?? 20;
+        const maxDailyRisk = config.maxDailyRiskPct ?? 15.0;
+        const perTradeRisk = config.riskPercentPerTrade ?? 1.0;
+
+        if (tracker.tradeCount >= maxTrades) {
+          addTelemetryLog(
+            sym,
+            "VETO",
+            `🛑 [3-Session Quota] ครบโควตารวม ${maxTrades} เทรด/วันแล้ว (${tracker.tradeCount}/${maxTrades} [เช้า:${tracker.morningTrades}, บ่าย:${tracker.afternoonTrades}, ค่ำ:${tracker.nightTrades}]) — ชะลอออเดอร์เพื่อรักษาผลกำไร`
+          );
+          return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+        }
+
+        if (tracker.cumulativeRiskPct + perTradeRisk > maxDailyRisk + 0.01) {
+          addTelemetryLog(
+            sym,
+            "VETO",
+            `🛑 [Daily Risk Cap] ความเสี่ยงสะสมรายวันจะเกินเพดาน ${maxDailyRisk}% (${tracker.cumulativeRiskPct.toFixed(1)}% + ${perTradeRisk.toFixed(1)}%) — ระงับคำสั่งชั่วคราว`
+          );
+          return { scannerSummary, newOrder: undefined, analysis, decisionTriggered: false, isPreWarning: false };
+        }
+      }
+
       decisionTriggered = true;
 
-      // ─── Dynamic Position Sizing based on Risk Profile & Volatility ───
+      // ─── Dynamic Position Sizing based on Milestone Tier, Risk Profile & Drawdown Governor ───
+      const currentBalance = config.accountBalance ?? accountEquityState.balanceUSD;
+      const currentPeak = config.peakBalance ?? Math.max(accountEquityState.peakBalanceUSD, currentBalance);
+
       const dynamicSize = calculateDynamicPositionSize({
         symbol: sym,
-        accountBalance: 1000,
+        accountBalance: currentBalance,
+        peakBalance: currentPeak,
+        setupGrade,
+        confluenceScore: totalScore,
         currentPrice,
         stopLossDistancePrice: Math.abs(pendingPrice - slPrice),
         riskProfile: config.riskProfile || "MODERATE",
@@ -306,7 +460,7 @@ export async function evaluateAssetAutonomous(
       });
 
       const lotSize = config.accountType === "CENT"
-        ? Number((dynamicSize.calculatedLotSize * 5).toFixed(2))
+        ? (dynamicSize.centAccountLots ?? Math.max(0.01, Number((dynamicSize.calculatedLotSize * 100).toFixed(2))))
         : dynamicSize.calculatedLotSize;
 
       const partialPlan = calculatePartialTpPlan(lotSize, tp1Price, tp2Price);
@@ -324,9 +478,9 @@ export async function evaluateAssetAutonomous(
         aiRiskFlags.push(`LOW_NEWS_RELIABILITY: ${(newsReliability * 100).toFixed(0)}%`);
       }
 
-      // Flag ถ้า grade ไม่ใช่ A/A+ (B grade ผ่าน threshold แต่ confidence ต่ำกว่า)
-      if (setupGrade === "B") {
-        aiRiskFlags.push("GRADE_B_LOWER_CONFIDENCE");
+      // Flag ถ้า Drawdown Governor ปรับลดความเสี่ยงลง
+      if (dynamicSize.drawdownGovernorActive) {
+        aiRiskFlags.push(`DRAWDOWN_GOVERNOR_ACTIVE: Throttled risk due to equity drawdown`);
       }
 
       // ─── Human Approval Logic ───
@@ -361,19 +515,39 @@ export async function evaluateAssetAutonomous(
         adaptiveTrailingActive: true,
         trailingSlPrice: slPrice,
         trailingStage: 0,
+        tierName: dynamicSize.tierName,
+        tierRange: dynamicSize.tierRange,
+        drawdownGovernorActive: dynamicSize.drawdownGovernorActive,
+        gradeMultiplier: dynamicSize.gradeMultiplier,
+        marginRequiredUSD: dynamicSize.marginRequiredUSD,
+        marginUtilizationPct: dynamicSize.marginUtilizationPct,
       };
 
       activeOrdersStore.set(newOrder.id, newOrder);
+      recordDailyTradeExecution(config.riskPercentPerTrade ?? 1.5);
+
+      const governorBadge = dynamicSize.drawdownGovernorActive ? " [🛡️ DD Governor Active]" : "";
+      const tierBadge = dynamicSize.tierName ? ` [${dynamicSize.tierName}]` : "";
 
       addTelemetryLog(
         sym,
         "DECISION",
         requiresHumanApproval
-          ? `⏳ รอการอนุมัติ: ${effectiveOrderType} @ ${pendingPrice} (Grade ${setupGrade} | Score ${totalScore}%${aiRiskFlags.length > 0 ? ` | ⚠️ Flags: ${aiRiskFlags.length}` : ""}) | Lot: ${lotSize}`
-          : `Autonomous Decision: ${effectiveOrderType} @ ${pendingPrice} primed (Confluence ${totalScore}%, Grade ${setupGrade}) | ${partialPlan.description}`,
+          ? `⏳ รอการอนุมัติ: ${effectiveOrderType} @ ${pendingPrice} (Grade ${setupGrade} | Score ${totalScore}%${aiRiskFlags.length > 0 ? ` | ⚠️ Flags: ${aiRiskFlags.length}` : ""}) | Lot: ${lotSize}${tierBadge}${governorBadge}`
+          : `Autonomous Decision: ${effectiveOrderType} @ ${pendingPrice} primed (Confluence ${totalScore}%, Grade ${setupGrade}) | Lot: ${lotSize}${tierBadge}${governorBadge} | ${partialPlan.description}`,
         totalScore,
         setupGrade,
-        { price: pendingPrice, sl: slPrice, tp1: tp1Price, lotSize, partialPlan, aiRiskFlags }
+        {
+          price: pendingPrice,
+          sl: slPrice,
+          tp1: tp1Price,
+          lotSize,
+          tierName: dynamicSize.tierName,
+          drawdownGovernorActive: dynamicSize.drawdownGovernorActive,
+          marginUtilizationPct: dynamicSize.marginUtilizationPct,
+          partialPlan,
+          aiRiskFlags,
+        }
       );
 
       addTelemetryLog(
@@ -435,10 +609,11 @@ export async function scanWatchlistAutonomous(
     const batch = AUTONOMOUS_WATCHLIST.slice(i, i + BATCH_SIZE);
     const batchPromises = batch.map(async (sym) => {
       try {
-        const candles = await getMarketCandles(sym, "1h");
+        const tf = config.scalpTimeframe || "15m";
+        const candles = await getMarketCandles(sym, tf);
         if (!candles || candles.length < 20) return null;
 
-        const evalResult = await evaluateAssetAutonomous(sym, candles, "1h", config);
+        const evalResult = await evaluateAssetAutonomous(sym, candles, tf, config);
         return evalResult;
       } catch (err) {
         console.warn(`Autonomous scan note for ${sym}:`, (err as Error)?.message || err);
@@ -489,6 +664,27 @@ export function getScannerCache() {
 }
 
 /**
+ * Calculates realized PnL in USD for an order closure
+ */
+function calculateOrderPnlUSD(
+  order: MtBridgeOrder,
+  exitPrice: number,
+  lots: number,
+  isForex: boolean,
+  isGold: boolean
+): number {
+  const isBuy = order.orderType.includes("BUY");
+  const priceDiff = isBuy ? exitPrice - order.price : order.price - exitPrice;
+  if (isGold) {
+    return priceDiff * 100 * lots;
+  }
+  if (isForex) {
+    return priceDiff * 100000 * lots;
+  }
+  return priceDiff * lots;
+}
+
+/**
  * Monitors and resolves active orders against live tick price.
  * Features Price Integrity Validation, Partial Take Profit (50% at TP1),
  * Risk-Free Breakeven Lock, and Multi-Stage Adaptive Trailing Stop.
@@ -534,11 +730,11 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
       const initialRisk = Math.abs(order.price - order.stopLoss) || (currentPrice * 0.005);
       const estAtr = initialRisk / 1.5;
 
-      const pnlPips = isBuy
-        ? (currentPrice - order.price) * pipMultiplier
-        : (order.price - currentPrice) * pipMultiplier;
-      const riskPips = Math.max(Math.abs(order.price - order.stopLoss) * pipMultiplier, 5);
-      const currentR = pnlPips / riskPips;
+      const pnlPips = Number((
+        (isBuy ? currentPrice - order.price : order.price - currentPrice) * pipMultiplier
+      ).toFixed(2));
+      const riskPips = Math.max(Number((Math.abs(order.price - order.stopLoss) * pipMultiplier).toFixed(2)), 5);
+      const currentR = Number((pnlPips / riskPips).toFixed(4));
 
       // ─── 1. REAL-TIME AI EMERGENCY NEWS SHIELD (FOREX FACTORY RED FOLDER) ───
       const calSafety = getNewsSafetyShieldStatus(sym);
@@ -566,10 +762,13 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
           // In minor loss, cut loss early to prevent high-impact news spread blowout (-1R)
           order.status = "EMERGENCY_CLOSED";
           order.emergencyDefenseReason = "RED_FOLDER_EARLY_CUTLOSS";
+          const remainingLots = order.remainingLots ?? order.lotSize;
+          const pnlUSD = calculateOrderPnlUSD(order, currentPrice, remainingLots, isForexPair(sym), isGold);
+          updateAccountEquity(accountEquityState.balanceUSD + pnlUSD);
           addTelemetryLog(
             sym,
             "RESOLVE",
-            `🛑 AI Emergency Cutloss: Closed Order #${order.id.slice(-6)} early (${pnlPips.toFixed(1)} pips / ${currentR.toFixed(2)}R) before Red Folder news shock! Saved 55%+ of risk capital.`
+            `🛑 AI Emergency Cutloss: Closed Order #${order.id.slice(-6)} early (${pnlPips.toFixed(1)} pips / ${currentR.toFixed(2)}R | ${pnlUSD >= 0 ? "+" : ""}$${pnlUSD.toFixed(2)}) before Red Folder news shock! Saved 55%+ of risk capital.`
           );
           activeOrdersStore.delete(order.id);
           continue;
@@ -602,13 +801,67 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
         } else if (currentR < 0 && currentR >= -0.4) {
           order.status = "EMERGENCY_CLOSED";
           order.emergencyDefenseReason = "CSM_DIVERGENCE_REVERSAL_CUTLOSS";
+          const remainingLots = order.remainingLots ?? order.lotSize;
+          const pnlUSD = calculateOrderPnlUSD(order, currentPrice, remainingLots, isForexPair(sym), isGold);
+          updateAccountEquity(accountEquityState.balanceUSD + pnlUSD);
           addTelemetryLog(
             sym,
             "RESOLVE",
-            `🛑 AI Adaptive Cutloss: Closed Order #${order.id.slice(-6)} early (${pnlPips.toFixed(1)} pips) due to Macro Relative Currency reversal. Risk mitigated.`
+            `🛑 AI Adaptive Cutloss: Closed Order #${order.id.slice(-6)} early (${pnlPips.toFixed(1)} pips | ${pnlUSD >= 0 ? "+" : ""}$${pnlUSD.toFixed(2)}) due to Macro Relative Currency reversal. Risk mitigated.`
           );
           activeOrdersStore.delete(order.id);
           continue;
+        }
+      }
+
+      // ─── 3. REAL-TIME AI EARLY PROFIT HARVESTER & OPPOSITE ZONE FRONT-RUNNER ───
+      if (currentR >= 0.75) {
+        const harvest = evaluateEarlyProfitHarvest({
+          isBuy,
+          currentPrice,
+          entryPrice: order.price,
+          stopLossPrice: order.stopLoss,
+          takeProfit1Price: order.takeProfit1,
+          currentR,
+          pipMultiplier,
+          minHarvestR: 0.75,
+        });
+
+        if (harvest.shouldHarvest) {
+          const remainingLots = order.remainingLots ?? order.lotSize;
+          const pnlUSD = calculateOrderPnlUSD(order, currentPrice, remainingLots, isForexPair(sym), isGold);
+          updateAccountEquity(accountEquityState.balanceUSD + pnlUSD);
+
+          order.status = "HIT_TP1";
+          order.emergencyDefenseReason = "EARLY_PROFIT_HARVEST";
+          addTelemetryLog(
+            sym,
+            "RESOLVE",
+            `🌾 AI Early Profit Harvest: Secured profit early (+${pnlPips.toFixed(1)} pips / +${currentR.toFixed(2)}R | +$${pnlUSD.toFixed(2)}) due to ${harvest.reason}! Locked profit before momentum reversal.`
+          );
+          activeOrdersStore.delete(order.id);
+          continue;
+        }
+      }
+
+      // ─── 4. PROACTIVE INSTITUTIONAL BREAKEVEN LOCK (0.18R Gold / 0.35R Forex) ───
+      const beThresholdR = isGold ? 0.18 : 0.35;
+      if (currentR >= beThresholdR - 0.001 && order.status === "FILLED") {
+        const bufferPrice = 1.5 / pipMultiplier;
+        const beSl = isBuy
+          ? Number((order.price + bufferPrice).toFixed(precision))
+          : Number((order.price - bufferPrice).toFixed(precision));
+
+        const isBetter = isBuy ? beSl > order.stopLoss : beSl < order.stopLoss;
+        if (isBetter) {
+          order.stopLoss = beSl;
+          order.trailingSlPrice = beSl;
+          order.trailingStage = 1;
+          addTelemetryLog(
+            sym,
+            "RESOLVE",
+            `🛡️ Proactive Breakeven Lock: Trade reached +${pnlPips.toFixed(1)} pips (+${currentR.toFixed(2)}R >= ${beThresholdR}R). SL moved to Breakeven (${order.stopLoss}) — Risk-Free Trade established!`
+          );
         }
       }
 
@@ -620,13 +873,17 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
           : (order.price - order.stopLoss) * pipMultiplier;
         const isBe = order.status === "HIT_TP1" || Math.abs(order.stopLoss - order.price) < (2 / pipMultiplier);
 
+        const remainingLots = order.remainingLots ?? order.lotSize;
+        const pnlUSD = calculateOrderPnlUSD(order, order.stopLoss, remainingLots, isForexPair(sym), isGold);
+        updateAccountEquity(accountEquityState.balanceUSD + pnlUSD);
+
         order.status = "HIT_SL";
         addTelemetryLog(
           sym,
           "RESOLVE",
           isBe
             ? `🛡️ Order #${order.id.slice(-6)} closed at Break-Even @ ${currentPrice} (Risk-Free capital preserved).`
-            : `🛑 Order #${order.id.slice(-6)} HIT SL @ ${currentPrice} (${pips.toFixed(1)} pips). Invalidation stop executed.`
+            : `🛑 Order #${order.id.slice(-6)} HIT SL @ ${currentPrice} (${pips.toFixed(1)} pips | ${pnlUSD >= 0 ? "+" : ""}$${pnlUSD.toFixed(2)}). Invalidation stop executed.`
         );
         activeOrdersStore.delete(order.id);
         continue;
@@ -636,11 +893,15 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
       const isTp2Hit = isBuy ? currentPrice >= order.takeProfit2 : currentPrice <= order.takeProfit2;
       if (isTp2Hit) {
         const pips = Math.abs(order.takeProfit2 - order.price) * pipMultiplier;
+        const remainingLots = order.remainingLots ?? order.lotSize;
+        const pnlUSD = calculateOrderPnlUSD(order, order.takeProfit2, remainingLots, isForexPair(sym), isGold);
+        updateAccountEquity(accountEquityState.balanceUSD + pnlUSD);
+
         order.status = "HIT_TP2";
         addTelemetryLog(
           sym,
           "RESOLVE",
-          `🏆 Order #${order.id.slice(-6)} HIT TP2 @ ${currentPrice} (+${pips.toFixed(1)} pips)! 100% position profit secured.`
+          `🏆 Order #${order.id.slice(-6)} HIT TP2 @ ${currentPrice} (+${pips.toFixed(1)} pips | +$${pnlUSD.toFixed(2)})! 100% position profit secured.`
         );
         activeOrdersStore.delete(order.id);
         continue;
@@ -653,6 +914,9 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
           order.status = "HIT_TP1";
           const closedLots = Number(((order.initialLots || order.lotSize) * 0.5).toFixed(2));
           order.remainingLots = Number(Math.max(0.01, (order.lotSize - closedLots)).toFixed(2));
+
+          const pnlUSD = calculateOrderPnlUSD(order, order.takeProfit1, closedLots, isForexPair(sym), isGold);
+          updateAccountEquity(accountEquityState.balanceUSD + pnlUSD);
 
           // Lock SL to Breakeven (+ 1.5 pips spread buffer)
           const bufferPrice = 1.5 / pipMultiplier;
@@ -676,7 +940,7 @@ export function resolveOrdersAgainstLivePrice(symbol: string, currentPrice: numb
           addTelemetryLog(
             sym,
             "RESOLVE",
-            `🎯 Order #${order.id.slice(-6)} HIT TP1 @ ${currentPrice} (+${pips.toFixed(1)} pips)! Closed 50% (${closedLots} lot). SL moved to Breakeven (${order.stopLoss}). Runner (${order.remainingLots} lot) tracking TP2 with Adaptive Trail.`
+            `🎯 Order #${order.id.slice(-6)} HIT TP1 @ ${currentPrice} (+${pips.toFixed(1)} pips | +$${pnlUSD.toFixed(2)})! Closed 50% (${closedLots} lot). SL moved to Breakeven (${order.stopLoss}). Runner (${order.remainingLots} lot) tracking TP2 with Adaptive Trail.`
           );
           continue;
         }
@@ -772,4 +1036,96 @@ export function approveOrder(
 
     return { success: true, order };
   }
+}
+
+/**
+ * Synchronizes execution lifecycle events posted from MetaTrader (MT4 / MT5 EA).
+ * Directly updates order state in activeOrdersStore, tracks slippage, and records telemetry.
+ */
+export function syncBridgeOrderEvent(
+  orderId: string,
+  action: string,
+  executionPrice?: number,
+  profitPips?: number
+): { success: boolean; order?: MtBridgeOrder; error?: string } {
+  const order = activeOrdersStore.get(orderId);
+  if (!order) {
+    return { success: false, error: `Order ${orderId} not found in active order registry` };
+  }
+
+  const sym = order.symbol.toUpperCase();
+  const isGold = sym.includes("XAU") || sym.includes("GOLD");
+  const isJpy = sym.includes("JPY");
+  const pipMultiplier = isGold ? 10 : isJpy ? 100 : sym.endsWith("USDT") ? 1 : 10000;
+
+  switch (action.toUpperCase()) {
+    case "FILL":
+    case "FILLED": {
+      order.status = "FILLED";
+      order.initialLots = order.initialLots || order.lotSize;
+      order.remainingLots = order.remainingLots || order.lotSize;
+      order.trailingSlPrice = order.stopLoss;
+      order.trailingStage = 0;
+
+      const slippagePips = executionPrice
+        ? Number((Math.abs(executionPrice - order.price) * pipMultiplier).toFixed(1))
+        : 0;
+
+      addTelemetryLog(
+        sym,
+        "ORDER",
+        `⚡ MT Bridge Execution: Order #${orderId.slice(-6)} FILLED @ ${executionPrice || order.price} (${order.lotSize} lot)${slippagePips > 0 ? ` [Slippage: ${slippagePips} pips]` : ""}`
+      );
+      break;
+    }
+    case "HIT_TP1": {
+      order.status = "HIT_TP1";
+      addTelemetryLog(
+        sym,
+        "RESOLVE",
+        `🎯 MT Bridge TP1 Hit: Order #${orderId.slice(-6)} closed 50% @ ${executionPrice || order.takeProfit1} (+${profitPips ?? 0} pips). SL moved to Breakeven.`
+      );
+      break;
+    }
+    case "HIT_TP2": {
+      order.status = "HIT_TP2";
+      activeOrdersStore.delete(orderId);
+      addTelemetryLog(
+        sym,
+        "RESOLVE",
+        `🏆 MT Bridge TP2 Reached: Order #${orderId.slice(-6)} fully closed @ ${executionPrice || order.takeProfit2} (+${profitPips ?? 0} pips). Profit secured!`
+      );
+      break;
+    }
+    case "HIT_SL": {
+      order.status = "HIT_SL";
+      activeOrdersStore.delete(orderId);
+      addTelemetryLog(
+        sym,
+        "RESOLVE",
+        `🛑 MT Bridge SL Hit: Order #${orderId.slice(-6)} stopped out @ ${executionPrice || order.stopLoss} (${profitPips ?? 0} pips). Capital preserved.`
+      );
+      break;
+    }
+    case "CLOSE":
+    case "CANCEL": {
+      order.status = "CANCELLED";
+      activeOrdersStore.delete(orderId);
+      addTelemetryLog(
+        sym,
+        "ORDER",
+        `⏹️ MT Bridge Order #${orderId.slice(-6)} ${action} @ ${executionPrice || "Market"} (PnL: ${profitPips ?? 0} pips)`
+      );
+      break;
+    }
+    default: {
+      addTelemetryLog(
+        sym,
+        "ORDER",
+        `ℹ️ MT Bridge Custom Event: Order #${orderId.slice(-6)} ${action} @ ${executionPrice || "Market"}`
+      );
+    }
+  }
+
+  return { success: true, order };
 }

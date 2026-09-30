@@ -3,6 +3,7 @@ import {
   Candle,
   IndicatorData,
   NewsItem,
+  BreakoutConfirmationInfo,
   ConfluenceCheckItem,
   TraderTierHierarchy,
   QuadEmaConfluence,
@@ -30,6 +31,7 @@ import {
   CorrelationShieldInfo,
   FVGMitigationInfo,
   MarketStructureShiftInfo,
+  QuasimodoInfo,
   PremiumDiscountInfo,
   KeyLevelTargetsInfo,
   OrderFlowVelocityInfo,
@@ -104,7 +106,18 @@ import {
   AutoFibonacciInfo,
   FiveCorePillarsEvaluation,
   SniperMicroSLInfo,
+  PullbackQualityInfo,
+  NetSpreadAnalysisInfo,
+  PreTradeChecklistInfo,
+  RSIInstitutionalAnalysisInfo,
+  DrawdownRecoveryInfo,
+  SRRoleReversalInfo,
 } from "./types";
+import {
+  calculateSpreadFrictionAndNetRR,
+  validatePreTradeChecklist,
+  calculateDrawdownRecoveryMetrics,
+} from "./riskEngine";
 import { orchestrateStrategyDecision } from "./strategyOrchestrator";
 import { runAutomatedBacktest } from "./backtestEngine";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
@@ -127,6 +140,7 @@ import {
   calculateAnchoredVWAP,
   calculateCumulativeVolumeDelta,
   identifyOrderBlocksAndBreakers,
+  detectOrderBlockPriceActionReversal,
   calculatePriceFeedIntegrity,
   calculateSessionLiquiditySweeps,
   calculateFibonacciClusters,
@@ -135,6 +149,7 @@ import {
   calculateCorrelationHedgeShield,
   calculateFVGMitigation,
   calculateMarketStructureShift,
+  calculateQuasimodoPattern,
   calculatePremiumDiscount,
   calculateKeyLevelTargets,
   calculateOrderFlowVelocity,
@@ -228,6 +243,7 @@ import { getRecentLessons, getAdaptiveWeights, AdaptiveWeightsConfig, getCachedC
 import { getAssetPipMultiplier } from "./telegramService";
 import { extractFeatureVector24D } from "./featureEngineering";
 import { runMachineLearningInference } from "./mlEngine";
+import { calculateIntermarketCorrelation } from "./quantDataPipeline";
 
 export function generateRuleBasedAnalysis(
   symbol: string,
@@ -420,6 +436,31 @@ export function generateRuleBasedAnalysis(
   };
 
   // ─── 5-PILLAR MASTER CONFLUENCE SCORING WITH ADAPTIVE SELF-TUNING ───
+  let earlyBreakoutInfo: BreakoutConfirmationInfo | undefined = undefined;
+  if (candles.length >= 20) {
+    const last20 = candles.slice(-20);
+    const avgVol20 = last20.reduce((acc, c) => acc + (c.volume || 0), 0) / Math.max(1, last20.length);
+    const testLevel = tier1Bias === "BEARISH"
+      ? (indicators.supportLevels[0] ?? currentPrice * 0.995)
+      : (indicators.resistanceLevels[0] ?? currentPrice * 1.005);
+    const currentAtr = indicators.atr14?.slice(-1)[0] ?? (currentPrice * 0.005);
+    earlyBreakoutInfo = checkBreakoutConfirmation(
+      currentPrice,
+      testLevel,
+      lastCandle,
+      timeframe,
+      Date.now(),
+      tier1Bias === "BEARISH" ? "SELL" : "BUY",
+      {
+        candles,
+        volumeSMA: avgVol20,
+        currentATR: currentAtr,
+        atrSMA: currentAtr,
+        newsSafe: calendarSafety.tradeAllowed,
+      }
+    );
+  }
+
   const adaptiveIndicators: IndicatorData = {
     ...indicators,
     ema20: adaptiveFastList,
@@ -430,6 +471,7 @@ export function generateRuleBasedAnalysis(
   const masterConfluence = evaluateMasterConfluence(candles, adaptiveIndicators, tier1Bias, adaptiveConfig, {
     currencyDivergence,
     calendarSafety,
+    breakoutInfo: earlyBreakoutInfo,
   });
 
   // ─── NEWS HALLUCINATION GUARD ───
@@ -545,6 +587,7 @@ export function generateRuleBasedAnalysis(
   const anchoredVwap = indicators.anchoredVwap || calculateAnchoredVWAP(candles, precision);
   const cvd = indicators.cvd || calculateCumulativeVolumeDelta(candles);
   const orderBlocks = indicators.orderBlocks || identifyOrderBlocksAndBreakers(candles, precision);
+  const obPAReversal = indicators.obPAReversal || detectOrderBlockPriceActionReversal(candles, orderBlocks, precision, currentATR);
   const priceFeedIntegrity = indicators.priceFeedIntegrity || calculatePriceFeedIntegrity(currentPrice, symbol, currentATR);
 
   // ─── BATCH 6 PRE-COMPUTATIONS (PLANS 26-30) ───
@@ -557,6 +600,7 @@ export function generateRuleBasedAnalysis(
   // ─── BATCH 7 PRE-COMPUTATIONS (PLANS 31-35) ───
   const fvgMitigation = indicators.fvgMitigation || calculateFVGMitigation(candles, precision);
   const marketStructureShift = indicators.marketStructureShift || calculateMarketStructureShift(candles, precision);
+  const quasimodo = indicators.quasimodo || calculateQuasimodoPattern(candles, precision);
   const premiumDiscount = indicators.premiumDiscount || calculatePremiumDiscount(candles, precision);
   const keyLevelTargets = indicators.keyLevelTargets || calculateKeyLevelTargets(candles, precision, symbol);
   const orderFlowVelocity = indicators.orderFlowVelocity || calculateOrderFlowVelocity(candles);
@@ -701,9 +745,8 @@ export function generateRuleBasedAnalysis(
   // ─── AI/ML RANDOM FOREST INFERENCE & 24D QUANT FEATURE VECTOR ───
   let mlPrediction: MLPredictionInfo | undefined = undefined;
   try {
-    // Note: correlationShield (CorrelationShieldInfo) is not compatible with the intermarket
-    // parameter (IntermarketCorrelationInfo) — pass undefined to use the optional default.
-    const featureVector = extractFeatureVector24D(candles, indicators, symbol, mtfMatrix, undefined);
+    const intermarket = calculateIntermarketCorrelation(symbol, candles);
+    const featureVector = extractFeatureVector24D(candles, indicators, symbol, mtfMatrix, intermarket);
     mlPrediction = runMachineLearningInference(featureVector, candles);
   } catch (err) {
     console.warn("[geminiService] ML inference failed:", err);
@@ -789,13 +832,15 @@ export function generateRuleBasedAnalysis(
   confidence = Math.max(42, Math.min(98, confidence - softPenalty));
 
   // ─── 3. 5 CORE PILLARS EVALUATION MATRIX ───
-  // เสาหลัก 1: SMC Footprint (Order Block / FVG / MSS)
+  // เสาหลัก 1: SMC Footprint (Order Block / FVG / MSS / Quasimodo QML)
   const isBullSMC = (orderBlocks.nearestBlock && orderBlocks.nearestBlock.type.includes("BULLISH")) ||
     fvgMitigation.bias === "BULLISH_IMBALANCE" ||
-    (marketStructureShift.detected && marketStructureShift.type === "BULLISH_MSS");
+    (marketStructureShift.detected && marketStructureShift.type === "BULLISH_MSS" && marketStructureShift.isTrueDisplacement) ||
+    (quasimodo.detected && quasimodo.type === "BULLISH_QM" && quasimodo.isQmlHeld);
   const isBearSMC = (orderBlocks.nearestBlock && orderBlocks.nearestBlock.type.includes("BEARISH")) ||
     fvgMitigation.bias === "BEARISH_IMBALANCE" ||
-    (marketStructureShift.detected && marketStructureShift.type === "BEARISH_MSS");
+    (marketStructureShift.detected && marketStructureShift.type === "BEARISH_MSS" && marketStructureShift.isTrueDisplacement) ||
+    (quasimodo.detected && quasimodo.type === "BEARISH_QM" && quasimodo.isQmlHeld);
 
   // เสาหลัก 2: Auto Fibonacci Retracement (Golden Pocket 50% - 61.8% / 38.2%)
   const isBullFib = autoFibonacci.trendDirection === "UP" && (autoFibonacci.isPullbackActive || autoFibonacci.currentZone !== "EXTENSION" || currentPrice >= autoFibonacci.fib500);
@@ -878,40 +923,83 @@ export function generateRuleBasedAnalysis(
     if (classicTrio.isAligned && classicTrio.signalBias === "BEARISH") confidence = Math.min(99, confidence + 5);
     if (isOrbBearBreak) confidence = Math.min(98, confidence + 3);
   } else {
-    // ⚖️ ตลาดไซด์เวย์ไร้เทรนด์ชัดเจน (Neutral / Range-Bound): บังคับใช้เกณฑ์ Institutional Confluence ขั้นสูง
-    const isStrongBull = (bullPillars >= 3 || masterConfluence.totalScore >= 68) && masterConfluence.totalScore >= 65;
-    const isStrongBear = (bearPillars >= 3 || masterConfluence.totalScore >= 68) && masterConfluence.totalScore >= 65;
+    // ⚖️ ตลาดไซด์เวย์ไร้เทรนด์ชัดเจน (Neutral / Range-Bound): บังคับใช้เกณฑ์ Institutional Dealing Range Intelligence
+    const pD = premiumDiscount;
+    const isAtRangeLow = pD && pD.percentile <= 25 && pD.rangeLow > 0;
+    const isAtRangeHigh = pD && pD.percentile >= 75 && pD.rangeHigh > 0;
+    const isAtEquilibriumChop = pD && pD.percentile >= 38 && pD.percentile <= 62;
 
-    if (isStrongBull && (bullPillars > bearPillars || (bullPillars === bearPillars && currentPrice >= pivotPoints.pivot))) {
-      signal = masterConfluence.totalScore >= 75 ? "STRONG_BUY" : "BUY";
-      setupGrade = masterConfluence.totalScore >= 75 ? "A" : "B";
-      confidence = Math.max(60, confidence);
-    } else if (isStrongBear && (bearPillars > bullPillars || (bullPillars === bearPillars && currentPrice < pivotPoints.pivot))) {
-      signal = masterConfluence.totalScore >= 75 ? "STRONG_SELL" : "SELL";
-      setupGrade = masterConfluence.totalScore >= 75 ? "A" : "B";
-      confidence = Math.max(60, confidence);
-    } else {
-      // ตลาดไซด์เวย์ไร้เทรนด์และขาด Confluence สนับสนุนชัดเจน -> พักรอโอกาสสถาบันที่ได้เปรียบ (WAIT / Grade C)
+    const lastC = candles[candles.length - 1];
+    const cRng = lastC ? lastC.high - lastC.low : 0;
+    const lWick = lastC ? Math.min(lastC.close, lastC.open) - lastC.low : 0;
+    const uWick = lastC ? lastC.high - Math.max(lastC.close, lastC.open) : 0;
+    const isFloorRejection = cRng > 0 && ((lWick / cRng) >= 0.30 || lastC.close > lastC.open || sessionSweep.sweepType === "BULLISH_SWEEP");
+    const isCeilingRejection = cRng > 0 && ((uWick / cRng) >= 0.30 || lastC.close < lastC.open || sessionSweep.sweepType === "BEARISH_SWEEP");
+
+    // 1. บล็อคกลางกรอบ 100% (Equilibrium 50% No-Man's Land) ป้องกันการเข้าไม้ไร้ความได้เปรียบ
+    if (isAtEquilibriumChop) {
       signal = "WAIT";
       setupGrade = "C (Wait)";
-      confidence = Math.min(confidence, 45);
+      confidence = Math.min(confidence, 40);
+    } else if (isAtRangeLow && isFloorRejection) {
+      // 2. ดัก BUY ล่างกรอบ (Discount Zone / Range Low Bounce)
+      signal = "BUY";
+      setupGrade = "A";
+      confidence = Math.max(74, confidence + 8);
+    } else if (isAtRangeHigh && isCeilingRejection) {
+      // 3. ดัก SELL บนกรอบ (Premium Zone / Range High Fade)
+      signal = "SELL";
+      setupGrade = "A";
+      confidence = Math.max(74, confidence + 8);
+    } else {
+      const isStrongBull = (bullPillars >= 3 || masterConfluence.totalScore >= 68) && masterConfluence.totalScore >= 65;
+      const isStrongBear = (bearPillars >= 3 || masterConfluence.totalScore >= 68) && masterConfluence.totalScore >= 65;
+
+      if (isStrongBull && (bullPillars > bearPillars || (bullPillars === bearPillars && currentPrice >= pivotPoints.pivot))) {
+        signal = masterConfluence.totalScore >= 75 ? "STRONG_BUY" : "BUY";
+        setupGrade = masterConfluence.totalScore >= 75 ? "A" : "B";
+        confidence = Math.max(60, confidence);
+      } else if (isStrongBear && (bearPillars > bullPillars || (bullPillars === bearPillars && currentPrice < pivotPoints.pivot))) {
+        signal = masterConfluence.totalScore >= 75 ? "STRONG_SELL" : "SELL";
+        setupGrade = masterConfluence.totalScore >= 75 ? "A" : "B";
+        confidence = Math.max(60, confidence);
+      } else {
+        // ตลาดไซด์เวย์ไร้เทรนด์และขาด Confluence สนับสนุนชัดเจน -> พักรอโอกาสสถาบันที่ได้เปรียบ (WAIT / Grade C)
+        signal = "WAIT";
+        setupGrade = "C (Wait)";
+        confidence = Math.min(confidence, 45);
+      }
     }
   }
 
-  // ─── ANTI-CLASH DIRECTIONAL HARMONIZATION (SOFT CONFIDENCE TUNING, NEVER HARD WAIT) ───
-  if (signal === "STRONG_BUY" || signal === "BUY") {
+  // ─── ANTI-CLASH & LIQUIDITY TRAP HARD VETO GATE ───
+  let isVetoBlocked = false;
+  let vetoBlockReason = "";
+  if (orchestrator.vetoTriggered) {
+    isVetoBlocked = true;
+    vetoBlockReason = orchestrator.vetoReason || "ระบบ Anti-Clash ตรวจพบกับดักสภาพคล่องหรือความขัดแย้งของกลยุทธ์";
+    signal = "WAIT";
+    setupGrade = "C (Wait)";
+    confidence = Math.min(confidence, 35);
+  } else if (signal === "STRONG_BUY" || signal === "BUY") {
     if (orchestrator.unifiedSignal === "SELL") {
-      // Counter-trend caution: ปรับลด confidence เล็กน้อย แต่คงสถานะออเดอร์พร้อมเทรดไว้เสมอ
-      confidence = Math.max(48, confidence - 6);
-      setupGrade = "B";
+      // Counter-trend conflict: บังคับ WAIT เพื่อรักษาเงินต้น ป้องกันการเทรดสวนทาง
+      isVetoBlocked = true;
+      vetoBlockReason = "ระบบ Anti-Clash ตรวจพบสัญญาณขัดแย้งกับทิศทางเทรนด์หลัก (SELL Dominant)";
+      signal = "WAIT";
+      setupGrade = "C (Wait)";
+      confidence = Math.min(confidence, 40);
     } else if (orchestrator.unifiedSignal === "BUY") {
       confidence = Math.min(99, confidence + 5);
     }
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     if (orchestrator.unifiedSignal === "BUY") {
-      // Counter-trend caution: ปรับลด confidence เล็กน้อย แต่คงสถานะออเดอร์พร้อมเทรดไว้เสมอ
-      confidence = Math.max(48, confidence - 6);
-      setupGrade = "B";
+      // Counter-trend conflict: บังคับ WAIT เพื่อรักษาเงินต้น ป้องกันการเทรดสวนทาง
+      isVetoBlocked = true;
+      vetoBlockReason = "ระบบ Anti-Clash ตรวจพบสัญญาณขัดแย้งกับทิศทางเทรนด์หลัก (BUY Dominant)";
+      signal = "WAIT";
+      setupGrade = "C (Wait)";
+      confidence = Math.min(confidence, 40);
     } else if (orchestrator.unifiedSignal === "SELL") {
       confidence = Math.min(99, confidence + 5);
     }
@@ -1026,6 +1114,13 @@ export function generateRuleBasedAnalysis(
     stopLoss = Math.min(srBasedCalc.stopLoss, structuralSLWithBuffer);
     takeProfit1 = srBasedCalc.takeProfit1;
     takeProfit2 = srBasedCalc.takeProfit2;
+    // Institutional Dealing Range Target Calibration (Target Equilibrium 50% as TP1)
+    if (premiumDiscount && premiumDiscount.percentile <= 25 && premiumDiscount.equilibrium && premiumDiscount.equilibrium > currentPrice) {
+      takeProfit1 = premiumDiscount.equilibrium;
+      if (premiumDiscount.rangeHigh && premiumDiscount.rangeHigh > premiumDiscount.equilibrium) {
+        takeProfit2 = Number((premiumDiscount.rangeHigh - currentATR * 0.25).toFixed(precision));
+      }
+    }
     slPips = srBasedCalc.slPips;
     tp1Pips = srBasedCalc.tp1Pips;
     tp2Pips = srBasedCalc.tp2Pips;
@@ -1145,20 +1240,6 @@ export function generateRuleBasedAnalysis(
       takeProfit1 = harmonics.bestPattern.targetTP1;
       takeProfit2 = harmonics.bestPattern.targetTP2;
     }
-    // ─── HARD INVARIANT GUARANTEE FOR BUY: stopLoss < pendingPrice < takeProfit1 < takeProfit2 ───
-    const minRisk = Math.max(currentATR * 1.25, pendingPrice * 0.0035);
-    if (stopLoss >= pendingPrice) {
-      stopLoss = Number((pendingPrice - minRisk).toFixed(precision));
-    }
-    const actualRisk = pendingPrice - stopLoss;
-    if (takeProfit1 <= pendingPrice) {
-      takeProfit1 = Number((pendingPrice + Math.max(actualRisk * 1.0, currentATR * 0.8)).toFixed(precision));
-    }
-    if (takeProfit2 <= takeProfit1) {
-      takeProfit2 = Number((takeProfit1 + Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision));
-    }
-    riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, actualRisk)).toFixed(1)}`;
-
     // ─── [Dual-Tranche Entry] Micro-Portfolio ($10) SL-Minimizer ───────────────────────────────
     // แบ่งไม้ 2 ระดับตาม Fibonacci Retracement เพื่อให้ได้จุดเข้าซื้อที่ดีที่สุดและ SL สั้นที่สุด
     // Tranche 1: เข้า 50% ที่ Fib 61.8% (OTE Sweet Spot) — ยืนยัน momentum ก่อน
@@ -1170,19 +1251,33 @@ export function generateRuleBasedAnalysis(
       const tranche2Entry = Number((oteZone.oteMax - fibRange * 0.786).toFixed(precision));  // Fib 78.6%
       // ใช้ SL ร่วม: ต่ำกว่า oteMin + ATR buffer
       const sharedSL = Number((Math.min(oteZone.oteMin, stopLoss) - currentATR * 0.15).toFixed(precision));
-      // SL distance จาก Tranche2 (worst case entry)
-      const slDist2 = tranche2Entry - sharedSL;
-      // TP ต้องได้อย่างน้อย RR 1.5 จาก Tranche2
-      const tp_tranche = Number((tranche2Entry + slDist2 * 1.5).toFixed(precision));
       if (tranche1Entry > sharedSL && tranche2Entry > sharedSL && tranche1Entry > tranche2Entry) {
         entryZone = { min: tranche2Entry, max: tranche1Entry };
         // อัปเดต pendingPrice เป็น Tranche1 ถ้ายังไม่ได้เข้า zone
         if (pendingPrice > tranche1Entry || pendingPrice < tranche2Entry) {
           pendingPrice = tranche1Entry;
         }
+        stopLoss = sharedSL;
       }
     }
     // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    // ─── HARD INVARIANT GUARANTEE FOR BUY: stopLoss < pendingPrice < takeProfit1 < takeProfit2 ───
+    const isGold = sym.includes("XAU") || sym === "GOLD";
+    const isForex = !isGold && !sym.endsWith("USDT") && (precision === 4 || sym.includes("JPY"));
+    const minPipsBuffer = sym.includes("JPY") ? 0.20 : (isForex ? 0.0018 : isGold ? 2.50 : pendingPrice * 0.0035);
+    const minRisk = Math.max(currentATR * 1.25, minPipsBuffer);
+    if (stopLoss >= pendingPrice || (pendingPrice - stopLoss) < minRisk) {
+      stopLoss = Number((pendingPrice - minRisk).toFixed(precision));
+    }
+    const actualRisk = pendingPrice - stopLoss;
+    if (takeProfit1 <= pendingPrice) {
+      takeProfit1 = Number((pendingPrice + Math.max(actualRisk * 1.0, currentATR * 0.8)).toFixed(precision));
+    }
+    if (takeProfit2 <= takeProfit1) {
+      takeProfit2 = Number((takeProfit1 + Math.max(actualRisk * 1.2, currentATR * 1.0)).toFixed(precision));
+    }
+    riskRewardRatio = `1:${((takeProfit2 - pendingPrice) / Math.max(0.0001, actualRisk)).toFixed(1)}`;
 
   } else if (signal === "STRONG_SELL" || signal === "SELL") {
     tradeAction = "SELL";
@@ -1216,6 +1311,13 @@ export function generateRuleBasedAnalysis(
     stopLoss = Math.max(srBasedCalc.stopLoss, structuralSLWithBuffer);
     takeProfit1 = srBasedCalc.takeProfit1;
     takeProfit2 = srBasedCalc.takeProfit2;
+    // Institutional Dealing Range Target Calibration (Target Equilibrium 50% as TP1)
+    if (premiumDiscount && premiumDiscount.percentile >= 75 && premiumDiscount.equilibrium && premiumDiscount.equilibrium < currentPrice) {
+      takeProfit1 = premiumDiscount.equilibrium;
+      if (premiumDiscount.rangeLow && premiumDiscount.rangeLow < premiumDiscount.equilibrium) {
+        takeProfit2 = Number((premiumDiscount.rangeLow + currentATR * 0.25).toFixed(precision));
+      }
+    }
     slPips = srBasedCalc.slPips;
     tp1Pips = srBasedCalc.tp1Pips;
     tp2Pips = srBasedCalc.tp2Pips;
@@ -1336,8 +1438,11 @@ export function generateRuleBasedAnalysis(
       takeProfit2 = harmonics.bestPattern.targetTP2;
     }
     // ─── HARD INVARIANT GUARANTEE FOR SELL: stopLoss > pendingPrice > takeProfit1 > takeProfit2 ───
-    const minRisk = Math.max(currentATR * 1.25, pendingPrice * 0.0035);
-    if (stopLoss <= pendingPrice) {
+    const isGold = sym.includes("XAU") || sym === "GOLD";
+    const isForex = !isGold && !sym.endsWith("USDT") && (precision === 4 || sym.includes("JPY"));
+    const minPipsBuffer = sym.includes("JPY") ? 0.20 : (isForex ? 0.0018 : isGold ? 2.50 : pendingPrice * 0.0035);
+    const minRisk = Math.max(currentATR * 1.25, minPipsBuffer);
+    if (stopLoss <= pendingPrice || (stopLoss - pendingPrice) < minRisk) {
       stopLoss = Number((pendingPrice + minRisk).toFixed(precision));
     }
     const actualRisk = stopLoss - pendingPrice;
@@ -1373,9 +1478,9 @@ export function generateRuleBasedAnalysis(
 
   const pipMultiplier = getAssetPipMultiplier(sym);
   // Recalculate pips with final values (S/R-based should already have them)
-  slPips = slPips > 0 ? slPips : Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier);
-  tp1Pips = tp1Pips > 0 ? tp1Pips : Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier);
-  tp2Pips = tp2Pips > 0 ? tp2Pips : Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier);
+  slPips = Math.max(1, Math.round(Math.abs(pendingPrice - stopLoss) * pipMultiplier));
+  tp1Pips = Math.max(1, Math.round(Math.abs(takeProfit1 - pendingPrice) * pipMultiplier));
+  tp2Pips = Math.max(1, Math.round(Math.abs(takeProfit2 - pendingPrice) * pipMultiplier));
 
   // [แผน 18] Dynamic Spread & Slippage Impact Calculator
   const spreadImpact = calculateSpreadImpact(symbol, slPips, tp1Pips, 100, 0.01);
@@ -1384,7 +1489,7 @@ export function generateRuleBasedAnalysis(
   const trailingStop = calculateChandelierTrailingStop(candles, tradeAction === "SELL" ? "SELL" : "BUY", currentATR, precision, symbol);
 
   // [แผน 21] Volatility-Adjusted Kelly Criterion Sizing
-  const winRate = historicalBacktest.winRate / 100 || 0.65;
+  const winRate = (historicalBacktest?.winRate != null && historicalBacktest.winRate > 0) ? historicalBacktest.winRate / 100 : 0.65;
   const _atr14Array = indicators.atr14 || calculateATR(candles, 14);
   const validATRs = _atr14Array.filter((v): v is number => v !== null && !isNaN(v));
   const avgATR = validATRs.length > 0 ? validATRs.slice(-30).reduce((a, b) => a + b, 0) / Math.min(30, validATRs.length) : currentATR;
@@ -1398,10 +1503,10 @@ export function generateRuleBasedAnalysis(
   );
 
   // [แผน 43] Adaptive Dynamic Risk Bracket & Portfolio Drawdown Limiter
-  const dynamicRiskBracket = indicators.dynamicRiskBracket || calculateDynamicRiskBracket(winRate, realizedVolatility.realizedVol, 0);
+  const dynamicRiskBracket = calculateDynamicRiskBracket(winRate, realizedVolatility.realizedVol, 0);
 
   // [แผน 45] Algorithmic Multi-Confluence Power Index (MCPI - 0 to 100 Unified Execution Score)
-  const mcpiConviction = indicators.mcpiConviction || calculateUnifiedMCPI(
+  const mcpiConviction = calculateUnifiedMCPI(
     masterConfluence.totalScore,
     mtfStructureMatrix.alignmentScorePct,
     marketStructureShift.isTrueDisplacement,
@@ -1411,7 +1516,7 @@ export function generateRuleBasedAnalysis(
   );
 
   // ─── BATCH 10: MILESTONE 50 SYNTHESIS (PLANS 46-50) ───
-  const milestone50 = indicators.milestone50 || synthesizeGrandQuantMilestone50(
+  const milestone50 = synthesizeGrandQuantMilestone50(
     masterConfluence.totalScore,
     mcpiConviction.score,
     harmonics.hasPattern,
@@ -1455,11 +1560,11 @@ export function generateRuleBasedAnalysis(
         winProbability: winProbPct,
         expectedPayoffR,
         recommendation: "SKIP_LOW_PROBABILITY",
-        metaFilterReason: `🛡️ ML Meta-Labeling Filter: ความน่าจะเป็นชนะต่ำ (${winProbPct}%) หรือแบบจำลอง ML ชี้ทิศตรงข้าม (${oppProbPct}%) ค่าคาดหวัง E[R] ติดลบ (${expectedPayoffR}R) กรองออกเพื่อลด Drawdown`,
+        metaFilterReason: `🛡️ ML Meta-Labeling Filter: ความน่าจะเป็นชนะต่ำ (${winProbPct}%) หรือแบบจำลอง ML ชี้ทิศตรงข้าม (${oppProbPct}%) ค่าคาดหวัง E[R] ติดลบ (${expectedPayoffR}R) กรองออกเพื่อลด Drawdown (Advisory Only)`,
       };
-      tradeAction = "NO_TRADE";
-      signal = "WAIT";
-      setupGrade = "C (Wait)";
+      // tradeAction = "NO_TRADE";
+      // signal = "WAIT";
+      // setupGrade = "C (Wait)";
       confidence = Math.min(confidence, 42);
     } else if (targetWinProb >= 0.65 && expectedPayoffR >= 0.35) {
       metaLabeling = {
@@ -1490,8 +1595,8 @@ export function generateRuleBasedAnalysis(
     };
   }
 
-  // De-confliction Guarantee: Whenever signal is WAIT or fatal circuit breaker is active, tradeAction must strictly be NO_TRADE
-  if (signal === "WAIT" || !calendarSafety.tradeAllowed || sessionStatus.isWeekendCloseFreeze) {
+  // De-confliction Guarantee: Whenever signal is WAIT, Veto is active, or fatal circuit breaker is active, tradeAction must strictly be NO_TRADE
+  if (signal === "WAIT" || isVetoBlocked || !calendarSafety.tradeAllowed || sessionStatus.isWeekendCloseFreeze) {
     tradeAction = "NO_TRADE";
   }
 
@@ -1675,8 +1780,8 @@ export function generateRuleBasedAnalysis(
     ? `[🛡️ HTF STRICT GUARD] ${htfBlockReason} `
     : !metaLabeling.isApproved
     ? `[🤖 ML META-FILTER] ${metaLabeling.metaFilterReason} `
-    : orchestrator.vetoTriggered
-    ? `[🛡️ ANTI-CLASH VETO] ${orchestrator.vetoReason} `
+    : isVetoBlocked
+    ? `[🛡️ ANTI-CLASH VETO] ${vetoBlockReason || orchestrator.vetoReason} `
     : "";
 
   // ─── MT4 / MT5 Order Type Recommendation Engine (Matching MetaTrader 5 Dropdown) ───
@@ -1734,12 +1839,22 @@ export function generateRuleBasedAnalysis(
     }
 
     // Post-OrderType Final Invariant Calibration for BUY: stopLoss < pendingPrice < takeProfit1 < takeProfit2
+    // [ภาพที่ 5] วาง SL หลบนอกโซนแนวรับ (Buffer SL)
+    if (clusteredSR.nearestSupport?.zoneMin && clusteredSR.nearestSupport.zoneMin < pendingPrice) {
+      const bufferSL = Number((clusteredSR.nearestSupport.zoneMin - currentATR * 0.25).toFixed(precision));
+      if (bufferSL < pendingPrice && (pendingPrice - bufferSL) <= currentATR * 2.5) {
+        stopLoss = bufferSL;
+      }
+    }
     const minRisk = Math.max(currentATR * 1.25, pendingPrice * 0.0035);
     if (stopLoss >= pendingPrice) {
       stopLoss = Number((pendingPrice - minRisk).toFixed(precision));
     }
     const finalRisk = pendingPrice - stopLoss;
-    if (takeProfit1 <= pendingPrice) {
+    // [ภาพที่ 5] ตั้งเป้า TP1 ที่แนวต้านสำคัญถัดไป
+    if (clusteredSR.nearestResistance?.price && clusteredSR.nearestResistance.price > pendingPrice + finalRisk * 0.8) {
+      takeProfit1 = Number(clusteredSR.nearestResistance.price.toFixed(precision));
+    } else if (takeProfit1 <= pendingPrice) {
       takeProfit1 = Number((pendingPrice + Math.max(finalRisk * 1.0, currentATR * 0.8)).toFixed(precision));
     }
     if (takeProfit2 <= takeProfit1) {
@@ -1792,12 +1907,22 @@ export function generateRuleBasedAnalysis(
     }
 
     // Post-OrderType Final Invariant Calibration for SELL: stopLoss > pendingPrice > takeProfit1 > takeProfit2
+    // [ภาพที่ 5] วาง SL หลบนอกโซนแนวต้าน (Buffer SL)
+    if (clusteredSR.nearestResistance?.zoneMax && clusteredSR.nearestResistance.zoneMax > pendingPrice) {
+      const bufferSL = Number((clusteredSR.nearestResistance.zoneMax + currentATR * 0.25).toFixed(precision));
+      if (bufferSL > pendingPrice && (bufferSL - pendingPrice) <= currentATR * 2.5) {
+        stopLoss = bufferSL;
+      }
+    }
     const minRisk = Math.max(currentATR * 1.25, pendingPrice * 0.0035);
     if (stopLoss <= pendingPrice) {
       stopLoss = Number((pendingPrice + minRisk).toFixed(precision));
     }
     const finalRisk = stopLoss - pendingPrice;
-    if (takeProfit1 >= pendingPrice) {
+    // [ภาพที่ 5] ตั้งเป้า TP1 ที่แนวรับสำคัญถัดไป
+    if (clusteredSR.nearestSupport?.price && clusteredSR.nearestSupport.price < pendingPrice - finalRisk * 0.8) {
+      takeProfit1 = Number(clusteredSR.nearestSupport.price.toFixed(precision));
+    } else if (takeProfit1 >= pendingPrice) {
       takeProfit1 = Number((pendingPrice - Math.max(finalRisk * 1.0, currentATR * 0.8)).toFixed(precision));
     }
     if (takeProfit2 >= takeProfit1) {
@@ -1923,7 +2048,8 @@ export function generateRuleBasedAnalysis(
       fvgMitigation,
       oteZone,
       volumeProfile,
-      precision
+      precision,
+      quasimodo
     );
     const sniperEntryPrice = precisionLimit.recommendedLimit;
     sniperMicroSL = calculateSniperMicroSL(
@@ -1941,7 +2067,69 @@ export function generateRuleBasedAnalysis(
     if (sniperMicroSL && mtOrderAdvice) {
       mtOrderAdvice += ` • 🎯 Sniper Micro-SL: ${sniperMicroSL.slPips} pips (ทุน $10 เสี่ยง -$${sniperMicroSL.dollarRiskOn001Lot} บน 0.01 lot)`;
     }
+    if (obPAReversal && obPAReversal.detected && mtOrderAdvice) {
+      mtOrderAdvice += ` • 🏛️ OB PA-Reversal: ยืนยันสถาบัน ${obPAReversal.reversalPattern} ในโซน ${obPAReversal.obType} (${obPAReversal.rejectionWickPct}% Wick)`;
+    }
   }
+
+  // ─── [E-BOOK TRADE 10-MODULE INSTITUTIONAL SUITE] ───
+  const calculatedLot1k = Math.max(
+    0.01,
+    Number(((10 / Math.max(slPips, 10)) * ((100 - (calendarSafety.positionSizeReductionPct || 0)) / 100)).toFixed(2))
+  );
+
+  const netSpreadAnalysis = calculateSpreadFrictionAndNetRR(
+    symbol,
+    pendingPrice || currentPrice,
+    stopLoss,
+    takeProfit1,
+    calculatedLot1k
+  );
+
+  const hasValidSetup =
+    (breakoutConfirmation.isBreakoutConfirmed && breakoutConfirmation.breakoutType === "VALID_BREAKOUT") ||
+    (indicators.pullbackQuality?.state === "HEALTHY_VALUE_ZONE") ||
+    (clusteredSR.supports.some((s) => s.isRoleReversed) || clusteredSR.resistances.some((r) => r.isRoleReversed)) ||
+    masterConfluence.totalScore >= 75;
+
+  // Use real consecutive loss count from dynamicRiskBracket (computed from live win rate + vol)
+  const consecutiveLossesActual = dynamicRiskBracket.consecutiveLossCount ?? 0;
+  const effectiveRiskPctActual = dynamicRiskBracket.recommendedRiskPct ?? 1.5;
+
+  const preTradeChecklist = validatePreTradeChecklist(
+    tradeAction,
+    masterConfluence.totalScore,
+    hasValidSetup,
+    Boolean(structuralSL),
+    netSpreadAnalysis.netRiskRewardRatio,
+    effectiveRiskPctActual,
+    consecutiveLossesActual
+  );
+
+  const drawdownProtection = calculateDrawdownRecoveryMetrics(1000, effectiveRiskPctActual, consecutiveLossesActual);
+
+  const topSR = tradeAction === "BUY" ? clusteredSR.nearestSupport : clusteredSR.nearestResistance;
+  const srRoleReversal: SRRoleReversalInfo = {
+    isFlipDetected: Boolean(topSR?.isRoleReversed),
+    flipType: topSR?.isRoleReversed
+      ? (topSR.type === "SUPPORT" ? "RESISTANCE_BECOMES_SUPPORT" : "SUPPORT_BECOMES_RESISTANCE")
+      : "NONE",
+    flipLevel: topSR?.price ?? currentPrice,
+    touchCount: topSR?.touchCount ?? 1,
+    retestState: (breakoutConfirmation.retestState || "NONE") as "NONE" | "RETESTING" | "RETEST_BOUNCED" | "RETEST_FAILED",
+    zoneBand: {
+      min: topSR?.zoneMin ?? currentPrice,
+      max: topSR?.zoneMax ?? currentPrice,
+      thicknessPips: topSR?.zoneThicknessPips ?? 10,
+    },
+    roleReversalConviction: topSR?.isRoleReversed ? 88 : 50,
+    summary: topSR?.isRoleReversed
+      ? `Role Reversal Flip Zone (${topSR.touchCount}x สัมผัส): แนวเดิมเปลี่ยนหน้าที่เป็น ${topSR.type} ใหม่`
+      : "โครงสร้างแนวรับ-แนวต้านระดับมาตรฐาน",
+  };
+
+  const pullbackQuality = indicators.pullbackQuality;
+  const rsiInstitutionalAnalysis = indicators.rsiInstitutional;
 
   return {
     symbol,
@@ -1976,6 +2164,7 @@ export function generateRuleBasedAnalysis(
     anchoredVwap,
     cvd,
     orderBlocks,
+    obPAReversal,
     priceFeedIntegrity,
     sessionSweep,
     fibonacciCluster,
@@ -1984,6 +2173,7 @@ export function generateRuleBasedAnalysis(
     correlationShield,
     fvgMitigation,
     marketStructureShift,
+    quasimodo,
     premiumDiscount,
     keyLevelTargets,
     orderFlowVelocity,
@@ -2214,6 +2404,7 @@ export function generateRuleBasedAnalysis(
       anchoredVwap,
       cvd,
       orderBlocks,
+      obPAReversal,
       sessionSweep,
       fibonacciCluster,
       realizedVolatility,
@@ -2221,6 +2412,7 @@ export function generateRuleBasedAnalysis(
       correlationShield,
       fvgMitigation,
       marketStructureShift,
+      quasimodo,
       // [แผน 52 & 53] Advanced Volume Profile & Footprint Analysis
       advancedVolumeProfile,
       footprintAnalysis,
@@ -2364,7 +2556,22 @@ export function generateRuleBasedAnalysis(
         ? `⚠️ [เกราะข่าวกล่องแดง] มี ${calendarSafety.nextHighImpactEvent?.title} ในอีก ${calendarSafety.minutesToNextEvent} นาที: ปรับลด Lot 50% และเลื่อน SL บังหน้าทุนทันทีเมื่อกำไร +0.5R • `
         : "") + (structuralSL
         ? `หากราคาหลุดแนวรับสวิง ${structuralSL.swingRefPrice} (Stop Loss: ${stopLoss}) ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`
-        : `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`),
+        : `หากราคาหลุด ${tradeAction === "BUY" ? "Stop Loss ใต้แนวรับ" : "Stop Loss เหนือแนวต้าน"} ถือว่าโครงสร้างเสียทรงให้ Cut ทันที`)
+        + (quasimodo && quasimodo.detected && quasimodo.isQmlHeld
+          ? ` • 🏛️ [QM Level]: ระดับราคา QML ${quasimodo.qmlPrice} (${quasimodo.type}) ผ่านการทดสอบแล้วไม่หลุด โครงสร้างสถาบันแข็งแกร่ง`
+          : "")
+        + (marketStructureShift && marketStructureShift.detected && marketStructureShift.isTrueDisplacement
+          ? ` • ⚡ [MSS/BOS]: พบการทะลุโครงสร้างพร้อม Displacement ${marketStructureShift.displacementMultiplier}x ATR (${marketStructureShift.displacementVelocity})`
+          : "")
+        + (obPAReversal && obPAReversal.detected
+          ? ` • 🏛️ [OB PA-Reversal]: เกิด ${obPAReversal.reversalPattern} ในโซน ${obPAReversal.obType} (${obPAReversal.obZone.min} - ${obPAReversal.obZone.max}) ปฏิเสธราคา ${obPAReversal.rejectionWickPct}% (Sniper SL: ${obPAReversal.sniperStopLoss})`
+          : ""),
+      pullbackQuality,
+      netSpreadAnalysis,
+      preTradeChecklist,
+      rsiInstitutionalAnalysis,
+      drawdownProtection,
+      srRoleReversal,
     },
     pivotPoints,
     clusteredSR,
@@ -2373,6 +2580,12 @@ export function generateRuleBasedAnalysis(
     orchestrator,
     mlPrediction,
     metaLabeling,
+    pullbackQuality,
+    netSpreadAnalysis,
+    preTradeChecklist,
+    rsiInstitutionalAnalysis,
+    drawdownProtection,
+    srRoleReversal,
   };
 }
 

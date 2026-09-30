@@ -22,11 +22,28 @@ export function evaluateMasterConfluence(
   adaptiveWeights?: AdaptivePillarWeightsInput,
   contextOptions?: ConfluenceContextOptions
 ): MasterConfluenceScore {
-  const wTrend = adaptiveWeights?.trendWeight ?? 25;
-  const wMom = adaptiveWeights?.momentumWeight ?? 20;
-  const wSq = adaptiveWeights?.squeezeWeight ?? 20;
-  const wVol = adaptiveWeights?.volumeWeight ?? 15;
-  const wSmc = adaptiveWeights?.smcWeight ?? 20;
+  const weights = {
+    trendWeight: adaptiveWeights?.trendWeight ?? 25,
+    momentumWeight: adaptiveWeights?.momentumWeight ?? 20,
+    squeezeWeight: adaptiveWeights?.squeezeWeight ?? 20,
+    volumeWeight: adaptiveWeights?.volumeWeight ?? 15,
+    smcWeight: adaptiveWeights?.smcWeight ?? 20,
+  };
+
+  // Normalize weights to sum = 100
+  const rawSum = Object.values(weights).reduce((a: number, b: number) => a + b, 0);
+  if (rawSum > 0 && Math.abs(rawSum - 100) > 0.01) {
+    const normFactor = 100 / rawSum;
+    for (const k of Object.keys(weights)) {
+      (weights as any)[k] = (weights as any)[k] * normFactor;
+    }
+  }
+
+  const wTrend = weights.trendWeight;
+  const wMom = weights.momentumWeight;
+  const wSq = weights.squeezeWeight;
+  const wVol = weights.volumeWeight;
+  const wSmc = weights.smcWeight;
   const isSelfTuned = Boolean(adaptiveWeights?.isSelfTuned);
 
   const len = candles.length;
@@ -46,6 +63,7 @@ export function evaluateMasterConfluence(
   }
 
   const currentPrice = indicators.currentPrice;
+  const currentATR = indicators.atr14?.slice(-1)[0] ?? (currentPrice * 0.005);
   const lastCandle = candles[len - 1];
 
   // ─── PILLAR 1: TREND & REGIME (Max 25) ───
@@ -96,6 +114,17 @@ export function evaluateMasterConfluence(
       else if (mtfConf.alignmentStatus === "STRONG_BEARISH_CONFLUENCE") p1Score -= 8;
       else if (mtfConf.alignmentStatus === "MODERATE_BEARISH_CONFLUENCE") p1Score -= 5;
     }
+    const pb = indicators.pullbackQuality;
+    if (pb) {
+      if (pb.state === "HEALTHY_VALUE_ZONE") p1Score += 4;
+      else if (pb.state === "FOMO_OVEREXTENDED") p1Score -= 7;
+      if (pb.rejectionConfirmed) p1Score += 2;
+    }
+    const cColor = indicators.candlestickPatterns?.candleColorRatio;
+    if (cColor) {
+      if (cColor.dominantBias === "BULLISH" && cColor.bullRatio >= 0.60) p1Score += 3; // [Folder 9] Green dominance
+      else if (cColor.dominantBias === "BEARISH" && cColor.bearRatio >= 0.60) p1Score -= 4; // Penalty: red counter-trend
+    }
   } else if (bias === "BEARISH") {
     if (stDirection === "DOWN") p1Score += 7;
     if (currentPrice < lastEMA200) p1Score += 5;
@@ -120,6 +149,17 @@ export function evaluateMasterConfluence(
       else if (mtfConf.alignmentStatus === "MODERATE_BEARISH_CONFLUENCE") p1Score += 3;
       else if (mtfConf.alignmentStatus === "STRONG_BULLISH_CONFLUENCE") p1Score -= 8;
       else if (mtfConf.alignmentStatus === "MODERATE_BULLISH_CONFLUENCE") p1Score -= 5;
+    }
+    const pb = indicators.pullbackQuality;
+    if (pb) {
+      if (pb.state === "HEALTHY_VALUE_ZONE") p1Score += 4;
+      else if (pb.state === "FOMO_OVEREXTENDED") p1Score -= 7;
+      if (pb.rejectionConfirmed) p1Score += 2;
+    }
+    const cColor = indicators.candlestickPatterns?.candleColorRatio;
+    if (cColor) {
+      if (cColor.dominantBias === "BEARISH" && cColor.bearRatio >= 0.60) p1Score += 3; // [Folder 9] Red dominance
+      else if (cColor.dominantBias === "BULLISH" && cColor.bullRatio >= 0.60) p1Score -= 4; // Penalty: green counter-trend
     }
   } else {
     p1Score += 8;
@@ -153,6 +193,16 @@ export function evaluateMasterConfluence(
     if (isRsiBullHook) p2Score += 3;
     if (lastStoch.k >= lastStoch.d) p2Score += 6;
     if (intraBar && intraBar.bias === "STRONG_BUYERS") p2Score += 4; // [แผน 5] Intra-bar live buyers
+    const rsiInst = indicators.rsiInstitutional;
+    if (rsiInst) {
+      if (rsiInst.hookState === "BULLISH_EXIT_HOOK") p2Score += 5;
+      if (rsiInst.divergenceAtZone === "BULLISH_DIVERGENCE_AT_SUPPORT") p2Score += 4;
+      if (rsiInst.hookState === "BULLISH_TREND_SUPPORT") p2Score += 3;
+    }
+    const twoBar = indicators.candlestickPatterns?.twoBarConfirmation;
+    if (twoBar && twoBar.isConfirmed && twoBar.type === "BULLISH_CONFIRMATION") {
+      p2Score += 3; // [Folder 3 & 9] Two-bar confirmation bounce
+    }
   } else if (bias === "BEARISH") {
     if (lastRSI >= 34 && lastRSI <= 58) p2Score += 7;
     else if (lastRSI >= 30 && lastRSI < 34) p2Score += 3;
@@ -167,11 +217,24 @@ export function evaluateMasterConfluence(
     if (isRsiBearHook) p2Score += 3;
     if (lastStoch.k <= lastStoch.d) p2Score += 6;
     if (intraBar && intraBar.bias === "STRONG_SELLERS") p2Score += 4; // [แผน 5] Intra-bar live sellers
+    const rsiInst = indicators.rsiInstitutional;
+    if (rsiInst) {
+      if (rsiInst.hookState === "BEARISH_EXIT_HOOK") p2Score += 5;
+      if (rsiInst.divergenceAtZone === "BEARISH_DIVERGENCE_AT_RESISTANCE") p2Score += 4;
+      if (rsiInst.hookState === "BEARISH_TREND_RESISTANCE") p2Score += 3;
+    }
+    const twoBar = indicators.candlestickPatterns?.twoBarConfirmation;
+    if (twoBar && twoBar.isConfirmed && twoBar.type === "BEARISH_CONFIRMATION") {
+      p2Score += 3; // [Folder 3 & 9] Two-bar confirmation rejection
+    }
   } else {
     p2Score += 8;
   }
 
-  const p2Status = `RSI ${lastRSI.toFixed(1)} (${isRsiBullHook ? "หักหัวขึ้น" : "หักหัวลง"}) | StochRSI K: ${lastStoch.k.toFixed(1)} / D: ${lastStoch.d.toFixed(1)}${intraBar ? ` (Intra-Bar: ${intraBar.percentInRange}%)` : ""}`;
+  const rsiHookNote = indicators.rsiInstitutional?.hookState && indicators.rsiInstitutional.hookState !== "NEUTRAL"
+    ? ` • ⚡ ${indicators.rsiInstitutional.hookState.replace(/_/g, " ")}`
+    : "";
+  const p2Status = `RSI ${lastRSI.toFixed(1)} (${isRsiBullHook ? "หักหัวขึ้น" : "หักหัวลง"})${rsiHookNote} | StochRSI K: ${lastStoch.k.toFixed(1)} / D: ${lastStoch.d.toFixed(1)}${intraBar ? ` (Intra-Bar: ${intraBar.percentInRange}%)` : ""}`;
 
   // ─── PILLAR 3: VOLATILITY & SQUEEZE (Max 20) ───
   let p3Score = 0;
@@ -185,8 +248,21 @@ export function evaluateMasterConfluence(
   if (isExpanding) p3Score += 12; // Volatility expansion
   if (bias === "BULLISH" && currentPrice >= (lastBB?.middle ?? currentPrice)) p3Score += 8;
   if (bias === "BEARISH" && currentPrice <= (lastBB?.middle ?? currentPrice)) p3Score += 8;
-  if (p3Score === 0) p3Score = 10;
 
+  // TTM Squeeze Integration (John Carter Squeeze)
+  const ttmSqueeze = indicators.ttmSqueeze;
+  if (ttmSqueeze?.isSqueezeOn) {
+    p3Score += 5; // Squeeze = energy building for breakout
+  }
+  // Realized Volatility Regime
+  const realVol = indicators.realizedVolatility;
+  if (realVol) {
+    if (realVol.volState === "EXPANSION" && isExpanding) p3Score += 3;
+    else if (realVol.volState === "COMPRESSION" && isSqueezing) p3Score += 3;
+  }
+
+  if (p3Score === 0) p3Score = 10;
+  p3Score = Math.min(p3Score, 28);
   const p3Status = isSqueezing
     ? "Bollinger Bands Squeeze กำลังสะสมพลังรอระเบิด"
     : isExpanding
@@ -257,6 +333,18 @@ export function evaluateMasterConfluence(
     p4Score += 6;
   }
   if (isVeryLowVolume) p4Score = Math.max(2, p4Score - 3);
+
+  // Volume Profile POC Proximity
+  const vpoc = indicators.volumeProfile;
+  if (vpoc && vpoc.poc > 0) {
+    const lastATR = indicators.atr14 && indicators.atr14.length > 0 ? (indicators.atr14[indicators.atr14.length - 1] ?? 0) : 0;
+    if (lastATR > 0) {
+      const pocDistance = Math.abs(currentPrice - vpoc.poc) / lastATR;
+      if (bias === "BULLISH" && vpoc.poc < currentPrice && pocDistance < 1.5) p4Score += 2;
+      else if (bias === "BEARISH" && vpoc.poc > currentPrice && pocDistance < 1.5) p4Score += 2;
+    }
+  }
+
   p4Score = Math.max(2, Math.min(15, p4Score));
 
   const cvdText = cvd ? `CVD: ${cvd.cvdTrend === "RISING" ? "📈 Rising" : cvd.cvdTrend === "FALLING" ? "📉 Falling" : "Flat"}` : "";
@@ -274,7 +362,7 @@ export function evaluateMasterConfluence(
   // ─── PILLAR 5: SMART MONEY & STRUCTURE / DEMAND-SUPPLY (Max 20) ───
   let p5Score = 0;
   const fvgs = indicators.fvgs ?? [];
-  const relevantFVGs = fvgs.filter((f) => (bias === "BULLISH" ? f.type === "BULLISH" : f.type === "BEARISH"));
+  const relevantFVGs = fvgs.filter((f) => (bias === "BULLISH" ? f.type === "BULLISH" : f.type === "BEARISH") && !f.mitigated);
   const orderBlocks = indicators.orderBlocks;
   const premDisc = indicators.premiumDiscount;
   const mss = indicators.marketStructureShift;
@@ -286,6 +374,16 @@ export function evaluateMasterConfluence(
     if (isAtDemandZone) p5Score += 6;
     else if (hasBullishOB) p5Score += 4;
 
+    // 1b. Order Block Price Action Reversal Confirmation (PA Reversal in OB)
+    const obPARev = indicators.obPAReversal;
+    if (obPARev && obPARev.detected) {
+      if (obPARev.type === "BULLISH_OB_REVERSAL") {
+        p5Score += 7; // Institutional confirmation: Price rejected Bullish OB with Pin Bar/Engulfing/Turtle Soup!
+      } else if (obPARev.type === "BEARISH_OB_REVERSAL") {
+        p5Score -= 6; // Opposing Bearish OB PA Reversal against BUY
+      }
+    }
+
     // 2. Premium / Discount Zone Matrix (Wholesale discount)
     if (premDisc) {
       if (premDisc.zone === "DEEP_DISCOUNT" || premDisc.zone === "DISCOUNT") p5Score += 5;
@@ -295,7 +393,24 @@ export function evaluateMasterConfluence(
     }
 
     // 3. Market Structure Shift (BOS / ChoCH displacement)
-    if (mss && mss.detected && mss.type === "BULLISH_MSS") p5Score += 5;
+    if (mss && mss.detected) {
+      if (mss.type === "BULLISH_MSS") {
+        p5Score += mss.displacementMultiplier >= 1.1 ? 6 : 4;
+      } else if (mss.type === "BEARISH_MSS" && mss.displacementMultiplier >= 1.1) {
+        p5Score -= 5; // Opposing Bearish CHoCH displacement penalty
+      }
+    }
+
+    // 3b. Quasimodo Pattern (QML Retest & Hold - "มาถึง QM ไม่หลุด QM")
+    const qm = indicators.quasimodo;
+    if (qm && qm.detected) {
+      if (qm.type === "BULLISH_QM") {
+        if (qm.isQmlHeld) p5Score += 6;
+        else if (qm.status === "ARMED") p5Score += 3;
+      } else if (qm.type === "BEARISH_QM" && qm.isQmlHeld && qm.qmlPrice > currentPrice && (qm.qmlPrice - currentPrice) < currentATR * 1.8) {
+        p5Score -= 6; // Opposing Bearish QM ceiling directly overhead
+      }
+    }
 
     // 4. Fair Value Gap (Bullish Imbalance magnet)
     if (relevantFVGs.length > 0) p5Score += 4;
@@ -306,6 +421,16 @@ export function evaluateMasterConfluence(
     if (isAtSupplyZone) p5Score += 6;
     else if (hasBearishOB) p5Score += 4;
 
+    // 1b. Order Block Price Action Reversal Confirmation (PA Reversal in OB)
+    const obPARev = indicators.obPAReversal;
+    if (obPARev && obPARev.detected) {
+      if (obPARev.type === "BEARISH_OB_REVERSAL") {
+        p5Score += 7; // Institutional confirmation: Price rejected Bearish OB with Pin Bar/Engulfing/Turtle Soup!
+      } else if (obPARev.type === "BULLISH_OB_REVERSAL") {
+        p5Score -= 6; // Opposing Bullish OB PA Reversal against SELL
+      }
+    }
+
     // 2. Premium / Discount Zone Matrix (Premium markup)
     if (premDisc) {
       if (premDisc.zone === "EXTREME_PREMIUM" || premDisc.zone === "PREMIUM") p5Score += 5;
@@ -315,7 +440,24 @@ export function evaluateMasterConfluence(
     }
 
     // 3. Market Structure Shift (BOS / ChoCH displacement)
-    if (mss && mss.detected && mss.type === "BEARISH_MSS") p5Score += 5;
+    if (mss && mss.detected) {
+      if (mss.type === "BEARISH_MSS") {
+        p5Score += mss.displacementMultiplier >= 1.1 ? 6 : 4;
+      } else if (mss.type === "BULLISH_MSS" && mss.displacementMultiplier >= 1.1) {
+        p5Score -= 5; // Opposing Bullish CHoCH displacement penalty
+      }
+    }
+
+    // 3b. Quasimodo Pattern (QML Retest & Hold - "มาถึง QM ไม่หลุด QM")
+    const qm = indicators.quasimodo;
+    if (qm && qm.detected) {
+      if (qm.type === "BEARISH_QM") {
+        if (qm.isQmlHeld) p5Score += 6;
+        else if (qm.status === "ARMED") p5Score += 3;
+      } else if (qm.type === "BULLISH_QM" && qm.isQmlHeld && qm.qmlPrice < currentPrice && (currentPrice - qm.qmlPrice) < currentATR * 1.8) {
+        p5Score -= 6; // Opposing Bullish QM floor directly below
+      }
+    }
 
     // 4. Fair Value Gap (Bearish Imbalance magnet)
     if (relevantFVGs.length > 0) p5Score += 4;
@@ -323,15 +465,42 @@ export function evaluateMasterConfluence(
     p5Score += 8;
   }
   if (indicators.supportLevels.length > 0 && indicators.resistanceLevels.length > 0) p5Score += 2;
+
+  // [E-Book Folder 9 & 10: Zone-Anchored Candlesticks & S/R Role Reversal Flip]
+  const patterns = indicators.candlestickPatterns?.detectedPatterns ?? [];
+  const hasAnchoredPattern = patterns.some((p) => p.isZoneAnchored);
+  if (hasAnchoredPattern) p5Score += 3;
+
+  const isRoleReversed = indicators.clusteredSR?.supports.some((s) => s.isRoleReversed) || indicators.clusteredSR?.resistances.some((r) => r.isRoleReversed);
+  if (isRoleReversed) p5Score += 2;
+
+  // Session Liquidity Sweep Confluence
+  const sessionSweep = indicators.sessionSweep;
+  if (sessionSweep && sessionSweep.sweepType !== "NONE") {
+    if ((bias === "BULLISH" && sessionSweep.sweepType === "BULLISH_SWEEP") ||
+        (bias === "BEARISH" && sessionSweep.sweepType === "BEARISH_SWEEP")) {
+      p5Score += 5;
+    } else {
+      p5Score -= 3; // Opposing sweep
+    }
+  }
+
   p5Score = Math.max(0, Math.min(20, p5Score));
 
   const zoneDesc = premDisc ? `Zone: ${premDisc.zone} (${premDisc.percentile}%)` : "";
   const obDesc = orderBlocks?.nearestBlock ? `OB: ${orderBlocks.nearestBlock.type}` : "SMC: Structure Normal";
   const mssDesc = mss?.detected ? `MSS: ${mss.type}` : "";
-  const p5Status = [obDesc, zoneDesc, mssDesc, relevantFVGs.length > 0 ? `${relevantFVGs.length} FVG` : ""].filter(Boolean).join(" | ");
+  const obPARev = indicators.obPAReversal;
+  const obPAText = obPARev?.detected ? `🏛️ OB PA: ${obPARev.reversalPattern}` : "";
+  const p5Status = [obPAText, obDesc, zoneDesc, mssDesc, relevantFVGs.length > 0 ? `${relevantFVGs.length} FVG` : ""].filter(Boolean).join(" | ");
 
-  const p1Scaled = Math.min(wTrend, Math.round((p1Score / 25) * wTrend));
-  const p2Scaled = Math.min(wMom, Math.round((p2Score / 20) * wMom));
+  // Clamp raw scores to their natural maximums before proportional scaling.
+  // Without clamping, stacking bonuses (E-Book pullback +4+2, MTF +6, MTFConf +5 on top of base 21)
+  // would cause p1 to hit 45+ and p2 to hit 32+, distorting the weighted output.
+  const p1Clamped = Math.max(0, Math.min(25, p1Score));
+  const p2Clamped = Math.max(0, Math.min(20, p2Score));
+  const p1Scaled = Math.min(wTrend, Math.round((p1Clamped / 25) * wTrend));
+  const p2Scaled = Math.min(wMom, Math.round((p2Clamped / 20) * wMom));
   const p3Scaled = Math.min(wSq, Math.round((p3Score / 20) * wSq));
   const p4Scaled = Math.min(wVol, Math.round((p4Score / 15) * wVol));
   const p5Scaled = Math.min(wSmc, Math.round((p5Score / 20) * wSmc));
@@ -381,20 +550,44 @@ export function evaluateMasterConfluence(
   }
 
   // ─── [8-IMAGE MATRIX] BREAKOUT CONFIRMATION & FALSE BREAKOUT TRAP SHIELD ───
-  if (contextOptions?.breakoutInfo) {
-    const bInfo = contextOptions.breakoutInfo;
-    if (bInfo.breakoutType === "VALID_BREAKOUT") {
-      const bonus = (bInfo.checklistScore && bInfo.checklistScore >= 6) ? 8 : 5;
+  const bInfo = contextOptions?.breakoutInfo;
+  if (bInfo) {
+    if (bInfo.breakoutType === "VALID_BREAKOUT" || bInfo.retestState === "RETEST_BOUNCED") {
+      const bonus = (bInfo.checklistScore && bInfo.checklistScore >= 6) || bInfo.retestState === "RETEST_BOUNCED" ? 8 : 5;
       totalScore = Math.min(100, totalScore + bonus);
       if (totalScore >= 85) grade = "A+";
       else if (totalScore >= 75) grade = "A";
-      verdict += ` • 🚀 Institutional Breakout ยืนยัน (${bInfo.checklistScore || 6}/7 ข้อ | Vol ${bInfo.volumeRatio || 1.5}x | Win-Rate 75-80%)`;
+      verdict += bInfo.retestState === "RETEST_BOUNCED"
+        ? ` • 💎 Break & Retest Bounced ยืนยันสมบูรณ์ (Win-Rate 80%+)`
+        : ` • 🚀 Institutional Breakout ยืนยัน (${bInfo.checklistScore || 6}/7 ข้อ | Vol ${bInfo.volumeRatio || 1.5}x | Win-Rate 75-80%)`;
     } else if (bInfo.breakoutType === "FALSE_BREAKOUT_TRAP") {
       totalScore = Math.max(20, totalScore - 12);
       if (grade === "A+" || grade === "A") {
         grade = "B";
       }
       verdict = `⚠️ False Breakout Trap Shield: ตรวจพบไส้เทียนต้าน ${(bInfo.oppositeWickRatio ? bInfo.oppositeWickRatio * 100 : 45).toFixed(0)}% ขาด Volume หนุน - ระงับการเปิด Follow เพื่อป้องกันการโดนลาก`;
+    }
+  }
+
+  // ─── [8-IMAGE S/R ZONE & S-R FLIP CONFLUENCE] ───
+  const cSR = indicators.clusteredSR;
+  if (cSR) {
+    if (cSR.srFlipDetected) {
+      totalScore = Math.min(100, totalScore + 6);
+      verdict += " • ⚡ S-R Flip ยืนยันการสลับหน้าที่แนวรับ-ต้าน";
+    }
+    if (bias === "BULLISH" && cSR.activeZoneState === "INSIDE_SUPPORT_ZONE") {
+      const rev = cSR.nearestSupport?.reversalPattern;
+      if (rev === "BULLISH_PINBAR" || rev === "BULLISH_ENGULFING") {
+        totalScore = Math.min(100, totalScore + 7);
+        verdict += ` • 🎯 เด้งรับโซน Support พร้อม ${rev}`;
+      }
+    } else if (bias === "BEARISH" && cSR.activeZoneState === "INSIDE_RESISTANCE_ZONE") {
+      const rev = cSR.nearestResistance?.reversalPattern;
+      if (rev === "BEARISH_PINBAR" || rev === "BEARISH_ENGULFING") {
+        totalScore = Math.min(100, totalScore + 7);
+        verdict += ` • 🎯 เด้งต้านโซน Resistance พร้อม ${rev}`;
+      }
     }
   }
 

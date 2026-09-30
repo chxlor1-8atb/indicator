@@ -1,4 +1,5 @@
 import { getThaiTimeParts } from "./sessionEngine";
+import { Candle } from "./types";
 
 export type CalendarImpact = "HIGH" | "MEDIUM" | "LOW" | "HOLIDAY";
 
@@ -505,4 +506,189 @@ export function getNewsSafetyShieldStatus(symbol: string, customDate?: Date): Ca
     positionSizeReductionPct: isOrangeCaution ? 30 : 0,
     isLiveFeed: isLive,
   };
+}
+
+export interface FlashVolatilitySpikeResult {
+  isSpike: boolean;
+  spikeRatio: number;
+  currentRange: number;
+  baselineATR: number;
+  reason?: string;
+}
+
+/**
+ * Flash Volatility Spike Circuit Breaker (Pillar 3)
+ * Detects abnormal single-bar volatility expansion (> 3.0x 14-period ATR)
+ * indicating unannounced breaking news, speeches, or black swan liquidity vacuums.
+ */
+export function detectFlashVolatilitySpike(
+  candles: Candle[],
+  atrMultiplier = 3.0
+): FlashVolatilitySpikeResult {
+  if (!candles || candles.length < 16) {
+    return { isSpike: false, spikeRatio: 1.0, currentRange: 0, baselineATR: 0 };
+  }
+
+  const lastBar = candles[candles.length - 1];
+  const currentRange = lastBar.high - lastBar.low;
+  const currentBody = Math.abs(lastBar.close - lastBar.open);
+
+  // Compute 14-period baseline ATR from preceding bars (excluding the anomalous current bar)
+  let sumTR = 0;
+  for (let i = candles.length - 15; i < candles.length - 1; i++) {
+    const prev = candles[i - 1];
+    const curr = candles[i];
+    const tr = Math.max(
+      curr.high - curr.low,
+      Math.abs(curr.high - prev.close),
+      Math.abs(curr.low - prev.close)
+    );
+    sumTR += tr;
+  }
+  const baselineATR = sumTR / 14;
+
+  if (baselineATR <= 0) {
+    return { isSpike: false, spikeRatio: 1.0, currentRange, baselineATR: 0 };
+  }
+
+  const spikeRatio = Number((currentRange / baselineATR).toFixed(2));
+  const bodyRatio = Number((currentBody / baselineATR).toFixed(2));
+
+  if (spikeRatio >= atrMultiplier || bodyRatio >= atrMultiplier * 0.8) {
+    return {
+      isSpike: true,
+      spikeRatio,
+      currentRange,
+      baselineATR,
+      reason: `⚡ [Flash Volatility Spike Circuit Breaker] แท่งเทียนกระชากผิดปกติ (${spikeRatio}x ATR ปกติ): ตลาดอาจมีข่าวด่วนหรือ Black Swan นอกตาราง พักเข้าเทรด 15 นาที เพื่อความปลอดภัย`,
+    };
+  }
+
+  return {
+    isSpike: false,
+    spikeRatio,
+    currentRange,
+    baselineATR,
+  };
+}
+
+export interface PostNewsSweepResult {
+  detected: boolean;
+  type?: "BUY" | "SELL";
+  sweptLevel?: number;
+  sweepExtreme?: number;
+  entryPrice?: number;
+  slPrice?: number;
+  tp1Price?: number;
+  tp2Price?: number;
+  riskReward?: number;
+  confidenceScore?: number;
+  rationale?: string;
+}
+
+/**
+ * Post-News Liquidity Sweep / Turtle Soup Reversal Engine (Pillar 3 & 4)
+ * Detects institutional liquidity grabs after high-impact economic news releases.
+ * When price spikes out to sweep previous session high/low, exhausts volume,
+ * and leaves a rejection wick > 48% of the range, it generates a sniper reversal setup.
+ */
+export function detectPostNewsLiquiditySweep(
+  candles: Candle[],
+  precision: number = 2
+): PostNewsSweepResult {
+  if (!candles || candles.length < 15) {
+    return { detected: false };
+  }
+
+  const curr = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+
+  // Lookback 12 bars before the current/prev bar to find pre-news session boundaries
+  const preNewsLookback = candles.slice(Math.max(0, candles.length - 14), candles.length - 2);
+  if (preNewsLookback.length < 5) return { detected: false };
+
+  const sessionHigh = Math.max(...preNewsLookback.map((b) => b.high));
+  const sessionLow = Math.min(...preNewsLookback.map((b) => b.low));
+
+  // Calculate baseline ATR
+  let sumTR = 0;
+  for (let i = candles.length - 15; i < candles.length - 1; i++) {
+    const p = candles[i - 1];
+    const c = candles[i];
+    sumTR += Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+  }
+  const atr = sumTR / 14 || 2.0;
+
+  // Check Bullish Turtle Soup: Price swept below sessionLow, now rejected back up
+  const isSweepLow = prev.low < sessionLow || curr.low < sessionLow;
+  const lowestWick = Math.min(prev.low, curr.low);
+  const currLowerWick = Math.min(curr.close, curr.open) - curr.low;
+  const currRange = curr.high - curr.low;
+  const currWickPct = currRange > 0 ? (currLowerWick / currRange) * 100 : 0;
+
+  if (isSweepLow && curr.close > sessionLow && (currWickPct >= 48 || curr.close > curr.open)) {
+    const sweepDist = sessionLow - lowestWick;
+    if (sweepDist >= atr * 0.25 && sweepDist <= atr * 2.5) {
+      const entry = Number(curr.close.toFixed(precision));
+      const sl = Number((lowestWick - atr * 0.25).toFixed(precision));
+      const risk = entry - sl;
+      if (risk > 0) {
+        const tp1 = Number((entry + risk * 1.5).toFixed(precision));
+        const tp2 = Number((sessionHigh - atr * 0.2).toFixed(precision));
+        const rr = Number(((tp2 - entry) / risk).toFixed(1));
+        if (rr >= 2.0) {
+          return {
+            detected: true,
+            type: "BUY",
+            sweptLevel: sessionLow,
+            sweepExtreme: lowestWick,
+            entryPrice: entry,
+            slPrice: sl,
+            tp1Price: tp1,
+            tp2Price: tp2,
+            riskReward: rr,
+            confidenceScore: 88,
+            rationale: `🎯 [Post-News Turtle Soup BUY] ราคาสะบัดกวาด Stop Loss ใต้ก้น $${sessionLow.toFixed(precision)} ไป $${sweepDist.toFixed(precision)} จุด แล้วดีดกลับเข้ากรอบพร้อมทิ้งไส้ ${currWickPct.toFixed(0)}% (Institutional Reversal)`,
+          };
+        }
+      }
+    }
+  }
+
+  // Check Bearish Turtle Soup: Price swept above sessionHigh, now rejected back down
+  const isSweepHigh = prev.high > sessionHigh || curr.high > sessionHigh;
+  const highestWick = Math.max(prev.high, curr.high);
+  const currUpperWick = curr.high - Math.max(curr.close, curr.open);
+  const currUpperWickPct = currRange > 0 ? (currUpperWick / currRange) * 100 : 0;
+
+  if (isSweepHigh && curr.close < sessionHigh && (currUpperWickPct >= 48 || curr.close < curr.open)) {
+    const sweepDist = highestWick - sessionHigh;
+    if (sweepDist >= atr * 0.25 && sweepDist <= atr * 2.5) {
+      const entry = Number(curr.close.toFixed(precision));
+      const sl = Number((highestWick + atr * 0.25).toFixed(precision));
+      const risk = sl - entry;
+      if (risk > 0) {
+        const tp1 = Number((entry - risk * 1.5).toFixed(precision));
+        const tp2 = Number((sessionLow + atr * 0.2).toFixed(precision));
+        const rr = Number(((entry - tp2) / risk).toFixed(1));
+        if (rr >= 2.0) {
+          return {
+            detected: true,
+            type: "SELL",
+            sweptLevel: sessionHigh,
+            sweepExtreme: highestWick,
+            entryPrice: entry,
+            slPrice: sl,
+            tp1Price: tp1,
+            tp2Price: tp2,
+            riskReward: rr,
+            confidenceScore: 88,
+            rationale: `🎯 [Post-News Turtle Soup SELL] ราคากระชากกวาด Stop Loss เหนือยอด $${sessionHigh.toFixed(precision)} ไป $${sweepDist.toFixed(precision)} จุด แล้วทุบกลับเข้ากรอบพร้อมทิ้งไส้ ${currUpperWickPct.toFixed(0)}% (Institutional Reversal)`,
+          };
+        }
+      }
+    }
+  }
+
+  return { detected: false };
 }

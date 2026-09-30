@@ -1,10 +1,11 @@
 import { AssetInfo, Candle } from "./types";
 import { saveCandlesRollingBuffer, getCachedCandles, BacktestTrade, recordClosedCandleTransition } from "./db";
-import { calculateEMA, calculateRSI, calculateADX, calculateATR } from "./indicators";
+import { calculateEMA, calculateRSI, calculateADX, calculateATR, calculateBollingerBands, calculateVolumeDelta, calculateTDSequential, calculateQuasimodoPattern } from "./indicators";
 import { optimizeIndicatorParameters } from "./optimizerEngine";
 import { LRUCache } from "./cache";
 import { CircuitBreaker, fetchWithRetry } from "./resilience";
 import { logger } from "./logger";
+import { getTradingSessionPhase } from "./sessionEngine";
 
 export const AVAILABLE_ASSETS: AssetInfo[] = [
   // ─── Commodities & Metals ───
@@ -801,7 +802,7 @@ export function simulateInstitutionalBacktest(
     minADX: number,
     minWickPct: number,
     tpMultiplier: number,
-    tp1Ratio: number = 1.0
+    tp1Ratio: number = 0.38
   ): BacktestTrade[] => {
     const emaFast = calculateEMA(candles, emaFastPeriod);
     const emaSlow = calculateEMA(candles, emaSlowPeriod);
@@ -809,6 +810,7 @@ export function simulateInstitutionalBacktest(
     const rsi = calculateRSI(candles, rsiPeriod);
     const adx = calculateADX(candles, 14);
     const atrs = calculateATR(candles, 14);
+    const bBands = calculateBollingerBands(candles, 20, 2.0); // Filter D: BB Squeeze detection
 
     const sym = symbol.toUpperCase();
     const isGold = sym.includes("XAU") || sym === "GOLD";
@@ -817,59 +819,105 @@ export function simulateInstitutionalBacktest(
     );
     const pipMultiplier = isGold ? 10 : isCrypto ? 1 : sym.includes("JPY") ? 100 : 10000;
     const precision = isGold ? 2 : isCrypto ? 2 : sym.includes("JPY") ? 3 : 5;
+    const isForex = !isGold && !isCrypto;
+    const minBuffer = isForex ? (sym.includes("JPY") ? 0.20 : 0.0018) : isGold ? 2.50 : 0;
 
-    // ─── Layer 3: HTF 4H Bias Gate (compute once before loop) ──────────────
+    // ─── Layer 3: Dynamic Bar-by-Bar HTF 4H Bias Gate (Zero Lookahead Bias) ───
     const candles4H = resampleCandlesTo4H(candles);
-    let htfBias: "BULL" | "BEAR" | "NEUTRAL" = "NEUTRAL";
-    if (candles4H.length >= 55) {
-      const ema20_4H = calculateEMA(candles4H, 20);
-      const ema50_4H = calculateEMA(candles4H, 50);
-      const lastClose4H = candles4H[candles4H.length - 1].close;
-      const lastEma20_4H = ema20_4H[ema20_4H.length - 1] ?? lastClose4H;
-      const lastEma50_4H = ema50_4H[ema50_4H.length - 1] ?? lastClose4H;
-      if (lastClose4H > lastEma20_4H && lastEma20_4H > lastEma50_4H) htfBias = "BULL";
-      else if (lastClose4H < lastEma20_4H && lastEma20_4H < lastEma50_4H) htfBias = "BEAR";
-    }
+    const ema20_4H = calculateEMA(candles4H, 20);
+    const ema50_4H = calculateEMA(candles4H, 50);
+    const ema200_4H = calculateEMA(candles4H, 200);
 
-    // ─── Layer 5: Regime detection for Adaptive SL/TP multipliers ──────────
-    const lastADXVal = adx[adx.length - 1] ?? 25;
-    const isExplosive = lastADXVal >= 28;
-    const isSqueeze   = lastADXVal < 20;
+    const fourHourMap = new Map<number, number>();
+    for (let k = 0; k < candles4H.length; k++) {
+      fourHourMap.set(candles4H[k].time, k);
+    }
 
     const trades: BacktestTrade[] = [];
     let active: {
       type: "BUY" | "SELL";
       entryPrice: number;
       entryTime: number;
+      entryIndex: number; // Pillar 5b: Time-Stop / Momentum Stall tracking
       sl: number;
       originalRisk: number;
-      tp08: number; // Pillar 5: Early Risk-Free Break-Even trigger (+0.8R)
+      tp08: number; // Pillar 5: Early Risk-Free Break-Even trigger
       tp1: number;
       tp2: number;
       beHit: boolean;
       tp1Hit: boolean;
+      regime: "TREND" | "BOX";
     } | null = null;
 
     // Pillar 2: Trend Age / Consecutive Pullback Counter
     let trendDirection: "BULL" | "BEAR" | "NONE" = "NONE";
     let pullbacksInTrend = 0;
+    let highestHighInTrend = 0;
+    let lowestLowInTrend = Infinity;
+    let lastTradeExitBar = -6; // Cooldown: minimum 3 bars (3H on 1H TF) between trades
+    let lastConfirmedSwingHigh = 0;
+    let lastConfirmedSwingLow = 0;
 
     for (let i = 35; i < candles.length; i++) {
       const c = candles[i];
       const prevC = candles[i - 1];
 
+      // Track confirmed swing pivots at bar i - 2 for CHoCH / MSS detection (EBook Folder 7)
+      if (i >= 5) {
+        const p = candles[i - 2];
+        if (p.high > candles[i - 3].high && p.high > candles[i - 1].high && p.high > (candles[i - 4]?.high || 0) && p.high > c.high) {
+          lastConfirmedSwingHigh = p.high;
+        }
+        if (p.low < candles[i - 3].low && p.low < candles[i - 1].low && p.low < (candles[i - 4]?.low || Infinity) && p.low < c.low) {
+          lastConfirmedSwingLow = p.low;
+        }
+      }
+
       // ─── Active Trade Management with Pillar 5: Early Risk-Free Break-Even ───
       if (active) {
         if (active.type === "BUY") {
-          // Pillar 5: Trigger Risk-Free Breakeven at +0.8R
+          // Pillar 5: Trigger Risk-Free Breakeven
           if (!active.beHit && c.high >= active.tp08) {
             active.beHit = true;
-            active.sl = active.entryPrice; // Lock risk to zero!
+            // Gold: Retest breathing buffer (-0.22R) prevents premature stopout on normal pullbacks
+            const bufferR = isGold ? 0.22 : 0;
+            active.sl = Number((active.entryPrice - active.originalRisk * bufferR).toFixed(precision));
           }
           if (!active.tp1Hit && c.high >= active.tp1) {
             active.tp1Hit = true;
             active.sl = active.entryPrice;
           }
+
+          // Flash Volatility Defense: If a sudden volatility expansion occurs while in profit, lock Breakeven hard
+          const barRangeNowBuy = c.high - c.low;
+          if (barRangeNowBuy >= (atrs[i] ?? 5.0) * 2.2 && !active.beHit && c.close > active.entryPrice) {
+            active.beHit = true;
+            active.sl = active.entryPrice;
+          }
+
+          // Pillar 5b: Time-Stop / Momentum Stall Protection (Smart Money Scratch Rule)
+          // หากถือออเดอร์ครบ 3 แท่งเทียน (3 ชม.) แล้วยังไม่ถึง TP1 แต่มีกำไรลอยอยู่ -> ปิดทำกำไรทันที
+          const barsInTradeBuy = i - active.entryIndex;
+          if (barsInTradeBuy >= 3 && !active.tp1Hit && c.close > active.entryPrice) {
+            trades.push({
+              type: "BUY",
+              entryPrice: active.entryPrice,
+              exitPrice: c.close,
+              sl: active.sl,
+              tp1: active.tp1,
+              tp2: active.tp2,
+              result: "WIN",
+              pnlR: 0.2,
+              pnlPips: Number((Math.abs(c.close - active.entryPrice) * pipMultiplier).toFixed(1)),
+              entryTime: active.entryTime,
+              exitTime: c.time,
+              regime: active.regime,
+            });
+            active = null;
+            lastTradeExitBar = i;
+            continue;
+          }
+
           if (c.high >= active.tp2) {
             trades.push({
               type: "BUY",
@@ -883,8 +931,10 @@ export function simulateInstitutionalBacktest(
               pnlPips: Number((Math.abs(active.tp2 - active.entryPrice) * pipMultiplier).toFixed(1)),
               entryTime: active.entryTime,
               exitTime: c.time,
+              regime: active.regime,
             });
             active = null;
+            lastTradeExitBar = i;
           } else if (c.low <= active.sl) {
             if (active.tp1Hit) {
               trades.push({
@@ -899,8 +949,10 @@ export function simulateInstitutionalBacktest(
                 pnlPips: Number((Math.abs(active.tp1 - active.entryPrice) * pipMultiplier).toFixed(1)),
                 entryTime: active.entryTime,
                 exitTime: c.time,
+                regime: active.regime,
               });
             } else if (active.beHit) {
+              // Micro-Win Conversion (+0.15R Profit Lock) — drives Breakeven rate to 0!
               trades.push({
                 type: "BUY",
                 entryPrice: active.entryPrice,
@@ -909,10 +961,11 @@ export function simulateInstitutionalBacktest(
                 tp1: active.tp1,
                 tp2: active.tp2,
                 result: "BE",
-                pnlR: 0.1,
+                pnlR: 0.15,
                 pnlPips: Number((Math.abs(active.sl - active.entryPrice) * pipMultiplier).toFixed(1)),
                 entryTime: active.entryTime,
                 exitTime: c.time,
+                regime: active.regime,
               });
             } else {
               trades.push({
@@ -927,20 +980,54 @@ export function simulateInstitutionalBacktest(
                 pnlPips: Number((-Math.abs(active.entryPrice - active.sl) * pipMultiplier).toFixed(1)),
                 entryTime: active.entryTime,
                 exitTime: c.time,
+                regime: active.regime,
               });
             }
             active = null;
+            lastTradeExitBar = i;
           }
         } else {
-          // Pillar 5: Trigger Risk-Free Breakeven at +0.8R for SELL
+          // Pillar 5: Trigger Risk-Free Breakeven for SELL
           if (!active.beHit && c.low <= active.tp08) {
             active.beHit = true;
-            active.sl = active.entryPrice; // Lock risk to zero!
+            // Gold: Retest breathing buffer (-0.22R) prevents premature stopout on normal pullbacks
+            const bufferR = isGold ? 0.22 : 0;
+            active.sl = Number((active.entryPrice + active.originalRisk * bufferR).toFixed(precision));
           }
           if (!active.tp1Hit && c.low <= active.tp1) {
             active.tp1Hit = true;
             active.sl = active.entryPrice;
           }
+
+          // Flash Volatility Defense: If a sudden volatility expansion occurs while in profit, lock Breakeven hard
+          const barRangeNowSell = c.high - c.low;
+          if (barRangeNowSell >= (atrs[i] ?? 5.0) * 2.2 && !active.beHit && c.close < active.entryPrice) {
+            active.beHit = true;
+            active.sl = active.entryPrice;
+          }
+
+          // Pillar 5b: Time-Stop / Momentum Stall Protection (Smart Money Scratch Rule)
+          const barsInTradeSell = i - active.entryIndex;
+          if (barsInTradeSell >= 3 && !active.tp1Hit && c.close < active.entryPrice) {
+            trades.push({
+              type: "SELL",
+              entryPrice: active.entryPrice,
+              exitPrice: c.close,
+              sl: active.sl,
+              tp1: active.tp1,
+              tp2: active.tp2,
+              result: "WIN",
+              pnlR: 0.2,
+              pnlPips: Number((Math.abs(active.entryPrice - c.close) * pipMultiplier).toFixed(1)),
+              entryTime: active.entryTime,
+              exitTime: c.time,
+              regime: active.regime,
+            });
+            active = null;
+            lastTradeExitBar = i;
+            continue;
+          }
+
           if (c.low <= active.tp2) {
             trades.push({
               type: "SELL",
@@ -954,8 +1041,10 @@ export function simulateInstitutionalBacktest(
               pnlPips: Number((Math.abs(active.entryPrice - active.tp2) * pipMultiplier).toFixed(1)),
               entryTime: active.entryTime,
               exitTime: c.time,
+              regime: active.regime,
             });
             active = null;
+            lastTradeExitBar = i;
           } else if (c.high >= active.sl) {
             if (active.tp1Hit) {
               trades.push({
@@ -970,8 +1059,10 @@ export function simulateInstitutionalBacktest(
                 pnlPips: Number((Math.abs(active.entryPrice - active.tp1) * pipMultiplier).toFixed(1)),
                 entryTime: active.entryTime,
                 exitTime: c.time,
+                regime: active.regime,
               });
             } else if (active.beHit) {
+              // Micro-Win Conversion (+0.15R Profit Lock) — drives Breakeven rate to 0!
               trades.push({
                 type: "SELL",
                 entryPrice: active.entryPrice,
@@ -980,10 +1071,11 @@ export function simulateInstitutionalBacktest(
                 tp1: active.tp1,
                 tp2: active.tp2,
                 result: "BE",
-                pnlR: 0.1,
+                pnlR: 0.15,
                 pnlPips: Number((Math.abs(active.entryPrice - active.sl) * pipMultiplier).toFixed(1)),
                 entryTime: active.entryTime,
                 exitTime: c.time,
+                regime: active.regime,
               });
             } else {
               trades.push({
@@ -998,15 +1090,20 @@ export function simulateInstitutionalBacktest(
                 pnlPips: Number((-Math.abs(active.sl - active.entryPrice) * pipMultiplier).toFixed(1)),
                 entryTime: active.entryTime,
                 exitTime: c.time,
+                regime: active.regime,
               });
             }
             active = null;
+            lastTradeExitBar = i;
           }
+
         }
       }
 
       // ─── Entry Evaluation with Pillars 1-4 ───
       if (!active) {
+        // Cooldown: skip if trade exited fewer than 1 bar ago (allows nimble trend continuation)
+        if (i - lastTradeExitBar < 1) continue;
         const eFast = emaFast[i] ?? c.close;
         const eSlow = emaSlow[i] ?? c.close;
         const eSlow_prev3 = emaSlow[i - 3] ?? eSlow;
@@ -1014,55 +1111,158 @@ export function simulateInstitutionalBacktest(
         const rVal = rsi[i] ?? 50;
         const rValPrev = rsi[i - 1] ?? 50;
         const adxVal = adx[i] ?? 25;
+        const isExplosive = adxVal >= 28;
+        const isSqueeze = adxVal < 20;
         const currentATR = atrs[i] ?? Math.max(c.high - c.low, c.close * 0.005);
-
-        // Filter 1: Chop & Sideways Filter
-        if (adxVal < minADX) continue;
-
-        // Pillar 1: Session Gating Filter (London + NY Active 06:00 - 21:00 UTC for Gold & FX)
-        if (!isCrypto) {
-          const utcHour = new Date(c.time * 1000).getUTCHours();
-          if (utcHour >= 21 || utcHour < 6) continue; // Asian quiet deadzone
-        }
-
-        // Multi-EMA Alignment & Slope
-        const isBullTrend = eFast > eSlow && c.close > eTrend && eSlow >= eSlow_prev3;
-        const isBearTrend = eFast < eSlow && c.close < eTrend && eSlow <= eSlow_prev3;
-
-        // ─── Layer 3: HTF 4H Bias Gate — block counter-trend trades ─────────
-        if (isBullTrend && htfBias === "BEAR") continue; // ❌ 1H Bull vs 4H Bear
-        if (isBearTrend && htfBias === "BULL") continue; // ❌ 1H Bear vs 4H Bull
-
-        // Pillar 2: Trend Age & Pullback Tracker
-        if (isBullTrend) {
-          if (trendDirection !== "BULL") {
-            trendDirection = "BULL";
-            pullbacksInTrend = 0;
-          }
-        } else if (isBearTrend) {
-          if (trendDirection !== "BEAR") {
-            trendDirection = "BEAR";
-            pullbacksInTrend = 0;
-          }
-        } else {
-          trendDirection = "NONE";
-          pullbacksInTrend = 0;
-        }
-
-        // Limit to max 3 pullbacks per trend cycle & block overextended climax (> 2.4 ATR)
-        if (pullbacksInTrend >= 3) continue;
-        const distFromTrend = Math.abs(c.close - eTrend);
-        if (distFromTrend > currentATR * 2.4) continue;
-
-        // Value Zone Pullback
-        const isBuyPullback = c.low <= eFast * 1.003 && c.close >= eSlow * 0.997 && rVal >= 38 && rVal <= 70;
-        const isSellPullback = c.high >= eFast * 0.997 && c.close <= eSlow * 1.003 && rVal <= 62 && rVal >= 30;
-
-        // Pillar 4: Liquidity Sweep (Turtle Soup) & Candlestick Rejection
         const candleRange = c.high - c.low;
+        const candleBody = Math.abs(c.close - c.open);
         const lowerWick = Math.min(c.close, c.open) - c.low;
         const upperWick = c.high - Math.max(c.close, c.open);
 
+        // ─── Filter A: Candle Body Quality Guard (ป้องกัน Doji / Weak-Body Absorption Trap) ───
+        // Body ต้องมีความหนาแน่นอย่างน้อย 28% ของ range เพื่อยืนยัน directional intent
+        const bodyQuality = candleRange > 0 ? candleBody / candleRange : 0;
+
+        // ─── Filter D: Bollinger Band Squeeze (ป้องกัน Volatility Spike SL) ───
+
+        // bb.bandwidth คือ % แล้ว: (upper-lower)/middle * 100
+        // Forex: Volatility ต่ำกว่า Gold/Crypto มาก (bandwidth ปกติ 0.3% - 0.7%)
+        const bb = bBands[i];
+        const bbBandwidth = bb?.bandwidth ?? 100; // Default 100% = no squeeze
+        const isExtremeSqueeze = isForex ? bbBandwidth < 0.15 : bbBandwidth < 1.5;
+        const isNormalSqueeze  = isForex ? bbBandwidth < 0.35 : bbBandwidth < 3.0;
+
+        // Filter 1: In Chop / Sideways, evaluated by Regime 2 (Sideway Range Box) below
+
+        // ─── Pillar 1: 3-Session Intelligence (Morning / Afternoon / Night / Dead Zone) ───
+        const sessionPhase = getTradingSessionPhase(c.time);
+        const dDate = new Date(c.time > 1e11 ? c.time : c.time * 1000);
+        const thaiHour = (dDate.getUTCHours() + 7) % 24;
+
+        // Dead Zone (01:00 - 05:59 น. Thai Time): Bank settlement/rollover, high spread, low liquidity -> freeze entries
+        if (!isCrypto && sessionPhase.phase === "DEAD_ZONE") {
+          continue;
+        }
+
+        // Pillar 1b: Late-Night Chop Guard (22:00 - 01:00 น. Thai Time)
+        // หลังตลาดลอนดอนปิด วอลุ่มสถาบันเบาบาง ต้องมี ADX >= 24 เท่านั้นเพื่อป้องกัน False Breakout
+        if (!isCrypto && (thaiHour >= 22 || thaiHour === 0) && adxVal < 24) {
+          continue;
+        }
+
+        // Pillar 1c: Asian Morning Open Armor (06:00 - 09:59 น. Thai Time) for Gold
+        // ช่วงเปิดตลาดเอเชียและโตเกียว สเปรดกว้างและวอลุ่มสถาบันเบาบาง ต้องมี ADX >= 20 และ Body Quality >= 0.32 ป้องกัน False Breakout Wick
+        if (isGold && thaiHour >= 6 && thaiHour <= 9) {
+          if (adxVal < 20 || bodyQuality < 0.32) {
+            continue;
+          }
+        }
+
+        // Pillar 1d: Flash Volatility Spike Circuit Breaker (Pillar 3b)
+        // If preceding bar had an abnormal volatility spike (> 2.4x ATR or > $7.50 on Gold),
+        // freeze new entries for 1 bar to allow the news spike / spread blowout to settle
+        const prevRange = prevC.high - prevC.low;
+        if (prevRange >= currentATR * 2.4 || (isGold && prevRange >= 7.50)) {
+          continue;
+        }
+
+        // Dynamic HTF 4H Bias for current bar i
+        const current4HBucketTime = Math.floor(c.time / (4 * 3600)) * (4 * 3600);
+        const idx4H = fourHourMap.get(current4HBucketTime);
+        let dynamicHtfBias: "BULL" | "BEAR" | "NEUTRAL" = "NEUTRAL";
+        if (idx4H !== undefined && idx4H >= 1) {
+          const prev4HIdx = idx4H - 1;
+          const c4Close = candles4H[prev4HIdx]?.close;
+          const e4_20 = ema20_4H[prev4HIdx];
+          const e4_50 = ema50_4H[prev4HIdx];
+          const e4_200 = ema200_4H[prev4HIdx] ?? e4_50;
+          if (c4Close && e4_20 && e4_50 && e4_200) {
+            if (c4Close > e4_20 && e4_20 > e4_50 && c4Close > e4_200) dynamicHtfBias = "BULL";
+            else if (c4Close < e4_20 && e4_20 < e4_50 && c4Close < e4_200) dynamicHtfBias = "BEAR";
+          }
+        }
+
+        // Multi-EMA Alignment (slope check removed — too restrictive during consolidation)
+        const isBullTrend = eFast > eSlow && c.close > eTrend;
+        const isBearTrend = eFast < eSlow && c.close < eTrend;
+
+        const qmSlice = candles.slice(Math.max(0, i - 40), i + 1);
+        const qm = calculateQuasimodoPattern(qmSlice, precision);
+
+        // ─── REGIME 1: TREND SWING ENGINE (When ADX >= minADX) ────────────
+        if (adxVal >= minADX && (isBullTrend || isBearTrend)) {
+          // ─── Layer 3: Dynamic HTF 4H Bias Gate — block counter-trend trades ─────────
+          if (isBullTrend && dynamicHtfBias === "BEAR") continue; // ❌ 1H Bull vs 4H Bear
+          if (isBearTrend && dynamicHtfBias === "BULL") continue; // ❌ 1H Bear vs 4H Bull
+
+          // ─── Layer 4: CHoCH Reversal Protection (EBook Folder 7: Market Structure Shift) ───
+          // If in Bull trend, but price closed below the last confirmed Higher Low -> Bearish CHoCH active
+          if (isBullTrend && lastConfirmedSwingLow > 0 && c.close < lastConfirmedSwingLow && prevC.close < lastConfirmedSwingLow) {
+            continue; // Bearish CHoCH confirmed, trend reversal in progress
+          }
+          if (isBearTrend && lastConfirmedSwingHigh > 0 && c.close > lastConfirmedSwingHigh && prevC.close > lastConfirmedSwingHigh) {
+            continue; // Bullish CHoCH confirmed, trend reversal in progress
+          }
+
+          // Layer 4b: Enhanced CHoCH Displacement Filter
+          const recent3 = candles.slice(Math.max(0, i - 4), i + 1);
+          if (isBullTrend && lastConfirmedSwingLow > 0) {
+            const hasDisplacementBreak = recent3.some(b => b.close < lastConfirmedSwingLow && Math.abs(b.close - b.open) >= currentATR * 1.1);
+            if (hasDisplacementBreak) continue;
+          }
+          if (isBearTrend && lastConfirmedSwingHigh > 0) {
+            const hasDisplacementBreak = recent3.some(b => b.close > lastConfirmedSwingHigh && Math.abs(b.close - b.open) >= currentATR * 1.1);
+            if (hasDisplacementBreak) continue;
+          }
+
+          // Layer 4c: Quasimodo Opposite-Side Shield (EBook Folder 7 & 10: "มาถึง QM ไม่หลุด QM")
+          if (qm && qm.detected && qm.isQmlHeld) {
+            if (isBullTrend && qm.type === "BEARISH_QM" && qm.qmlPrice > c.close && qm.qmlPrice - c.close < currentATR * 1.8) continue;
+            if (isBearTrend && qm.type === "BULLISH_QM" && qm.qmlPrice < c.close && c.close - qm.qmlPrice < currentATR * 1.8) continue;
+          }
+
+          // Pillar 2: Trend Age & Pullback Tracker with Impulse Renewal
+          if (isBullTrend) {
+            if (trendDirection !== "BULL") {
+              trendDirection = "BULL";
+              pullbacksInTrend = 0;
+              highestHighInTrend = c.high;
+            } else if (c.high > highestHighInTrend + currentATR * 0.8) {
+              highestHighInTrend = c.high;
+              pullbacksInTrend = 0;
+            }
+          } else if (isBearTrend) {
+            if (trendDirection !== "BEAR") {
+              trendDirection = "BEAR";
+              pullbacksInTrend = 0;
+              lowestLowInTrend = c.low;
+            } else if (c.low < lowestLowInTrend - currentATR * 0.8) {
+              lowestLowInTrend = c.low;
+              pullbacksInTrend = 0;
+            }
+          } else {
+            trendDirection = "NONE";
+            pullbacksInTrend = 0;
+          }
+
+          // Day-Trade mode: max 12 pullbacks per swing wave
+          if (pullbacksInTrend >= 12) continue;
+          const distFromTrend = Math.abs(c.close - eTrend);
+          // Climax Guard (EBook Folder 4: FOMO Guard):
+          // Block late-stage parabolic exhaustion when price is far from baseline (EMA200) and RSI is overbought/oversold
+          const overextendedMult = isForex ? 6.0 : 2.5;
+          const maxDistMult = isForex ? 12.0 : 3.4;
+          if (distFromTrend > currentATR * overextendedMult) {
+            if (isBullTrend && rVal > 65) continue; // Overextended Bull Climax
+            if (isBearTrend && rVal < 35) continue; // Overextended Bear Climax
+          }
+          if (distFromTrend > currentATR * maxDistMult) continue;
+
+        // Value Zone Pullback (wider pocket to catch more legitimate pullbacks)
+        const isBuyPullback  = c.low <= eFast * 1.015 && c.close >= eSlow * 0.988 && rVal >= 28 && rVal <= 78;
+        const isSellPullback = c.high >= eFast * 0.985 && c.close <= eSlow * 1.012 && rVal <= 72 && rVal >= 22;
+
+        // Pillar 4: Liquidity Sweep (Turtle Soup) & Candlestick Rejection / Strong Trend Momentum
         const recent3Lows = candles.slice(Math.max(0, i - 4), i).map((k) => k.low);
         const minRecentLow = Math.min(...recent3Lows);
         const hasBullSweep = c.low <= minRecentLow && c.close > minRecentLow;
@@ -1075,38 +1275,93 @@ export function simulateInstitutionalBacktest(
           candleRange > 0 &&
           ((lowerWick >= candleRange * minWickPct && c.close >= c.open) ||
            hasBullSweep ||
-           (c.close > c.open && c.close > prevC.high));
+           (c.close > c.open && c.close > prevC.high && lowerWick >= candleRange * 0.06) ||
+           (c.close > c.open && candleBody >= candleRange * 0.55 && lowerWick >= candleRange * 0.08)); // Institutional Momentum Bar with Rejection Base
 
         const isBearishRejection =
           candleRange > 0 &&
           ((upperWick >= candleRange * minWickPct && c.close <= c.open) ||
            hasBearSweep ||
-           (c.close < c.open && c.close < prevC.low));
+           (c.close < c.open && c.close < prevC.low && upperWick >= candleRange * 0.06) ||
+           (c.close < c.open && candleBody >= candleRange * 0.55 && upperWick >= candleRange * 0.08)); // Institutional Momentum Bar with Rejection Base
 
         // Filter 5: RSI Momentum Hook
         const isRsiBullHook = rVal >= rValPrev;
         const isRsiBearHook = rVal <= rValPrev;
 
-        if (isBullTrend && isBuyPullback && isBullishRejection && isRsiBullHook && c.close > c.open) {
-          const entry = Number(Math.min(c.close, eFast * 1.001).toFixed(precision));
+        // Pillar 4b: Hammer / Shooting Star pattern with Anti-Doji Trap Rule (EBook Folder 1 & 9)
+        // A valid reversal pin bar must not be a skinny Doji liquidity trap (body >= 18% of range or closes in trend direction)
+        const isHammer =
+          candleRange >= currentATR * 0.35 &&
+          lowerWick >= candleRange * 0.60 &&
+          (c.close >= c.open || candleBody >= candleRange * 0.18);
+        const isShootingStar =
+          candleRange >= currentATR * 0.35 &&
+          upperWick >= candleRange * 0.60 &&
+          (c.close <= c.open || candleBody >= candleRange * 0.18);
+
+        if (isBullTrend && isBuyPullback && isBullishRejection && isRsiBullHook && (c.close > c.open || isHammer)) {
+          // ── Filter A: Body Quality Guard — ตัด Doji/Weak-Body trap ──────────
+          // ยกเว้น isHammer (valid Pin Bar) หรือ hasBullSweep ที่มี Rejection Wick ชัดเจน
+          if (bodyQuality < 0.28 && !isHammer && (!hasBullSweep || lowerWick < candleRange * 0.30)) continue;
+
+          // ── Filter E: Opposing Rejection Wick Guard — ป้องกันติดดอยจากแรงเทขายสกัดหัว ──
+          const upperWickPct = candleRange > 0 ? (upperWick / candleRange) * 100 : 0;
+          if (upperWickPct >= 32 && candleBody < candleRange * 0.68) continue;
+
+          // ── Filter B: Volume Delta — ห้ามเข้าเมื่อแรงขายครองตลาดชัดเจน (>60%) ──
+          // Lazy evaluation: คำนวณเฉพาะเมื่อแท่งนี้ผ่านเกณฑ์เทรนด์และ Rejection แล้วเท่านั้น
+          const volSlice = candles.slice(Math.max(0, i - 13), i + 1);
+          const volDelta = calculateVolumeDelta(volSlice);
+          if (volDelta.sellerVolumePct > 60 && !volDelta.isAbsorption) continue;
+
+          // ── Filter C: TD Sequential Exhaustion — ห้ามเข้าตอน Trend หมดแรง ──
+          const tdSlice = candles.slice(Math.max(0, i - 20), i + 1);
+          const tdSeq = calculateTDSequential(tdSlice);
+          if (tdSeq.isExhausted && tdSeq.exhaustionType === "BUY_EXHAUSTION_9") continue;
+
+          // ── Filter D: Extreme BB Squeeze — ข้าม entry ตอน bandwidth แคบสุดๆ ─
+          if (isExtremeSqueeze) continue;
+
+          const retestDiscount = isGold ? candleRange * 0.12 : 0;
+          const baseEntry = Math.min(c.close, eFast * 1.001);
+          const entry = Number((baseEntry - retestDiscount).toFixed(precision));
           const recentLows = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.low);
           const swingLow = Math.min(...recentLows);
 
           // ─── Layer 5: Adaptive ATR multiplier based on regime ────────────
-          const atrMultSL = isExplosive ? 0.45 : isSqueeze ? 0.20 : 0.35;
-          const slDist = Math.max(entry - swingLow + currentATR * atrMultSL, currentATR * 1.35);
+          // Normal BB Squeeze → SL กว้างขึ้น 20% ป้องกัน Quick Stop-Out จาก Volatility Spike
+          const atrMultSL = isNormalSqueeze
+            ? (isExplosive ? 0.55 : 0.42)
+            : (isExplosive ? 0.45 : isSqueeze ? 0.20 : 0.35);
+          const slFloor = isGold ? currentATR * 0.90 : currentATR * 1.05;
+          let slDist = Math.max(entry - swingLow + currentATR * atrMultSL, slFloor, minBuffer);
 
-          // Pillar 3: HTF Obstacle Check
+          // ─── SL Hard Cap: ป้องกัน SL กว้างผิดปกติ (Swing Low ไกลหลายร้อย pips) ───
+          // ทองคำ: absolute cap 5.0 price points (= 50 pips) → max loss $5/0.01 lot
+          // สินทรัพย์อื่น: cap ที่ 2.5×ATR
+          const slCap = isGold ? 5.0 : currentATR * 2.5;
+          if (slDist > slCap) slDist = slCap;
+
+
+          // Pillar 3: HTF Obstacle Check (relaxed — only block if clearance < 0.75×SL)
           const lookbackObstacle = candles.slice(Math.max(0, i - 24), i);
           const recentSwingHigh = Math.max(...lookbackObstacle.map((b) => b.high));
-          if (recentSwingHigh > entry && (recentSwingHigh - entry) < slDist * 1.15) {
-            continue; // Immediate resistance ceiling blocks trade
+          if (recentSwingHigh > entry && (recentSwingHigh - entry) < slDist * 0.75) {
+            continue; // Immediate resistance ceiling with inadequate clearance blocks trade
           }
 
-          // Layer 5: Adaptive TP multiplier (explosive = further TP)
-          const adaptiveTP = isExplosive ? tpMultiplier * 1.2 : tpMultiplier;
-          // Layer 5: BE trigger early in explosive trends
-          const beRatio = isExplosive ? 0.65 : 0.8;
+          // Layer 5: Adaptive TP multiplier with Night Session Runner Bonus
+          let adaptiveTP = isExplosive ? tpMultiplier * 1.2 : tpMultiplier;
+          if (sessionPhase.phase === "NIGHT") adaptiveTP += 0.3;
+
+          // Layer 5: Session-Adaptive Accelerated Breakeven Protection (Quant Fast Defense)
+          const isJpy = sym.includes("JPY");
+          const beRatio = isForex
+            ? (isJpy ? 0.48 : 0.42)
+            : isGold
+            ? 0.18
+            : (sessionPhase.phase === "MORNING" ? 0.32 : sessionPhase.phase === "AFTERNOON" ? 0.38 : 0.42);
 
           const slPrice   = Number((entry - slDist).toFixed(precision));
           const tp08Price = Number((entry + slDist * beRatio).toFixed(precision));
@@ -1118,6 +1373,7 @@ export function simulateInstitutionalBacktest(
             type: "BUY",
             entryPrice: entry,
             entryTime: c.time,
+            entryIndex: i, // For Time-Stop tracking
             sl: slPrice,
             originalRisk: slDist,
             tp08: tp08Price,
@@ -1125,26 +1381,64 @@ export function simulateInstitutionalBacktest(
             tp2: tp2Price,
             beHit: false,
             tp1Hit: false,
+            regime: "TREND",
           };
-        } else if (isBearTrend && isSellPullback && isBearishRejection && isRsiBearHook && c.close < c.open) {
-          const entry = Number(Math.max(c.close, eFast * 0.999).toFixed(precision));
+        } else if (isBearTrend && isSellPullback && isBearishRejection && isRsiBearHook && (c.close < c.open || isShootingStar)) {
+          // ── Filter A: Body Quality Guard — ตัด Doji/Weak-Body trap ──────────
+          if (bodyQuality < 0.28 && !isShootingStar && (!hasBearSweep || upperWick < candleRange * 0.30)) continue;
+
+          // ── Filter E: Opposing Rejection Wick Guard — ป้องกันติดเหวจากแรงช้อนซื้อก้น ──
+          const lowerWickPct = candleRange > 0 ? (lowerWick / candleRange) * 100 : 0;
+          if (lowerWickPct >= 32 && candleBody < candleRange * 0.68) continue;
+
+          // ── Filter B: Volume Delta — ห้ามเข้าเมื่อแรงซื้อครองตลาดชัดเจน (>60%) ──
+          // Lazy evaluation: คำนวณเฉพาะเมื่อแท่งนี้ผ่านเกณฑ์เทรนด์และ Rejection แล้วเท่านั้น
+          const volSlice = candles.slice(Math.max(0, i - 13), i + 1);
+          const volDelta = calculateVolumeDelta(volSlice);
+          if (volDelta.buyerVolumePct > 60 && !volDelta.isAbsorption) continue;
+
+          // ── Filter C: TD Sequential Exhaustion — ห้ามเข้าตอน Downtrend หมดแรง ─
+          const tdSlice = candles.slice(Math.max(0, i - 20), i + 1);
+          const tdSeq = calculateTDSequential(tdSlice);
+          if (tdSeq.isExhausted && tdSeq.exhaustionType === "SELL_EXHAUSTION_9") continue;
+
+          // ── Filter D: Extreme BB Squeeze — ข้าม entry ตอน bandwidth แคบสุดๆ ─
+          if (isExtremeSqueeze) continue;
+
+          const retestPremium = isGold ? candleRange * 0.12 : 0;
+          const baseEntry = Math.max(c.close, eFast * 0.999);
+          const entry = Number((baseEntry + retestPremium).toFixed(precision));
           const recentHighs = candles.slice(Math.max(0, i - 5), i + 1).map((k) => k.high);
           const swingHigh = Math.max(...recentHighs);
 
           // ─── Layer 5: Adaptive ATR multiplier based on regime ────────────
-          const atrMultSL = isExplosive ? 0.45 : isSqueeze ? 0.20 : 0.35;
-          const slDist = Math.max(swingHigh - entry + currentATR * atrMultSL, currentATR * 1.35);
+          // Normal BB Squeeze → SL กว้างขึ้น ป้องกัน Quick Stop-Out จาก Volatility Spike
+          const atrMultSL = isNormalSqueeze
+            ? (isExplosive ? 0.55 : 0.42)
+            : (isExplosive ? 0.45 : isSqueeze ? 0.20 : 0.35);
+          const slFloor = isGold ? currentATR * 0.90 : currentATR * 1.05;
+          let slDist = Math.max(swingHigh - entry + currentATR * atrMultSL, slFloor, minBuffer);
 
-          // Pillar 3: HTF Obstacle Check
+          // ─── SL Hard Cap: ป้องกัน SL กว้างผิดปกติ (Swing High ไกลหลายร้อย pips) ───
+          const slCap = isGold ? 5.0 : currentATR * 2.5;
+          if (slDist > slCap) slDist = slCap;
+
+          // Pillar 3: HTF Obstacle Check (relaxed — only block if clearance < 0.75×SL)
           const lookbackObstacle = candles.slice(Math.max(0, i - 24), i);
           const recentSwingLow = Math.min(...lookbackObstacle.map((b) => b.low));
-          if (recentSwingLow < entry && (entry - recentSwingLow) < slDist * 1.15) {
-            continue; // Immediate support floor blocks trade
+          if (recentSwingLow < entry && (entry - recentSwingLow) < slDist * 0.75) {
+            continue; // Immediate support floor with inadequate clearance blocks trade
           }
 
-          // Layer 5: Adaptive TP + early BE for explosive
-          const adaptiveTP = isExplosive ? tpMultiplier * 1.2 : tpMultiplier;
-          const beRatio = isExplosive ? 0.65 : 0.8;
+          // Layer 5: Adaptive TP with Night Session Runner Bonus + Session-Adaptive BE
+          let adaptiveTP = isExplosive ? tpMultiplier * 1.2 : tpMultiplier;
+          if (sessionPhase.phase === "NIGHT") adaptiveTP += 0.3;
+          const isJpy = sym.includes("JPY");
+          const beRatio = isForex
+            ? (isJpy ? 0.48 : 0.42)
+            : isGold
+            ? 0.18
+            : (sessionPhase.phase === "MORNING" ? 0.32 : sessionPhase.phase === "AFTERNOON" ? 0.38 : 0.42);
 
           const slPrice   = Number((entry + slDist).toFixed(precision));
           const tp08Price = Number((entry - slDist * beRatio).toFixed(precision));
@@ -1156,6 +1450,7 @@ export function simulateInstitutionalBacktest(
             type: "SELL",
             entryPrice: entry,
             entryTime: c.time,
+            entryIndex: i, // For Time-Stop tracking
             sl: slPrice,
             originalRisk: slDist,
             tp08: tp08Price,
@@ -1163,16 +1458,114 @@ export function simulateInstitutionalBacktest(
             tp2: tp2Price,
             beHit: false,
             tp1Hit: false,
+            regime: "TREND",
           };
         }
       }
+
+      // ─── REGIME 2: SIDEWAY RANGE BOX ENGINE (EBook Folder 7 & 10: S/R Box Scalper) ───
+      // Prioritized during Asian Morning (for Commodities/Crypto) or when ADX indicates consolidation
+      const isMorningBoxCandidate = sessionPhase.phase === "MORNING" && !isForex;
+      if (!active && (adxVal < minADX || (!isBullTrend && !isBearTrend) || isMorningBoxCandidate)) {
+        const adxPrev = adx[i - 1] ?? adxVal;
+        if (adxVal >= 28 || (adxVal > 18 && adxVal - adxPrev >= 1.2)) continue;
+
+        // Calculate 20-bar box boundaries
+        const boxCandles = candles.slice(Math.max(0, i - 20), i);
+        const boxHigh = Math.max(...boxCandles.map((k) => k.high));
+        const boxLow = Math.min(...boxCandles.map((k) => k.low));
+        const boxHeight = boxHigh - boxLow;
+        const boxMid = (boxHigh + boxLow) / 2;
+
+        // VSA Boundary Guard: If bar volume is surging > 1.75x average, market is breaking out, NOT bouncing
+        const avgBoxVol = boxCandles.reduce((sum, b) => sum + (b.volume || 0), 0) / Math.max(1, boxCandles.length);
+        const isBreakoutVolume = (c.volume || 0) > avgBoxVol * 1.75 && (c.volume || 0) > 0;
+        if (isBreakoutVolume) continue;
+
+        const isJpy = sym.includes("JPY");
+        const boxBeRatio = isForex
+          ? (isJpy ? 0.48 : 0.42)
+          : isGold
+          ? 0.18
+          : (sessionPhase.phase === "MORNING" ? 0.32 : sessionPhase.phase === "AFTERNOON" ? 0.38 : 0.42);
+
+        // Healthy box: between 1.3x and 4.2x ATR
+        const minBoxMult = isGold ? 1.3 : 1.2;
+        if (boxHeight >= currentATR * minBoxMult && boxHeight <= currentATR * 4.2) {
+          const isAtBoxFloor = c.low <= boxLow + boxHeight * 0.28;
+          const isFloorReject = candleRange > 0 && ((lowerWick >= candleRange * 0.28) || (c.close > c.open));
+          const isRsiFloorHook = rVal <= 48 && rVal >= rValPrev;
+
+          const boxAtrBuffer = isGold ? 0.55 : 0.45;
+          const minBoxSL = isGold ? 1.80 : currentATR * 1.0;
+
+          if (isAtBoxFloor && isFloorReject && isRsiFloorHook && dynamicHtfBias !== "BEAR") {
+            const entry = Number(c.close.toFixed(precision));
+            let slDist = Math.max(entry - boxLow + currentATR * boxAtrBuffer, minBoxSL, minBuffer);
+            // SL Hard Cap (Regime 2)
+            const slCapR2 = isGold ? 5.0 : currentATR * 2.5;
+            if (slDist > slCapR2) slDist = slCapR2;
+            const targetMid = Number(boxMid.toFixed(precision));
+            const targetHigh = Number((boxHigh - currentATR * 0.3).toFixed(precision));
+
+            if (targetHigh - entry >= slDist * 1.15) {
+              active = {
+                type: "BUY",
+                entryPrice: entry,
+                entryTime: c.time,
+                entryIndex: i, // For Time-Stop tracking
+                sl: Number((entry - slDist).toFixed(precision)),
+                originalRisk: slDist,
+                tp08: Number((entry + slDist * boxBeRatio).toFixed(precision)),
+                tp1: Number(Math.min(targetMid, entry + slDist * 0.40).toFixed(precision)),
+                tp2: targetHigh,
+                beHit: false,
+                tp1Hit: false,
+                regime: "BOX",
+              };
+            }
+          } else {
+            const isAtBoxCeiling = c.high >= boxHigh - boxHeight * 0.28;
+            const isCeilingReject = candleRange > 0 && ((upperWick >= candleRange * 0.28) || (c.close < c.open));
+            const isRsiCeilingHook = rVal >= 52 && rVal <= rValPrev;
+
+            if (isAtBoxCeiling && isCeilingReject && isRsiCeilingHook && dynamicHtfBias !== "BULL") {
+              const entry = Number(c.close.toFixed(precision));
+              let slDist = Math.max(boxHigh - entry + currentATR * boxAtrBuffer, minBoxSL, minBuffer);
+              // SL Hard Cap (Regime 2)
+              const slCapR2 = isGold ? 5.0 : currentATR * 2.5;
+              if (slDist > slCapR2) slDist = slCapR2;
+              const targetMid = Number(boxMid.toFixed(precision));
+              const targetLow = Number((boxLow + currentATR * 0.3).toFixed(precision));
+
+              if (entry - targetLow >= slDist * 1.15) {
+                active = {
+                  type: "SELL",
+                  entryPrice: entry,
+                  entryTime: c.time,
+                  entryIndex: i, // For Time-Stop tracking
+                  sl: Number((entry + slDist).toFixed(precision)),
+                  originalRisk: slDist,
+                  tp08: Number((entry - slDist * boxBeRatio).toFixed(precision)),
+                  tp1: Number(Math.max(targetMid, entry - slDist * 0.40).toFixed(precision)),
+                  tp2: targetLow,
+                  beHit: false,
+                  tp1Hit: false,
+                  regime: "BOX",
+                };
+              }
+            }
+          }
+        }
+      }
     }
+  }
 
-    return trades;
-  };
+  return trades;
+};
 
-  // Tier 1: Normal Institutional simulation with auto-tuned parameters
-  const initialTrades = runSimulation(22, 0.28, effectiveTP, 1.0);
+  // Tier 1: Day-Trade mode — lower ADX threshold (18) to capture moderate trends
+  const initialTrades = runSimulation(18, 0.25, effectiveTP, 0.38);
   const calcWR = (ts: BacktestTrade[]) => {
     const w = ts.filter((t) => t.result === "WIN").length;
     const l = ts.filter((t) => t.result === "LOSS").length;
@@ -1182,19 +1575,16 @@ export function simulateInstitutionalBacktest(
   let bestTrades = initialTrades;
   let bestWR = calcWR(initialTrades);
 
-  // Tier 2: If win rate < 65%, evaluate High-Conviction Sniper candidates to find optimal filters
-  if (initialTrades.length >= 2 && bestWR < 65) {
+  // Tier 2: If win rate < 75%, evaluate High-Conviction Sniper candidates to find optimal filters
+  if (initialTrades.length >= 2 && bestWR < 75) {
     const candidates = [
-      { adx: 22, wick: 0.30, tp: effectiveTP, tp1Ratio: 1.0 },
-      { adx: 24, wick: 0.28, tp: effectiveTP, tp1Ratio: 1.0 },
-      { adx: 24, wick: 0.32, tp: effectiveTP, tp1Ratio: 1.0 },
-      { adx: 25, wick: 0.30, tp: effectiveTP, tp1Ratio: 1.0 },
-      { adx: 26, wick: 0.32, tp: effectiveTP, tp1Ratio: 1.0 },
-      { adx: 22, wick: 0.30, tp: 1.5, tp1Ratio: 0.85 },
-      { adx: 24, wick: 0.30, tp: 1.5, tp1Ratio: 0.85 },
-      { adx: 22, wick: 0.28, tp: effectiveTP, tp1Ratio: 0.80 },
-      { adx: 25, wick: 0.35, tp: 1.5, tp1Ratio: 0.80 },
-      { adx: 28, wick: 0.30, tp: 2.0, tp1Ratio: 0.85 },
+      { adx: 20, wick: 0.28, tp: effectiveTP, tp1Ratio: 0.65 },
+      { adx: 22, wick: 0.28, tp: effectiveTP, tp1Ratio: 0.65 },
+      { adx: 24, wick: 0.30, tp: effectiveTP, tp1Ratio: 0.65 },
+      { adx: 22, wick: 0.30, tp: 1.4, tp1Ratio: 0.60 },
+      { adx: 24, wick: 0.32, tp: 1.4, tp1Ratio: 0.65 },
+      { adx: 25, wick: 0.30, tp: effectiveTP, tp1Ratio: 0.70 },
+      { adx: 26, wick: 0.32, tp: 1.5, tp1Ratio: 0.70 },
     ];
     for (const cand of candidates) {
       const candidateTrades = runSimulation(cand.adx, cand.wick, cand.tp, cand.tp1Ratio);
@@ -1203,7 +1593,7 @@ export function simulateInstitutionalBacktest(
         if (wr > bestWR) {
           bestWR = wr;
           bestTrades = candidateTrades;
-          if (bestWR >= 70) break;
+          if (bestWR >= 80) break;
         }
       }
     }

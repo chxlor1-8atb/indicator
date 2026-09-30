@@ -94,6 +94,7 @@ function AnalysisCard({
     const vwap = analysis.tradeSetup.anchoredVwap || analysis.anchoredVwap;
     const cvd = analysis.tradeSetup.cvd || analysis.cvd;
     const ob = analysis.tradeSetup.orderBlocks || analysis.orderBlocks;
+    const obPARev = analysis.tradeSetup.obPAReversal || analysis.obPAReversal;
     const kelly = analysis.tradeSetup.kellySizing || analysis.kellySizing;
     const swp = analysis.tradeSetup.sessionSweep || analysis.sessionSweep;
     const fib = analysis.tradeSetup.fibonacciCluster || analysis.fibonacciCluster;
@@ -2139,6 +2140,28 @@ function AnalysisCard({
                   <div className="text-[11px] text-slate-400">กำลังสแกนโครงสร้างบล็อกสถาบัน...</div>
                 )}
 
+                {/* 🏛️ OB PA-Reversal Confirmation Box */}
+                {(analysis.obPAReversal || analysis.tradeSetup?.obPAReversal)?.detected && (() => {
+                  const rev = analysis.obPAReversal || analysis.tradeSetup?.obPAReversal;
+                  if (!rev || !rev.detected) return null;
+                  return (
+                    <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/30 space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-indigo-300 flex items-center gap-1">
+                          🏛️ PA Reversal: {rev.reversalPattern}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30">
+                          ไส้ปฏิเสธ {rev.rejectionWickPct}%
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono">
+                        <span>🎯 Sniper SL: {rev.sniperStopLoss}</span>
+                        <span className="text-emerald-400 font-bold">ความเสี่ยง {rev.riskPips} pips</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <p className="text-[10px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
                   {analysis.orderBlocks.description}
                 </p>
@@ -3181,18 +3204,38 @@ function AnalysisCard({
                 {/* Candlestick & Locks detail */}
                 <div className="space-y-1 text-xs">
                   {analysis.candlestickPatterns && (
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-400">Candlestick Signal:</span>
-                      <span className={`font-mono font-bold text-[10px] ${
-                        analysis.candlestickPatterns.dominantSignal.includes("BULLISH")
-                          ? "text-emerald-400"
-                          : analysis.candlestickPatterns.dominantSignal.includes("BEARISH")
-                          ? "text-rose-400"
-                          : "text-slate-300"
-                      }`}>
-                        {analysis.candlestickPatterns.dominantSignal} ({analysis.candlestickPatterns.detectedPatterns.length} รูปแบบ)
-                      </span>
-                    </div>
+                    <>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Candlestick Signal:</span>
+                        <span className={`font-mono font-bold text-[10px] ${
+                          analysis.candlestickPatterns.dominantSignal.includes("BULLISH")
+                            ? "text-emerald-400"
+                            : analysis.candlestickPatterns.dominantSignal.includes("BEARISH")
+                            ? "text-rose-400"
+                            : "text-slate-300"
+                        }`}>
+                          {analysis.candlestickPatterns.dominantSignal} ({analysis.candlestickPatterns.detectedPatterns.length} รูปแบบ)
+                        </span>
+                      </div>
+                      {analysis.candlestickPatterns.candleColorRatio && (
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400">20-Bar Color Ratio:</span>
+                          <span className="font-mono text-[10px]">
+                            <span className="text-emerald-400 font-bold">{Math.round(analysis.candlestickPatterns.candleColorRatio.bullRatio * 100)}% Bull</span>
+                            <span className="text-slate-500 mx-1">/</span>
+                            <span className="text-rose-400 font-bold">{Math.round(analysis.candlestickPatterns.candleColorRatio.bearRatio * 100)}% Bear</span>
+                          </span>
+                        </div>
+                      )}
+                      {analysis.candlestickPatterns.twoBarConfirmation?.isConfirmed && (
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400">Two-Bar Confirm:</span>
+                          <span className="font-mono font-bold text-[10px] text-cyan-300">
+                            ⚡ {analysis.candlestickPatterns.twoBarConfirmation.setupPattern?.replace(/_/g, " ")} Bounced
+                          </span>
+                        </div>
+                      )}
+                    </>
                   )}
                   {analysis.milestone50 && (
                     <>

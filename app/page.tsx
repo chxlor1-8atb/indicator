@@ -9,6 +9,7 @@ import AnalysisCard from "@/components/AnalysisCard";
 import SignalJournalCard from "@/components/SignalJournalCard";
 import MarketOpportunityRadar from "@/components/MarketOpportunityRadar";
 import TelegramSettingsModal from "@/components/TelegramSettingsModal";
+import Mt5EaModal from "@/components/Mt5EaModal";
 import AmbientBackground, { BackgroundTheme } from "@/components/AmbientBackground";
 import BackgroundCustomizerModal from "@/components/BackgroundCustomizerModal";
 import { Candle, IndicatorData, NewsItem, AnalysisResult, AssetScannerSummary } from "@/lib/types";
@@ -57,6 +58,7 @@ export default function DashboardPage() {
 
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
   const [isBackgroundModalOpen, setIsBackgroundModalOpen] = useState<boolean>(false);
+  const [isMt5ModalOpen, setIsMt5ModalOpen] = useState<boolean>(false);
   const [bgTheme, setBgTheme] = useState<BackgroundTheme>("cyber-aurora");
   const [bgIntensity, setBgIntensity] = useState<number>(0.75);
   const [parallaxEnabled, setParallaxEnabled] = useState<boolean>(true);
@@ -510,6 +512,7 @@ export default function DashboardPage() {
         wsRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAsset, selectedTimeframe, loadMarketData, loadNews]);
 
   // Continuous Real-Time Autonomous Scanner Loop (reads cached status every 60s; paused when tab hidden)
@@ -610,6 +613,7 @@ export default function DashboardPage() {
         isLoading={isLoadingMarket || isLoadingNews || isAnalyzing}
         onOpenTelegramModal={() => setIsTelegramModalOpen(true)}
         onOpenBackgroundModal={() => setIsBackgroundModalOpen(true)}
+        onOpenMt5Modal={() => setIsMt5ModalOpen(true)}
       />
 
       {/* Main Container */}
@@ -999,6 +1003,12 @@ export default function DashboardPage() {
         onSave={() => {
           setTelegramStatus(null);
         }}
+      />
+
+      {/* MT5 Expert Advisor Download & Setup Modal */}
+      <Mt5EaModal
+        isOpen={isMt5ModalOpen}
+        onClose={() => setIsMt5ModalOpen(false)}
       />
 
       {/* Visual FX & Background Studio Modal */}

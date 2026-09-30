@@ -702,8 +702,7 @@ function MarketChart({
   };
 
   animId = requestAnimationFrame(render);
-  return () => cancelAnimationFrame(animId);
-}, [candles, indicators, showSuperTrend, showBollinger, showEMA, showVWAP, showHeikinAshi, showSR, showRSI, hoverIndex, mousePos, optimizedConfig, containerWidth, livePrice]);
+  }, [candles, indicators, showSuperTrend, showBollinger, showEMA, showVWAP, showHeikinAshi, showSR, showRSI, hoverIndex, mousePos, optimizedConfig, containerWidth, livePrice, assetPrecision, timeframe]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;

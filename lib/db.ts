@@ -1369,22 +1369,37 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
       return result;
     }
 
-    // Query historical outcomes for this symbol
-    const stats = (await sql.query(
+    // Query historical outcomes for this symbol directly from resolved ai_signals
+    let stats = (await sql.query(
       `
       SELECT 
         COUNT(*)::int as total,
-        COUNT(CASE WHEN outcome IN ('HIT_TP1', 'HIT_TP2') THEN 1 END)::int as wins,
-        COUNT(CASE WHEN outcome = 'HIT_SL' THEN 1 END)::int as losses
-      FROM signal_feedback_lessons
-      WHERE symbol = $1 OR symbol = 'ALL'
+        COUNT(CASE WHEN status IN ('HIT_TP1', 'HIT_TP2') THEN 1 END)::int as wins,
+        COUNT(CASE WHEN status = 'HIT_SL' THEN 1 END)::int as losses
+      FROM ai_signals
+      WHERE symbol = $1 AND status != 'ACTIVE'
       `,
       [symbol.toUpperCase()]
     )) as unknown as Array<{ total: number; wins: number; losses: number }>;
 
-    const total = stats[0]?.total || 0;
+    if (!stats || !stats[0] || stats[0].total < 4) {
+      // Fallback to overall system performance if pair has fewer than 4 resolved signals
+      stats = (await sql.query(
+        `
+        SELECT 
+          COUNT(*)::int as total,
+          COUNT(CASE WHEN status IN ('HIT_TP1', 'HIT_TP2') THEN 1 END)::int as wins,
+          COUNT(CASE WHEN status = 'HIT_SL' THEN 1 END)::int as losses
+        FROM ai_signals
+        WHERE status != 'ACTIVE'
+        `
+      )) as unknown as Array<{ total: number; wins: number; losses: number }>;
+    }
+
     const wins = stats[0]?.wins || 0;
-    const winRate = total >= 4 ? Number(((wins / total) * 100).toFixed(1)) : (total > 0 ? Number(((wins / total) * 100).toFixed(1)) : 0);
+    const losses = stats[0]?.losses || 0;
+    const resolved = wins + losses;
+    const winRate = resolved >= 4 ? Number(((wins / resolved) * 100).toFixed(1)) : 0;
 
     let trend = 25;
     let momentum = 20;
@@ -1394,7 +1409,7 @@ export async function getAdaptiveWeights(symbol: string): Promise<AdaptiveWeight
     let minThreshold = 70;
     let isSelfTuned = false;
 
-    if (total >= 4) {
+    if (resolved >= 4) {
       isSelfTuned = true;
       if (winRate < 75) {
         // Tough/choppy regime -> Strengthen trend following and institutional levels, tighten entry gating
@@ -1466,6 +1481,7 @@ export interface BacktestTrade {
   pnlPips: number;
   entryTime: number;
   exitTime: number;
+  regime?: "TREND" | "BOX";
 }
 
 /**

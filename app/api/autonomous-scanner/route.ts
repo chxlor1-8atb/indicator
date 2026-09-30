@@ -6,6 +6,7 @@ import {
   DEFAULT_PILOT_CONFIG,
   approveOrder,
   getScannerCache,
+  getAccountEquityState,
 } from "@/lib/autonomousEngine";
 import {
   saveAiSignal,
@@ -307,6 +308,7 @@ export async function GET(request: NextRequest) {
       {
         success: true,
         pilotConfig: DEFAULT_PILOT_CONFIG,
+        equityState: getAccountEquityState(),
         activeOrders,
         telemetryLogs,
         scannerSummaries: scanResult?.summaries || [],
@@ -343,6 +345,12 @@ export async function POST(request: NextRequest) {
     if (body.accountType === "STANDARD" || body.accountType === "CENT") {
       DEFAULT_PILOT_CONFIG.accountType = body.accountType;
     }
+    if (typeof body.accountBalance === "number") {
+      DEFAULT_PILOT_CONFIG.accountBalance = body.accountBalance;
+    }
+    if (typeof body.peakBalance === "number") {
+      DEFAULT_PILOT_CONFIG.peakBalance = body.peakBalance;
+    }
     // ปรับ Approval Mode ผ่าน POST
     if (body.approvalMode === "AUTO" || body.approvalMode === "SEMI_AUTO" || body.approvalMode === "SIGNAL_ONLY") {
       DEFAULT_PILOT_CONFIG.approvalMode = body.approvalMode;
@@ -352,6 +360,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Autonomous Pilot Config updated",
       pilotConfig: DEFAULT_PILOT_CONFIG,
+      equityState: getAccountEquityState(),
     });
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : "Failed to update config";

@@ -17,15 +17,15 @@ export function orchestrateStrategyDecision(input: OrchestratorInput): Orchestra
   const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : indicators.currentPrice;
 
   // ─── 1. EXTRACT REGIME & MARKET PHYSICS ───
-  const hurst = indicators.masterSuite?.quantMath.hurst.hurst ?? 0.50;
-  const isSqueezeActive = indicators.masterSuite?.volatility.ttmSqueeze.isSqueezeOn ??
+  const hurst = indicators.hurstExponent?.hurst ?? 0.50;
+  const isSqueezeActive = indicators.ttmSqueeze?.isSqueezeOn ??
     (indicators.bollingerBands && indicators.bollingerBands.length > 0
       ? (indicators.bollingerBands[indicators.bollingerBands.length - 1]?.bandwidth ?? 5) < 2.0
       : false);
 
   const isStrongTrend = hurst > 0.54 || (indicators.adx && indicators.adx.length > 0 ? (indicators.adx[indicators.adx.length - 1] ?? 0) > 25 : false);
   const isChopMarket = hurst < 0.46 || (indicators.adx && indicators.adx.length > 0 ? (indicators.adx[indicators.adx.length - 1] ?? 0) < 18 : false);
-  const hasHarmonicPattern = indicators.masterSuite?.harmonics.hasPattern ?? false;
+  const hasHarmonicPattern = indicators.harmonics?.hasPattern ?? false;
 
   // ─── 2. DETERMINE EFFECTIVE PRESET ───
   let effectivePreset: OrchestratorDecisionInfo["effectivePreset"] = "SMC_PRICE_ACTION";
@@ -293,14 +293,16 @@ export function orchestrateStrategyDecision(input: OrchestratorInput): Orchestra
     // ─── VETO CHECK 5: INSTITUTIONAL DEALING RANGE INVARIANTS (SAFETY LOCK 13) ───
     // Smart Money NEVER enters market Buy in Premium (> 55%) or market Sell in Discount (< 45%)
     const premDisc = indicators.premiumDiscount;
+    const isConfirmedBreakout = indicators.marketStructureShift?.isTrueDisplacement &&
+      (indicators.adx && indicators.adx.length > 0 ? (indicators.adx[indicators.adx.length - 1] ?? 0) > 25 : false);
     if (premDisc && premDisc.tradeAllowed !== false) {
-      if (unifiedSignal === "BUY" && (premDisc.zone === "EXTREME_PREMIUM" || (premDisc.percentile > 55 && premDisc.zone === "PREMIUM"))) {
+      if (unifiedSignal === "BUY" && !isConfirmedBreakout && (premDisc.zone === "EXTREME_PREMIUM" || (premDisc.percentile > 55 && premDisc.zone === "PREMIUM"))) {
         vetoTriggered = true;
         vetoReason = `⛔ สถาบันไม่ซื้อในโซนพรีเมียม (Safety Lock 13): ราคาอยู่ที่ระดับ ${premDisc.percentile}% (PREMIUM) สูงกว่า 50% Equilibrium ($${premDisc.equilibrium}) บังคับตั้ง BUY LIMIT ดักย่อที่โซน Discount หรือ OTE เท่านั้น`;
         unifiedSignal = "HOLD_WAIT";
         confidencePct = Math.min(confidencePct, 50);
         executionAdvice = vetoReason;
-      } else if (unifiedSignal === "SELL" && (premDisc.zone === "DEEP_DISCOUNT" || (premDisc.percentile < 45 && premDisc.zone === "DISCOUNT"))) {
+      } else if (unifiedSignal === "SELL" && !isConfirmedBreakout && (premDisc.zone === "DEEP_DISCOUNT" || (premDisc.percentile < 45 && premDisc.zone === "DISCOUNT"))) {
         vetoTriggered = true;
         vetoReason = `⛔ สถาบันไม่ขายในโซนดิสเคานต์ (Safety Lock 13): ราคาอยู่ที่ระดับ ${premDisc.percentile}% (DISCOUNT) ต่ำกว่า 50% Equilibrium ($${premDisc.equilibrium}) บังคับตั้ง SELL LIMIT ดักเด้งที่โซน Premium หรือ Order Block เท่านั้น`;
         unifiedSignal = "HOLD_WAIT";
@@ -331,5 +333,98 @@ export function orchestrateStrategyDecision(input: OrchestratorInput): Orchestra
     vetoTriggered,
     vetoReason: vetoTriggered ? vetoReason : undefined,
     executionAdvice,
+  };
+}
+
+export interface CurrencyBasketExposureResult {
+  allowed: boolean;
+  reason?: string;
+  usdLongCount: number;
+  usdShortCount: number;
+  maxAllowedPerBasket: number;
+}
+
+/**
+ * Currency Basket Exposure Governor (Pillar 2)
+ * Caps concurrent directional exposure on correlated currency baskets (specifically USD)
+ * to a maximum of 2 active positions. Prevents synchronized basket drawdowns when USD spikes.
+ */
+export function checkCurrencyBasketExposure(
+  symbol: string,
+  action: "BUY" | "SELL",
+  activeOrders: { symbol: string; orderType: string; status: string }[],
+  maxAllowedPerBasket = 2
+): CurrencyBasketExposureResult {
+  const sym = symbol.toUpperCase().trim();
+  const isBuy = action === "BUY";
+
+  function getUsdDirection(s: string, act: "BUY" | "SELL"): "USD_LONG" | "USD_SHORT" | "NEUTRAL" {
+    // Inverse pairs where USD is quote currency: BUY = USD_SHORT, SELL = USD_LONG
+    if (
+      s.includes("XAU") || s.includes("GOLD") ||
+      s.includes("XAG") ||
+      s.includes("USOIL") || s.includes("UKOIL") ||
+      s.startsWith("EURUSD") || s.startsWith("GBPUSD") ||
+      s.startsWith("AUDUSD") || s.startsWith("NZDUSD")
+    ) {
+      return act === "BUY" ? "USD_SHORT" : "USD_LONG";
+    }
+
+    // Direct pairs where USD is base currency: BUY = USD_LONG, SELL = USD_SHORT
+    if (
+      s.startsWith("USDJPY") || s.startsWith("USDCAD") || s.startsWith("USDCHF")
+    ) {
+      return act === "BUY" ? "USD_LONG" : "USD_SHORT";
+    }
+
+    return "NEUTRAL";
+  }
+
+  const incomingDirection = getUsdDirection(sym, isBuy ? "BUY" : "SELL");
+  if (incomingDirection === "NEUTRAL") {
+    return {
+      allowed: true,
+      usdLongCount: 0,
+      usdShortCount: 0,
+      maxAllowedPerBasket,
+    };
+  }
+
+  let usdLongCount = 0;
+  let usdShortCount = 0;
+
+  for (const ord of activeOrders) {
+    if (ord.status === "CANCELLED" || ord.status === "CLOSED") continue;
+    const ordAct = ord.orderType.includes("BUY") ? "BUY" : "SELL";
+    const dir = getUsdDirection(ord.symbol, ordAct);
+    if (dir === "USD_LONG") usdLongCount++;
+    if (dir === "USD_SHORT") usdShortCount++;
+  }
+
+  if (incomingDirection === "USD_LONG" && usdLongCount >= maxAllowedPerBasket) {
+    return {
+      allowed: false,
+      reason: `🛑 [Currency Basket Exposure Governor] มีคำสั่งฝั่ง USD-Long เปิดอยู่แล้ว ${usdLongCount}/${maxAllowedPerBasket} ไม้ — ระงับคำสั่ง ${sym} ${action} เพื่อป้องกันความเสี่ยงกระจุกตัว (Correlated USD Drawdown)`,
+      usdLongCount,
+      usdShortCount,
+      maxAllowedPerBasket,
+    };
+  }
+
+  if (incomingDirection === "USD_SHORT" && usdShortCount >= maxAllowedPerBasket) {
+    return {
+      allowed: false,
+      reason: `🛑 [Currency Basket Exposure Governor] มีคำสั่งฝั่ง USD-Short เปิดอยู่แล้ว ${usdShortCount}/${maxAllowedPerBasket} ไม้ — ระงับคำสั่ง ${sym} ${action} เพื่อป้องกันความเสี่ยงกระจุกตัว (Correlated USD Drawdown)`,
+      usdLongCount,
+      usdShortCount,
+      maxAllowedPerBasket,
+    };
+  }
+
+  return {
+    allowed: true,
+    usdLongCount,
+    usdShortCount,
+    maxAllowedPerBasket,
   };
 }

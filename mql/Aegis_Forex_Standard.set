@@ -1,0 +1,42 @@
+; Aegis Quant Terminal EA - Preset for Forex Major Pairs (EURUSD, GBPUSD, USDJPY)
+; Designed for Standard USD Account ($100 - $10,000+)
+
+InpServerUrl=http://localhost:3000
+InpPollIntervalSec=2
+InpMagicNumber=777889
+InpExecMode=0
+InpAccountMode=0
+InpMaxSpreadPips=1.8
+InpSlippagePips=10
+InpMaxMarginPct=20.0
+InpShowGUI=true
+InpGuiX=20
+InpGuiY=35
+InpSoundAlerts=true
+InpPushAlerts=false
+InpEnableEarlyHarvest=true
+InpHarvestMinR=0.75
+InpHarvestMinPips=10.0
+InpSingleLotMode=0
+
+; Flash Volatility Spike Guard
+InpEnableFlashSpikeGuard=true
+InpFlashSpikeATRMult=3.0
+InpSpikeFreezeMinutes=15
+
+; Institutional Safeguards & Pending Router
+InpEnableDailyGuard=true
+InpMaxDailyLossPct=3.5
+InpTrailingDailyLockPct=50.0
+InpEnableTimeFilter=true
+InpRolloverStartHour=23
+InpRolloverEndHour=1
+InpCloseFridayNight=true
+InpFridayCloseHour=22
+InpUsePendingOrders=true
+InpPendingExpiryHours=4
+InpMarketExecBufferPips=1.5
+InpDrawChartLevels=true
+InpOfflineFallback=true
+InpMaxLossCooldownTrades=2
+InpCooldownMinutes=60

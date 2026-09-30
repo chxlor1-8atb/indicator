@@ -24,6 +24,7 @@ import {
   CVDInfo,
   OrderBlockValidatorInfo,
   OrderBlockItem,
+  OrderBlockPAReversalInfo,
   PriceFeedIntegrityInfo,
   SessionSweepInfo,
   FibonacciClusterInfo,
@@ -33,6 +34,7 @@ import {
   FVGDetailItem,
   FVGMitigationInfo,
   MarketStructureShiftInfo,
+  QuasimodoInfo,
   PremiumDiscountInfo,
   KeyLevelTargetsInfo,
   OrderFlowVelocityInfo,
@@ -57,6 +59,8 @@ import {
   ShannonEntropyInfo,
   CandlestickPatternMatch,
   CandlestickScanResult,
+  CandleColorRatioInfo,
+  TwoBarConfirmationInfo,
   GrandQuantMilestone50Info,
   HurstExponentInfo,
   KalmanFilterPoint,
@@ -126,6 +130,8 @@ import {
   TimeframeIndicators,
   MTFConfluenceInfo,
   SniperMicroSLInfo,
+  PullbackQualityInfo,
+  RSIInstitutionalAnalysisInfo,
 } from "./types";
 
 export function calculateEMA(candles: Candle[], period: number): (number | null)[] {
@@ -140,11 +146,11 @@ export function calculateEMA(candles: Candle[], period: number): (number | null)
     sum += candles[i].close;
   }
   let prevEMA = sum / effectivePeriod;
-  result[effectivePeriod - 1] = Number(prevEMA.toFixed(4));
+  result[effectivePeriod - 1] = prevEMA;
 
   for (let i = effectivePeriod; i < candles.length; i++) {
     const currentEMA = candles[i].close * k + prevEMA * (1 - k);
-    result[i] = Number(currentEMA.toFixed(4));
+    result[i] = currentEMA;
     prevEMA = currentEMA;
   }
 
@@ -167,7 +173,7 @@ export function calculateSMA(candles: Candle[], period: number): (number | null)
       sum -= candles[i - effectivePeriod].close;
     }
     if (i >= effectivePeriod - 1) {
-      result[i] = Number((sum / effectivePeriod).toFixed(4));
+      result[i] = sum / effectivePeriod;
     }
   }
 
@@ -884,10 +890,10 @@ export function filterOutlierWicks(candles: Candle[], maxWickMultiplier = 3.5): 
     let clippedLow = c.low;
 
     if (upperWick > maxAllowedWick) {
-      clippedHigh = Number((bodyTop + maxAllowedWick).toFixed(4));
+      clippedHigh = bodyTop + maxAllowedWick;
     }
     if (lowerWick > maxAllowedWick) {
-      clippedLow = Number((bodyBottom - maxAllowedWick).toFixed(4));
+      clippedLow = bodyBottom - maxAllowedWick;
     }
 
     if (clippedHigh !== c.high || clippedLow !== c.low) {
@@ -1102,15 +1108,28 @@ export function calculateSniperPrecisionEntry(
   fvgMitigation?: FVGMitigationInfo,
   oteZone?: OTEZoneInfo,
   volumeProfile?: VolumeProfileInfo,
-  precision = 2
+  precision = 2,
+  quasimodo?: QuasimodoInfo
 ): {
   recommendedLimit: number;
-  entryType: "FVG_POC_CONFLUENCE" | "FVG_50_CE" | "OB_MEAN_THRESHOLD" | "OTE_705_SWEETSPOT" | "POC_SHELF" | "DISCOUNT_SNIPER";
+  entryType: "FVG_POC_CONFLUENCE" | "QML_RETEST_HOLD" | "FVG_50_CE" | "OB_MEAN_THRESHOLD" | "OTE_705_SWEETSPOT" | "POC_SHELF" | "DISCOUNT_SNIPER";
   entryRationale: string;
 } {
   const isBuy = action === "BUY";
 
-  // 0. SUPREME CONFLUENCE: FVG + Volume Profile PoC (คัดโซนคุณภาพสูงสุดตามหลักสถาบัน)
+  // 0a. Quasimodo Retest & Hold (มาถึง QM ไม่หลุด QM)
+  if (quasimodo && quasimodo.detected && quasimodo.isQmlHeld && quasimodo.qmlPrice > 0) {
+    const isQMMatch = isBuy ? quasimodo.type === "BULLISH_QM" : quasimodo.type === "BEARISH_QM";
+    if (isQMMatch) {
+      return {
+        recommendedLimit: quasimodo.qmlPrice,
+        entryType: "QML_RETEST_HOLD",
+        entryRationale: `👑 ดัก Sniper Limit ตรงระดับ Quasimodo Level (QML: ${quasimodo.qmlPrice.toFixed(precision)}) — สถานะ: "มาถึง QM แล้วไม่หลุด QM" (Rejection ${Math.round(quasimodo.rejectionQuality * 100)}%) เกิด CHoCH แล้ว มุ่งหน้าสู่เป้า BOS: ${quasimodo.targetBOSPrice.toFixed(precision)}`,
+      };
+    }
+  }
+
+  // 0b. SUPREME CONFLUENCE: FVG + Volume Profile PoC (คัดโซนคุณภาพสูงสุดตามหลักสถาบัน)
   // หากมี FVG หลายโซน ให้เลือกโซนที่มี PoC (Point of Control) สถิตอยู่ข้างในเป็นอันดับแรกเสมอ!
   if (
     fvgMitigation &&
@@ -2196,6 +2215,124 @@ export function identifyOrderBlocksAndBreakers(
 }
 
 /**
+ * [SMC Plan] Institutional Order Block Price Action Reversal Confirmation
+ * ตรวจจับการเกิด Price Action กลับตัว (Pin Bar / Hammer / Shooting Star, Engulfing, Turtle Soup Sweep)
+ * เมื่อราคาเดินทางมาถึงโซน Unmitigated Order Block (Demand / Supply)
+ * พร้อมคำนวณ Sniper Micro-SL อิงตามปลายไส้ของแท่ง PA Reversal
+ */
+export function detectOrderBlockPriceActionReversal(
+  candles: Candle[],
+  orderBlocks?: OrderBlockValidatorInfo,
+  precision = 2,
+  currentATR = 1.0
+): OrderBlockPAReversalInfo {
+  const fallback: OrderBlockPAReversalInfo = {
+    detected: false,
+    type: "NONE",
+    obType: "NONE",
+    reversalPattern: "NONE",
+    obZone: { min: 0, max: 0 },
+    rejectionWickPct: 0,
+    entryPrice: 0,
+    sniperStopLoss: 0,
+    riskPips: 0,
+    confidence: 0,
+    description: "ยังไม่พบสัญญาณ Price Action กลับตัวในโซน Order Block",
+  };
+
+  if (!candles || candles.length < 5 || !orderBlocks || !orderBlocks.activeBlocks || orderBlocks.activeBlocks.length === 0) {
+    return fallback;
+  }
+
+  const lastCandle = candles[candles.length - 1];
+  const prevCandle = candles[candles.length - 2];
+  const candleRange = lastCandle.high - lastCandle.low;
+  if (candleRange <= 0.0001) return fallback;
+
+  const candleBody = Math.abs(lastCandle.close - lastCandle.open);
+  const lowerWick = Math.min(lastCandle.close, lastCandle.open) - lastCandle.low;
+  const upperWick = lastCandle.high - Math.max(lastCandle.close, lastCandle.open);
+  const lowerWickPct = Number(((lowerWick / candleRange) * 100).toFixed(1));
+  const upperWickPct = Number(((upperWick / candleRange) * 100).toFixed(1));
+
+  const unmitigatedBlocks = orderBlocks.activeBlocks.filter(b => !b.isBreaker);
+  if (unmitigatedBlocks.length === 0) return fallback;
+
+  for (const ob of unmitigatedBlocks) {
+    const isInBullishZone = ob.type === "BULLISH_OB" && lastCandle.low <= ob.priceMax && lastCandle.high >= ob.priceMin;
+    const isInBearishZone = ob.type === "BEARISH_OB" && lastCandle.high >= ob.priceMin && lastCandle.low <= ob.priceMax;
+
+    if (isInBullishZone) {
+      const isHammer = lowerWick >= candleRange * 0.40 && (lastCandle.close >= lastCandle.open || candleBody <= candleRange * 0.35);
+      const isBullEngulfing = lastCandle.close > lastCandle.open && prevCandle.close < prevCandle.open && lastCandle.close > prevCandle.open;
+      const isTurtleSoup = lastCandle.low < ob.priceMin && lastCandle.close >= ob.priceMin;
+
+      if (isHammer || isBullEngulfing || isTurtleSoup) {
+        const pattern: OrderBlockPAReversalInfo["reversalPattern"] = isTurtleSoup
+          ? "TURTLE_SOUP_SWEEP"
+          : isBullEngulfing
+          ? "BULLISH_ENGULFING"
+          : lowerWick >= candleRange * 0.50
+          ? "PIN_BAR_HAMMER"
+          : "WICK_REJECTION";
+
+        const entryPrice = Number(lastCandle.close.toFixed(precision));
+        const slPrice = Number((Math.min(lastCandle.low, ob.priceMin) - currentATR * 0.15).toFixed(precision));
+        const riskDistance = Math.max(entryPrice - slPrice, currentATR * 0.5);
+
+        return {
+          detected: true,
+          type: "BULLISH_OB_REVERSAL",
+          obType: "BULLISH_OB",
+          reversalPattern: pattern,
+          obZone: { min: ob.priceMin, max: ob.priceMax },
+          rejectionWickPct: lowerWickPct,
+          entryPrice,
+          sniperStopLoss: slPrice,
+          riskPips: Number(riskDistance.toFixed(precision)),
+          confidence: isTurtleSoup ? 92 : isBullEngulfing ? 88 : 85,
+          description: `🏛️ ยืนยันสถาบัน! เกิด PA กลับตัวรูปแบบ ${pattern} (ไส้ปฏิเสธ ${lowerWickPct}%) ในโซน Bullish Order Block (${ob.priceMin} - ${ob.priceMax}) พร้อมดัก BUY ด้วย Sniper SL ที่ ${slPrice}`,
+        };
+      }
+    } else if (isInBearishZone) {
+      const isShootingStar = upperWick >= candleRange * 0.40 && (lastCandle.close <= lastCandle.open || candleBody <= candleRange * 0.35);
+      const isBearEngulfing = lastCandle.close < lastCandle.open && prevCandle.close > prevCandle.open && lastCandle.close < prevCandle.open;
+      const isTurtleSoup = lastCandle.high > ob.priceMax && lastCandle.close <= ob.priceMax;
+
+      if (isShootingStar || isBearEngulfing || isTurtleSoup) {
+        const pattern: OrderBlockPAReversalInfo["reversalPattern"] = isTurtleSoup
+          ? "TURTLE_SOUP_SWEEP"
+          : isBearEngulfing
+          ? "BEARISH_ENGULFING"
+          : upperWick >= candleRange * 0.50
+          ? "SHOOTING_STAR"
+          : "WICK_REJECTION";
+
+        const entryPrice = Number(lastCandle.close.toFixed(precision));
+        const slPrice = Number((Math.max(lastCandle.high, ob.priceMax) + currentATR * 0.15).toFixed(precision));
+        const riskDistance = Math.max(slPrice - entryPrice, currentATR * 0.5);
+
+        return {
+          detected: true,
+          type: "BEARISH_OB_REVERSAL",
+          obType: "BEARISH_OB",
+          reversalPattern: pattern,
+          obZone: { min: ob.priceMin, max: ob.priceMax },
+          rejectionWickPct: upperWickPct,
+          entryPrice,
+          sniperStopLoss: slPrice,
+          riskPips: Number(riskDistance.toFixed(precision)),
+          confidence: isTurtleSoup ? 92 : isBearEngulfing ? 88 : 85,
+          description: `🏛️ ยืนยันสถาบัน! เกิด PA กลับตัวรูปแบบ ${pattern} (ไส้ปฏิเสธ ${upperWickPct}%) ในโซน Bearish Order Block (${ob.priceMin} - ${ob.priceMax}) พร้อมดัก SELL ด้วย Sniper SL ที่ ${slPrice}`,
+        };
+      }
+    }
+  }
+
+  return fallback;
+}
+
+/**
  * [แผน 25] Multi-Source Price Feed Divergence & Fair Market Value Cross-Check
  */
 export function calculatePriceFeedIntegrity(
@@ -2759,24 +2896,65 @@ export function calculateMarketStructureShift(
   const lookback = Math.min(candles.length - 2, 40);
   const startIdx = candles.length - lookback;
 
+  // Track sequential swing highs and lows for Market Structure (HH/HL/LH/LL)
+  const swingHighs: { price: number; index: number }[] = [];
+  const swingLows: { price: number; index: number }[] = [];
   let recentSwingHigh = -Infinity;
   let recentSwingLow = Infinity;
 
-  for (let i = startIdx; i < candles.length - 3; i++) {
+  for (let i = startIdx; i < candles.length - 2; i++) {
     const c = candles[i];
     // 3-bar swing high
     if (c.high > candles[i - 1].high && c.high > candles[i + 1].high && c.high > (candles[i - 2]?.high || 0)) {
+      swingHighs.push({ price: Number(c.high.toFixed(precision)), index: i });
       if (c.high > recentSwingHigh) {
         recentSwingHigh = c.high;
       }
     }
     // 3-bar swing low
     if (c.low < candles[i - 1].low && c.low < candles[i + 1].low && c.low < (candles[i - 2]?.low || Infinity)) {
+      swingLows.push({ price: Number(c.low.toFixed(precision)), index: i });
       if (c.low < recentSwingLow) {
         recentSwingLow = c.low;
       }
     }
   }
+
+  // ─── 8-IMAGE TREND & MARKET STRUCTURE CLASSIFICATION ───
+  let structureType: MarketStructureShiftInfo["structureType"] = "SIDEWAYS";
+  let lastHH: number | undefined;
+  let lastHL: number | undefined;
+  let lastLH: number | undefined;
+  let lastLL: number | undefined;
+
+  const numHighs = swingHighs.length;
+  const numLows = swingLows.length;
+
+  const isBullHighs = numHighs >= 2 && swingHighs[numHighs - 1].price >= swingHighs[numHighs - 2].price;
+  const isBullLows = numLows >= 2 && swingLows[numLows - 1].price >= swingLows[numLows - 2].price;
+  const isBearHighs = numHighs >= 2 && swingHighs[numHighs - 1].price <= swingHighs[numHighs - 2].price;
+  const isBearLows = numLows >= 2 && swingLows[numLows - 1].price <= swingLows[numLows - 2].price;
+
+  if (isBullHighs && isBullLows) {
+    structureType = "UPTREND";
+    lastHH = swingHighs[numHighs - 1].price;
+    lastHL = swingLows[numLows - 1].price;
+  } else if (isBearHighs && isBearLows) {
+    structureType = "DOWNTREND";
+    lastLH = swingHighs[numHighs - 1].price;
+    lastLL = swingLows[numLows - 1].price;
+  } else {
+    structureType = "SIDEWAYS";
+    if (numHighs > 0) lastHH = swingHighs[numHighs - 1].price;
+    if (numLows > 0) lastLL = swingLows[numLows - 1].price;
+  }
+
+  const tacticalPlan =
+    structureType === "UPTREND"
+      ? `📈 โครงสร้างขาขึ้น (Uptrend: HH + HL): รอราคาย่อตัวลงมาที่แนวรับ (HL หรือ Trendline) เพื่อเปิด BUY ตามเทรนด์หลัก | TP แนวต้านถัดไป (HH) | SL ใต้แนวรับ`
+      : structureType === "DOWNTREND"
+      ? `📉 โครงสร้างขาลง (Downtrend: LH + LL): รอราคาดีดตัวขึ้นมาที่แนวต้าน (LH หรือ Trendline) เพื่อเปิด SELL ตามเทรนด์หลัก | TP แนวรับถัดไป (LL) | SL เหนือแนวต้าน`
+      : `↔️ โครงสร้างไซด์เวย์ (Sideways): ราคาวิ่งในกรอบ S และ R ให้เทรดตามกรอบสั้นๆ (ซื้อใกล้แนวรับ ขายใกล้แนวต้าน) หรือรอ Breakout เพื่อออกตัวตามเทรนด์ใหม่`;
 
   // Check recent candles (last 5) for break with displacement
   const recentSlice = candles.slice(-5);
@@ -2789,6 +2967,12 @@ export function calculateMarketStructureShift(
     displacementVelocity: "WEAK",
     mssCandleIndex: -1,
     description: "โครงสร้างตลาดยังคงดำเนินตามกรอบเดิม ไม่พบ Market Structure Shift ล่าสุด",
+    structureType,
+    lastHH,
+    lastHL,
+    lastLH,
+    lastLL,
+    tacticalPlan,
   };
 
   for (let idx = 0; idx < recentSlice.length; idx++) {
@@ -2814,6 +2998,10 @@ export function calculateMarketStructureShift(
         description: isTrue
           ? `⚡ ตรวจพบ Bullish Market Structure Shift (MSS) พร้อมแท่งเทียนขับเคลื่อนแรงสถาบัน (Displacement ${multiplier}x ATR - ${velocity}) ทะลุ Swing High ${recentSwingHigh.toFixed(precision)}`
           : `⚠️ ทะลุ Swing High ${recentSwingHigh.toFixed(precision)} แต่ขาด Displacement (${multiplier}x ATR) เสี่ยงเป็น False Breakout/Liquidity Sweep`,
+        structureType: "UPTREND",
+        lastHH: Number(c.close.toFixed(precision)),
+        lastHL: recentSwingLow !== Infinity ? Number(recentSwingLow.toFixed(precision)) : undefined,
+        tacticalPlan: `⚡ เกิด Bullish BOS/MSS ทะลุ Swing High เดิม (${recentSwingHigh.toFixed(precision)}) แนวโน้มเปลี่ยนเป็นขาขึ้น ให้รอราคาย่อตัว Retest เพื่อดักจังหวะ BUY`,
       };
       break;
     }
@@ -2835,12 +3023,199 @@ export function calculateMarketStructureShift(
         description: isTrue
           ? `⚡ ตรวจพบ Bearish Market Structure Shift (MSS) พร้อมแท่งเทียนทิ้งตัวแรงสถาบัน (Displacement ${multiplier}x ATR - ${velocity}) หลุด Swing Low ${recentSwingLow.toFixed(precision)}`
           : `⚠️ หลุด Swing Low ${recentSwingLow.toFixed(precision)} แต่ขาด Displacement (${multiplier}x ATR) เสี่ยงเป็น False Breakdown/Liquidity Grab`,
+        structureType: "DOWNTREND",
+        lastLH: recentSwingHigh !== -Infinity ? Number(recentSwingHigh.toFixed(precision)) : undefined,
+        lastLL: Number(c.close.toFixed(precision)),
+        tacticalPlan: `⚡ เกิด Bearish BOS/MSS หลุด Swing Low เดิม (${recentSwingLow.toFixed(precision)}) แนวโน้มเปลี่ยนเป็นขาลง ให้รอราคาดีดตัว Retest เพื่อดักจังหวะ SELL`,
       };
       break;
     }
   }
 
   return bestMSS;
+}
+
+/**
+ * Quasimodo Pattern (QML + CHoCH + BOS + Retest & Hold) Detector
+ * 
+ * Life-Cycle:
+ * 1. Left Shoulder (LS): Confirmed swing pivot
+ * 2. Head (HH for Bearish, LL for Bullish): Sweeps liquidity beyond Left Shoulder
+ * 3. CHoCH: Decisive displacement break through the intervening Neckline
+ * 4. QML Retest & Hold ("มาถึง QM ไม่หลุด QM"):
+ *    - Price retraces back to the Left Shoulder level (QML)
+ *    - "ไม่หลุด QM": Candle body respects QML + upper/lower rejection wick >= 25% of candle range
+ * 5. BOS Target: Target at the previous extreme / extension
+ */
+export function calculateQuasimodoPattern(
+  candles: Candle[],
+  precision = 2
+): QuasimodoInfo {
+  if (candles.length < 25) {
+    return {
+      detected: false,
+      type: "NONE",
+      qmlPrice: 0,
+      headPrice: 0,
+      necklinePrice: 0,
+      isQmlHeld: false,
+      status: "NONE",
+      rejectionQuality: 0,
+      targetBOSPrice: 0,
+      tacticalRationale: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการวิเคราะห์ Quasimodo",
+    };
+  }
+
+  const atr14 = calculateATR(candles, 14);
+  const latestATR = atr14.filter((v): v is number => v !== null && !isNaN(v)).pop() || 2.0;
+
+  // Look back over the last 50 candles for confirmed swing points
+  const lookback = Math.min(candles.length - 2, 50);
+  const startIdx = candles.length - lookback;
+
+  interface Pivot {
+    index: number;
+    price: number;
+    type: "HIGH" | "LOW";
+  }
+  const pivots: Pivot[] = [];
+
+  for (let i = startIdx; i < candles.length - 1; i++) {
+    const c = candles[i];
+    const prev = candles[i - 1];
+    const next = candles[i + 1];
+    const prev2 = candles[i - 2] || prev;
+    const next2 = candles[i + 2] || next;
+
+    if (c.high > prev.high && c.high > next.high && c.high >= prev2.high && c.high >= next2.high) {
+      pivots.push({ index: i, price: c.high, type: "HIGH" });
+    }
+    if (c.low < prev.low && c.low < next.low && c.low <= prev2.low && c.low <= next2.low) {
+      pivots.push({ index: i, price: c.low, type: "LOW" });
+    }
+  }
+
+  const currentCandle = candles[candles.length - 1];
+  const prevCandle = candles[candles.length - 2];
+
+  // 1. Check Bearish Quasimodo:
+  // Need: High 1 (LS) -> Low 1 (Neckline) -> High 2 (Head > LS) -> Break below Low 1 (CHoCH)
+  const highs = pivots.filter((p) => p.type === "HIGH");
+  const lows = pivots.filter((p) => p.type === "LOW");
+
+  let bearishQM: QuasimodoInfo | null = null;
+  if (highs.length >= 2 && lows.length >= 1) {
+    for (let h = highs.length - 1; h >= 1; h--) {
+      const head = highs[h];
+      const ls = highs[h - 1];
+      if (head.price > ls.price + latestATR * 0.25 && head.index > ls.index) {
+        const neck = lows.find((l) => l.index > ls.index && l.index < head.index);
+        if (neck) {
+          const candlesAfterHead = candles.slice(head.index + 1);
+          const hasChoch = candlesAfterHead.some((b) => b.close < neck.price);
+          if (hasChoch) {
+            const qml = Number(ls.price.toFixed(precision));
+            const headP = Number(head.price.toFixed(precision));
+            const neckP = Number(neck.price.toFixed(precision));
+
+            const testCandle = currentCandle.high >= qml - latestATR * 0.35 ? currentCandle : prevCandle;
+            const reachedQML = testCandle.high >= qml - latestATR * 0.35;
+            const heldQML = testCandle.close <= qml + latestATR * 0.15;
+            const upperWick = testCandle.high - Math.max(testCandle.open, testCandle.close);
+            const tRange = testCandle.high - testCandle.low;
+            const rejectionWickRatio = tRange > 0 ? Number((upperWick / tRange).toFixed(2)) : 0;
+            const isHeld = reachedQML && heldQML && (rejectionWickRatio >= 0.25 || testCandle.close < testCandle.open);
+
+            const status = isHeld ? "HELD" : reachedQML ? "ARMED" : "NONE";
+            const targetBOS = Number((neckP - latestATR * 0.5).toFixed(precision));
+
+            bearishQM = {
+              detected: true,
+              type: "BEARISH_QM",
+              qmlPrice: qml,
+              headPrice: headP,
+              necklinePrice: neckP,
+              isQmlHeld: isHeld,
+              status,
+              rejectionQuality: rejectionWickRatio,
+              targetBOSPrice: targetBOS,
+              tacticalRationale: isHeld
+                ? `👑 ตรวจพบ Bearish Quasimodo (QML: ${qml}) — สถานะ: "มาถึง QM แล้วไม่หลุด QM" (Rejection ${Math.round(rejectionWickRatio * 100)}%) เกิด CHoCH หลุด Neckline ${neckP} แล้ว | เป้าหมาย BOS: ${targetBOS}`
+                : `⚡ พบโครงสร้าง Bearish QM รอราคาขึ้นมา Retest แนว QML ${qml} (Head: ${headP}, Neckline CHoCH: ${neckP})`,
+            };
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Check Bullish Quasimodo:
+  // Need: Low 1 (LS) -> High 1 (Neckline) -> Low 2 (Head < LS) -> Break above High 1 (CHoCH)
+  let bullishQM: QuasimodoInfo | null = null;
+  if (lows.length >= 2 && highs.length >= 1) {
+    for (let l = lows.length - 1; l >= 1; l--) {
+      const head = lows[l];
+      const ls = lows[l - 1];
+      if (head.price < ls.price - latestATR * 0.25 && head.index > ls.index) {
+        const neck = highs.find((h) => h.index > ls.index && h.index < head.index);
+        if (neck) {
+          const candlesAfterHead = candles.slice(head.index + 1);
+          const hasChoch = candlesAfterHead.some((b) => b.close > neck.price);
+          if (hasChoch) {
+            const qml = Number(ls.price.toFixed(precision));
+            const headP = Number(head.price.toFixed(precision));
+            const neckP = Number(neck.price.toFixed(precision));
+
+            const testCandle = currentCandle.low <= qml + latestATR * 0.35 ? currentCandle : prevCandle;
+            const reachedQML = testCandle.low <= qml + latestATR * 0.35;
+            const heldQML = testCandle.close >= qml - latestATR * 0.15;
+            const lowerWick = Math.min(testCandle.open, testCandle.close) - testCandle.low;
+            const tRange = testCandle.high - testCandle.low;
+            const rejectionWickRatio = tRange > 0 ? Number((lowerWick / tRange).toFixed(2)) : 0;
+            const isHeld = reachedQML && heldQML && (rejectionWickRatio >= 0.25 || testCandle.close > testCandle.open);
+
+            const status = isHeld ? "HELD" : reachedQML ? "ARMED" : "NONE";
+            const targetBOS = Number((neckP + latestATR * 0.5).toFixed(precision));
+
+            bullishQM = {
+              detected: true,
+              type: "BULLISH_QM",
+              qmlPrice: qml,
+              headPrice: headP,
+              necklinePrice: neckP,
+              isQmlHeld: isHeld,
+              status,
+              rejectionQuality: rejectionWickRatio,
+              targetBOSPrice: targetBOS,
+              tacticalRationale: isHeld
+                ? `👑 ตรวจพบ Bullish Quasimodo (QML: ${qml}) — สถานะ: "มาถึง QM แล้วไม่หลุด QM" (Rejection ${Math.round(rejectionWickRatio * 100)}%) เกิด CHoCH ทะลุ Neckline ${neckP} แล้ว | เป้าหมาย BOS: ${targetBOS}`
+                : `⚡ พบโครงสร้าง Bullish QM รอราคาย่อตัว Retest แนว QML ${qml} (Head: ${headP}, Neckline CHoCH: ${neckP})`,
+            };
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if (bearishQM && bearishQM.isQmlHeld) return bearishQM;
+  if (bullishQM && bullishQM.isQmlHeld) return bullishQM;
+  if (bearishQM && bearishQM.detected) return bearishQM;
+  if (bullishQM && bullishQM.detected) return bullishQM;
+
+  return {
+    detected: false,
+    type: "NONE",
+    qmlPrice: 0,
+    headPrice: 0,
+    necklinePrice: 0,
+    isQmlHeld: false,
+    status: "NONE",
+    rejectionQuality: 0,
+    targetBOSPrice: 0,
+    tacticalRationale: "โครงสร้างตลาดยังไม่ปรากฏ Quasimodo Pattern ที่ชัดเจนในรอบคลื่นล่าสุด",
+  };
 }
 
 /**
@@ -4325,7 +4700,11 @@ export function calculateShannonEntropy(candles: Candle[], lookback = 30): Shann
  * [แผน 49] Institutional Candlestick Micro-Pattern & Pinbar Reversal Matrix
  * Detects institutional multi-candle price action patterns (Engulfing, Pinbars, Morning/Evening Stars, Harami).
  */
-export function scanCandlestickPatterns(candles: Candle[], precision = 2): CandlestickScanResult {
+export function scanCandlestickPatterns(
+  candles: Candle[],
+  precision = 2,
+  srZones?: { min: number; max: number; label?: string }[]
+): CandlestickScanResult {
   if (candles.length < 5) {
     return { detectedPatterns: [], dominantSignal: "NEUTRAL", overallScore: 0 };
   }
@@ -4338,92 +4717,157 @@ export function scanCandlestickPatterns(candles: Candle[], precision = 2): Candl
     const prev = sample[i - 1];
     const prev2 = sample[i - 2];
 
-    const range = curr.high - curr.low;
+    const range = Math.max(1e-6, curr.high - curr.low);
     const body = Math.abs(curr.close - curr.open);
     const upperWick = curr.high - Math.max(curr.open, curr.close);
     const lowerWick = Math.min(curr.open, curr.close) - curr.low;
+    const bodyRatio = body / range;
+    const upperWickRatio = upperWick / range;
+    const lowerWickRatio = lowerWick / range;
 
     if (range <= 0.0001) continue;
 
-    // 1. Bullish Engulfing
+    // Check if current candle is anchored to an S/R zone (E-Book Folder 3 & 9 Zone-Anchoring)
+    let isZoneAnchored = false;
+    let anchoredSRZone: string | undefined;
+    if (srZones && srZones.length > 0) {
+      for (const zone of srZones) {
+        if (curr.low <= zone.max && curr.high >= zone.min) {
+          isZoneAnchored = true;
+          anchoredSRZone = zone.label || `S/R Zone [${zone.min.toFixed(precision)} - ${zone.max.toFixed(precision)}]`;
+          break;
+        }
+      }
+    }
+
+    // Helper to push pattern with zone anchoring confidence weighting
+    const addPattern = (
+      pattern: CandlestickPatternMatch["pattern"],
+      category: CandlestickPatternMatch["category"],
+      baseConfidence: number,
+      desc: string
+    ) => {
+      let finalConf = baseConfidence;
+      if (srZones && srZones.length > 0) {
+        if (isZoneAnchored) {
+          finalConf = Math.min(98, baseConfidence + 8);
+        } else {
+          finalConf = Math.max(35, baseConfidence - 22); // Unanchored penalty
+        }
+      }
+      detectedPatterns.push({
+        pattern,
+        category,
+        confidence: finalConf,
+        candleIndex: i,
+        description: isZoneAnchored ? `${desc} [⚡ ยืนยันที่แนวรับ-ต้าน ${anchoredSRZone}]` : desc,
+        isZoneAnchored,
+        anchoredSRZone,
+      });
+    };
+
+    // 1. Bullish Marubozu (E-Book Folder 9: เนื้อเทียนเขียว >= 80%, ไส้เทียนสั้นมาก <= 10%)
+    if (curr.close > curr.open && bodyRatio >= 0.80 && upperWickRatio <= 0.10 && lowerWickRatio <= 0.10) {
+      addPattern(
+        "MARUBOZU_BULL",
+        "CONTINUATION",
+        92,
+        `Bullish Marubozu: แท่งเขียวทรงพลัง ${(bodyRatio * 100).toFixed(0)}% แรงซื้อสถาบันคุมตลาด 100% ไร้แรงต้าน`
+      );
+    }
+
+    // 2. Bearish Marubozu (E-Book Folder 9: เนื้อเทียนแดง >= 80%, ไส้เทียนสั้นมาก <= 10%)
+    if (curr.close < curr.open && bodyRatio >= 0.80 && upperWickRatio <= 0.10 && lowerWickRatio <= 0.10) {
+      addPattern(
+        "MARUBOZU_BEAR",
+        "CONTINUATION",
+        92,
+        `Bearish Marubozu: แท่งแดงทรงพลัง ${(bodyRatio * 100).toFixed(0)}% แรงขายสถาบันทุบกดดัน 100% ไร้แรงช้อน`
+      );
+    }
+
+    // 3. Doji Star (E-Book Folder 9: เนื้อเทียนบาง <= 10% สะท้อนความลังเล/จุดกลับตัว)
+    if (bodyRatio <= 0.10 && range > 0.0001) {
+      addPattern(
+        "DOJI_STAR",
+        "INDECISION",
+        75,
+        `Doji Star: ความลังเลของตลาด เนื้อเทียนบางเพียง ${(bodyRatio * 100).toFixed(0)}% จุดเปลี่ยนโมเมนตัม`
+      );
+    }
+
+    // 4. Bullish Engulfing
     if (prev.close < prev.open && curr.close > curr.open &&
         curr.open <= prev.close && curr.close >= prev.open && body >= 1.2 * Math.abs(prev.close - prev.open)) {
-      detectedPatterns.push({
-        pattern: "BULLISH_ENGULFING",
-        category: "BULLISH_REVERSAL",
-        confidence: 88,
-        candleIndex: i,
-        description: `Bullish Engulfing: แท่งเขียวกลืนกินแท่งแดงก่อนหน้าสมบูรณ์แบบที่ราคา ${curr.close.toFixed(precision)}`,
-      });
+      addPattern(
+        "BULLISH_ENGULFING",
+        "BULLISH_REVERSAL",
+        88,
+        `Bullish Engulfing: แท่งเขียวกลืนกินแท่งแดงก่อนหน้าสมบูรณ์แบบที่ราคา ${curr.close.toFixed(precision)}`
+      );
     }
 
-    // 2. Bearish Engulfing
+    // 5. Bearish Engulfing
     if (prev.close > prev.open && curr.close < curr.open &&
         curr.open >= prev.close && curr.close <= prev.open && body >= 1.2 * Math.abs(prev.close - prev.open)) {
-      detectedPatterns.push({
-        pattern: "BEARISH_ENGULFING",
-        category: "BEARISH_REVERSAL",
-        confidence: 88,
-        candleIndex: i,
-        description: `Bearish Engulfing: แท่งแดงกลืนกินแท่งเขียวก่อนหน้าสมบูรณ์แบบที่ราคา ${curr.close.toFixed(precision)}`,
-      });
+      addPattern(
+        "BEARISH_ENGULFING",
+        "BEARISH_REVERSAL",
+        88,
+        `Bearish Engulfing: แท่งแดงกลืนกินแท่งเขียวก่อนหน้าสมบูรณ์แบบที่ราคา ${curr.close.toFixed(precision)}`
+      );
     }
 
-    // 3. Hammer Pinbar (Lower wick >= 66% of range)
+    // 6. Hammer Pinbar (Lower wick >= 65% of range)
     if (lowerWick >= 0.65 * range && upperWick <= 0.15 * range) {
-      detectedPatterns.push({
-        pattern: "HAMMER_PINBAR",
-        category: "BULLISH_REVERSAL",
-        confidence: 85,
-        candleIndex: i,
-        description: `Hammer Pinbar: ไส้เทียนล่างยาวปฏิเสธราคา ${lowerWick.toFixed(precision)} pips แรงซื้อสถาบันดีดกลับ`,
-      });
+      addPattern(
+        "HAMMER_PINBAR",
+        "BULLISH_REVERSAL",
+        85,
+        `Hammer Pinbar: ไส้เทียนล่างยาวปฏิเสธราคา ${lowerWick.toFixed(precision)} pips แรงซื้อสถาบันดีดกลับ`
+      );
     }
 
-    // 4. Shooting Star Pinbar (Upper wick >= 66% of range)
+    // 7. Shooting Star Pinbar (Upper wick >= 65% of range)
     if (upperWick >= 0.65 * range && lowerWick <= 0.15 * range) {
-      detectedPatterns.push({
-        pattern: "SHOOTING_STAR_PINBAR",
-        category: "BEARISH_REVERSAL",
-        confidence: 85,
-        candleIndex: i,
-        description: `Shooting Star Pinbar: ไส้เทียนบนยาวปฏิเสธราคา ${upperWick.toFixed(precision)} pips แรงขายสถาบันเททับ`,
-      });
+      addPattern(
+        "SHOOTING_STAR_PINBAR",
+        "BEARISH_REVERSAL",
+        85,
+        `Shooting Star Pinbar: ไส้เทียนบนยาวปฏิเสธราคา ${upperWick.toFixed(precision)} pips แรงขายสถาบันเททับ`
+      );
     }
 
-    // 5. Morning Star (prev2 bear, prev small, curr bull)
+    // 8. Morning Star (prev2 bear, prev small, curr bull)
     if (prev2.close < prev2.open && Math.abs(prev.close - prev.open) <= 0.35 * Math.abs(prev2.close - prev2.open) &&
         curr.close > curr.open && curr.close >= (prev2.open + prev2.close) / 2) {
-      detectedPatterns.push({
-        pattern: "MORNING_STAR",
-        category: "BULLISH_REVERSAL",
-        confidence: 90,
-        candleIndex: i,
-        description: `Morning Star: ชุด 3 แท่งเทียนกลับตัวรุ่งอรุณสถาบันฟื้นตัวข้ามกึ่งกลางแท่งแรก`,
-      });
+      addPattern(
+        "MORNING_STAR",
+        "BULLISH_REVERSAL",
+        90,
+        `Morning Star: ชุด 3 แท่งเทียนกลับตัวรุ่งอรุณสถาบันฟื้นตัวข้ามกึ่งกลางแท่งแรก`
+      );
     }
 
-    // 6. Evening Star (prev2 bull, prev small, curr bear)
+    // 9. Evening Star (prev2 bull, prev small, curr bear)
     if (prev2.close > prev2.open && Math.abs(prev.close - prev.open) <= 0.35 * Math.abs(prev2.close - prev2.open) &&
         curr.close < curr.open && curr.close <= (prev2.open + prev2.close) / 2) {
-      detectedPatterns.push({
-        pattern: "EVENING_STAR",
-        category: "BEARISH_REVERSAL",
-        confidence: 90,
-        candleIndex: i,
-        description: `Evening Star: ชุด 3 แท่งเทียนกลับตัวสนธยาสถาบันทุบกดราคาหลุดกึ่งกลางแท่งแรก`,
-      });
+      addPattern(
+        "EVENING_STAR",
+        "BEARISH_REVERSAL",
+        90,
+        `Evening Star: ชุด 3 แท่งเทียนกลับตัวสนธยาสถาบันทุบกดราคาหลุดกึ่งกลางแท่งแรก`
+      );
     }
 
-    // 7. Inside Bar Breakout
+    // 10. Inside Bar Breakout
     if (curr.high > prev.high && curr.close > prev.high && prev.high <= prev2.high && prev.low >= prev2.low) {
-      detectedPatterns.push({
-        pattern: "INSIDE_BAR_BREAKOUT",
-        category: "CONTINUATION",
-        confidence: 82,
-        candleIndex: i,
-        description: `Inside Bar Breakout: ราคาเบรคเอาท์ทะลุกรอบ Mother Bar อย่างรุนแรง`,
-      });
+      addPattern(
+        "INSIDE_BAR_BREAKOUT",
+        "CONTINUATION",
+        82,
+        `Inside Bar Breakout: ราคาเบรคเอาท์ทะลุกรอบ Mother Bar อย่างรุนแรง`
+      );
     }
   }
 
@@ -4432,10 +4876,10 @@ export function scanCandlestickPatterns(candles: Candle[], precision = 2): Candl
   let overallScore = 0;
 
   for (const p of detectedPatterns) {
-    if (p.category === "BULLISH_REVERSAL" || p.pattern === "INSIDE_BAR_BREAKOUT") {
+    if (p.category === "BULLISH_REVERSAL" || (p.category === "CONTINUATION" && p.pattern === "MARUBOZU_BULL") || p.pattern === "INSIDE_BAR_BREAKOUT") {
       bullCount++;
       overallScore += p.confidence;
-    } else if (p.category === "BEARISH_REVERSAL") {
+    } else if (p.category === "BEARISH_REVERSAL" || (p.category === "CONTINUATION" && p.pattern === "MARUBOZU_BEAR")) {
       bearCount++;
       overallScore -= p.confidence;
     }
@@ -4449,15 +4893,117 @@ export function scanCandlestickPatterns(candles: Candle[], precision = 2): Candl
 
   overallScore = Math.max(-100, Math.min(100, Math.round(overallScore / Math.max(1, detectedPatterns.length))));
 
+  const anchoredCount = detectedPatterns.filter(p => p.isZoneAnchored).length;
+
+  // ─── [E-Book Folder 9: Candlestick Ratio (20-Bar Institutional Health Check)] ───
+  const lookback20 = candles.slice(-20);
+  let bullishBarCount = 0;
+  let bearishBarCount = 0;
+  let dojiBarCount = 0;
+
+  for (const c of lookback20) {
+    const bodyDiff = c.close - c.open;
+    const rng = Math.max(1e-6, c.high - c.low);
+    if (Math.abs(bodyDiff) / rng < 0.08) {
+      dojiBarCount++;
+    } else if (bodyDiff > 0) {
+      bullishBarCount++;
+    } else {
+      bearishBarCount++;
+    }
+  }
+  const totalBars = Math.max(1, lookback20.length);
+  const bullRatio = Number((bullishBarCount / totalBars).toFixed(2));
+  const bearRatio = Number((bearishBarCount / totalBars).toFixed(2));
+  const dominantColorBias: "BULLISH" | "BEARISH" | "NEUTRAL" =
+    bullRatio >= 0.60 ? "BULLISH" : bearRatio >= 0.60 ? "BEARISH" : "NEUTRAL";
+  const isHealthyTrend = bullRatio >= 0.60 || bearRatio >= 0.60;
+
+  const candleColorRatio: CandleColorRatioInfo = {
+    lookback: totalBars,
+    bullishCount: bullishBarCount,
+    bearishCount: bearishBarCount,
+    dojiCount: dojiBarCount,
+    bullRatio,
+    bearRatio,
+    dominantBias: dominantColorBias,
+    isHealthyTrend,
+  };
+
+  // ─── [E-Book Folder 3 & 9: Institutional Two-Bar Confirmation Rule] ───
+  let twoBarConfirmation: TwoBarConfirmationInfo = {
+    isConfirmed: false,
+    type: "NONE",
+    detail: "ไม่มีรูปแบบการยืนยัน 2 แท่งเทียน",
+  };
+
+  if (candles.length >= 2) {
+    const penultimate = candles[candles.length - 2];
+    const ultimate = candles[candles.length - 1];
+    const penRange = Math.max(1e-6, penultimate.high - penultimate.low);
+    const penUpperWick = penultimate.high - Math.max(penultimate.open, penultimate.close);
+    const penLowerWick = Math.min(penultimate.open, penultimate.close) - penultimate.low;
+
+    // Check Bullish Reversal Pinbar/Hammer on Penultimate bar
+    const isPenBullishPin = penLowerWick >= penRange * 0.55 && penUpperWick <= penRange * 0.25;
+    // Check Bearish Reversal Shooting Star on Penultimate bar
+    const isPenBearishPin = penUpperWick >= penRange * 0.55 && penLowerWick <= penRange * 0.25;
+    // Check Engulfing on Penultimate bar
+    const antepenultimate = candles.length >= 3 ? candles[candles.length - 3] : null;
+    const isPenBullishEngulf = antepenultimate
+      ? penultimate.close > penultimate.open &&
+        penultimate.open <= antepenultimate.close &&
+        penultimate.close >= antepenultimate.open
+      : false;
+    const isPenBearishEngulf = antepenultimate
+      ? penultimate.close < penultimate.open &&
+        penultimate.open >= antepenultimate.close &&
+        penultimate.close <= antepenultimate.open
+      : false;
+
+    if (
+      (isPenBullishPin || isPenBullishEngulf) &&
+      ultimate.close > ultimate.open &&
+      ultimate.close > Math.max(penultimate.open, penultimate.close)
+    ) {
+      twoBarConfirmation = {
+        isConfirmed: true,
+        type: "BULLISH_CONFIRMATION",
+        setupPattern: isPenBullishPin ? "BULLISH_PINBAR" : "BULLISH_ENGULFING",
+        confirmationCandleIndex: candles.length - 1,
+        detail: `Two-Bar Bullish Confirmation: แท่งก่อนหน้าเกิด ${isPenBullishPin ? "Pin Bar/Hammer" : "Bullish Engulfing"} และแท่งปัจจุบันปิดเขียวยืนยันทะลุแนวต้าน`,
+      };
+    } else if (
+      (isPenBearishPin || isPenBearishEngulf) &&
+      ultimate.close < ultimate.open &&
+      ultimate.close < Math.min(penultimate.open, penultimate.close)
+    ) {
+      twoBarConfirmation = {
+        isConfirmed: true,
+        type: "BEARISH_CONFIRMATION",
+        setupPattern: isPenBearishPin ? "BEARISH_PINBAR" : "BEARISH_ENGULFING",
+        confirmationCandleIndex: candles.length - 1,
+        detail: `Two-Bar Bearish Confirmation: แท่งก่อนหน้าเกิด ${isPenBearishPin ? "Shooting Star/Pin Bar" : "Bearish Engulfing"} และแท่งปัจจุบันปิดแดงยืนยันหลุดแนวรับ`,
+      };
+    }
+  }
+
+  const colorNote = isHealthyTrend
+    ? ` • 🎨 Color Ratio: ${Math.round(bullRatio * 100)}% Green / ${Math.round(bearRatio * 100)}% Red (${dominantColorBias})`
+    : "";
+  const twoBarNote = twoBarConfirmation.isConfirmed ? ` • ⚡ ${twoBarConfirmation.detail}` : "";
+
   const desc = dominantSignal !== "NEUTRAL"
-    ? `🕯️ ตรวจพบสัญญาณแท่งเทียน ${dominantSignal} (${detectedPatterns.length} รูปแบบ: ${detectedPatterns.slice(-2).map(p => p.pattern).join(", ")}) คะแนนชี้นำ: ${overallScore}`
-    : `⚖️ แท่งเทียน Price Action อยู่ในภาวะสมดุล/ไร้สัญญาณกลับตัวชัดเจน (รูปแบบ ${detectedPatterns.length} รายการ)`;
+    ? `🕯️ ตรวจพบสัญญาณแท่งเทียน ${dominantSignal} (${detectedPatterns.length} รูปแบบ${anchoredCount > 0 ? `, ⚡ Anchor แนวรับ-ต้าน ${anchoredCount} จุด` : ""})${colorNote}${twoBarNote} คะแนนชี้นำ: ${overallScore}`
+    : `⚖️ แท่งเทียน Price Action อยู่ในภาวะสมดุล/ไร้สัญญาณกลับตัวชัดเจน (รูปแบบ ${detectedPatterns.length} รายการ)${colorNote}`;
 
   return {
     detectedPatterns: detectedPatterns.slice(-4),
     dominantSignal,
     overallScore,
     description: desc,
+    candleColorRatio,
+    twoBarConfirmation,
   };
 }
 
@@ -8564,6 +9110,7 @@ export function calculateClusteredSupportResistance(
   const currentPrice = candles[candles.length - 1].close;
   const recentSlice = candles.slice(-Math.min(lookback, candles.length));
   const clusterRadius = Math.max(currentATR * 0.35, currentPrice * 0.001);
+  const zoneBuffer = Math.max(currentATR * 0.15, currentPrice * 0.0005);
 
   // 1. หา Swing Highs และ Swing Lows (Left 2, Right 2)
   interface RawPoint { price: number; type: "HIGH" | "LOW"; index: number }
@@ -8590,6 +9137,7 @@ export function calculateClusteredSupportResistance(
   // 2. จัดกลุ่ม Clustering ที่ระดับราคาใกล้เคียงกัน
   interface Cluster {
     prices: number[];
+    rawTypes: ("HIGH" | "LOW")[];
     type: "SUPPORT" | "RESISTANCE";
     touchCount: number;
     avgPrice: number;
@@ -8603,6 +9151,7 @@ export function calculateClusteredSupportResistance(
     for (const cl of clusters) {
       if (Math.abs(pt.price - cl.avgPrice) <= clusterRadius) {
         cl.prices.push(pt.price);
+        cl.rawTypes.push(pt.type);
         cl.touchCount++;
         cl.priceSum += pt.price;
         cl.avgPrice = Number((cl.priceSum / cl.touchCount).toFixed(precision));
@@ -8613,6 +9162,7 @@ export function calculateClusteredSupportResistance(
     if (!matched) {
       clusters.push({
         prices: [pt.price],
+        rawTypes: [pt.type],
         type: pt.price >= currentPrice ? "RESISTANCE" : "SUPPORT",
         touchCount: 1,
         avgPrice: Number(pt.price.toFixed(precision)),
@@ -8621,20 +9171,93 @@ export function calculateClusteredSupportResistance(
     }
   }
 
-  // 3. กรองและคำนวณ Strength Score
-  const supports: SREntry[] = [];
-  const resistances: SREntry[] = [];
+  // ─── [ภาพที่ 8 ข้อ 1] ANTI-CLUTTER FILTER: รวม Cluster ที่ซ้อนทับกัน และคัดกรองสัญญาณรบกวน ───
+  const mergedClusters: Cluster[] = [];
+  clusters.sort((a, b) => a.avgPrice - b.avgPrice);
 
   for (const cl of clusters) {
+    if (mergedClusters.length === 0) {
+      mergedClusters.push(cl);
+      continue;
+    }
+    const lastCl = mergedClusters[mergedClusters.length - 1];
+    if (Math.abs(cl.avgPrice - lastCl.avgPrice) <= clusterRadius * 1.25) {
+      // รวมสองโซนที่ชิดกันเกินไปเป็นโซนหลักเดียว
+      lastCl.prices.push(...cl.prices);
+      lastCl.rawTypes.push(...cl.rawTypes);
+      lastCl.touchCount += cl.touchCount;
+      lastCl.priceSum += cl.priceSum;
+      lastCl.avgPrice = Number((lastCl.priceSum / lastCl.touchCount).toFixed(precision));
+    } else {
+      mergedClusters.push(cl);
+    }
+  }
+
+  // ─── ตรวจจับรูปแบบแท่งเทียนกลับตัวในแท่งล่าสุด (ภาพที่ 2, 3, 5: Pin Bar / Engulfing) ───
+  const lastC = candles[candles.length - 1];
+  const prevC = candles.length >= 2 ? candles[candles.length - 2] : lastC;
+  const lastRange = Math.max(1e-6, lastC.high - lastC.low);
+  const lastBody = Math.abs(lastC.close - lastC.open);
+  const lowerWick = Math.min(lastC.open, lastC.close) - lastC.low;
+  const upperWick = lastC.high - Math.max(lastC.open, lastC.close);
+
+  let activeReversalPattern: SREntry["reversalPattern"] = "NONE";
+  if (lowerWick / lastRange >= 0.55 && lastC.close > lastC.open) {
+    activeReversalPattern = "BULLISH_PINBAR";
+  } else if (upperWick / lastRange >= 0.55 && lastC.close < lastC.open) {
+    activeReversalPattern = "BEARISH_PINBAR";
+  } else if (lastC.close > lastC.open && prevC.close < prevC.open && lastC.close > prevC.open && lastC.open < prevC.close) {
+    activeReversalPattern = "BULLISH_ENGULFING";
+  } else if (lastC.close < lastC.open && prevC.close > prevC.open && lastC.close < prevC.open && lastC.open > prevC.close) {
+    activeReversalPattern = "BEARISH_ENGULFING";
+  }
+
+  // 3. กรองและคำนวณ Strength Score & Zone Bands (ภาพที่ 1, 4, 5, 7)
+  const supports: SREntry[] = [];
+  const resistances: SREntry[] = [];
+  let srFlipDetected = false;
+
+  for (const cl of mergedClusters) {
     const distPips = Math.round(Math.abs(cl.avgPrice - currentPrice) * pipMultiplier);
     const strength = Math.min(100, Math.round(cl.touchCount * 25 + (distPips < 50 ? 20 : 0)));
+
+    // [ภาพที่ 4] คำนวณขอบเขตแถบโซน (Zone Band: Min - Max)
+    const rawMin = Math.min(...cl.prices);
+    const rawMax = Math.max(...cl.prices);
+    const zoneMin = Number((rawMin - zoneBuffer).toFixed(precision));
+    const zoneMax = Number((rawMax + zoneBuffer).toFixed(precision));
+    const zoneThicknessPips = Math.round((zoneMax - zoneMin) * pipMultiplier);
+
+    const isCurrentSupport = cl.avgPrice < currentPrice;
+
+    // [ภาพที่ 7] ROLE REVERSAL / S-R FLIP DETECTION
+    // หากโซนปัจจุบันทำหน้าที่เป็น Support แต่เดิมถูกสร้างจากจุดยอด High (เคยเป็นแนวต้านแล้วถูกเบรก)
+    // หรือ โซนปัจจุบันทำหน้าที่เป็น Resistance แต่เดิมถูกสร้างจากจุดก้น Low (เคยเป็นแนวรับแล้วหลุด)
+    const hadOppositeOrigin = isCurrentSupport
+      ? cl.rawTypes.filter((t) => t === "HIGH").length >= 1
+      : cl.rawTypes.filter((t) => t === "LOW").length >= 1;
+
+    const isRoleReversed = hadOppositeOrigin && cl.touchCount >= 2;
+    if (isRoleReversed && distPips <= 60) {
+      srFlipDetected = true;
+    }
+
+    // ตรวจสอบว่าแท่งกลับตัวเกิดขึ้นในขอบเขตโซนนี้หรือไม่
+    const isCandleInZone = lastC.low <= zoneMax && lastC.high >= zoneMin;
+    const assignedPattern = isCandleInZone ? activeReversalPattern : "NONE";
 
     const entry: SREntry = {
       price: cl.avgPrice,
       touchCount: cl.touchCount,
       strength,
-      type: cl.avgPrice >= currentPrice ? "RESISTANCE" : "SUPPORT",
+      type: isCurrentSupport ? "SUPPORT" : "RESISTANCE",
       distancePips: distPips,
+      zoneMin,
+      zoneMax,
+      zoneThicknessPips,
+      isRoleReversed,
+      reversalPattern: assignedPattern,
+      testedCount: cl.touchCount,
     };
 
     if (entry.type === "RESISTANCE") {
@@ -8658,7 +9281,24 @@ export function calculateClusteredSupportResistance(
     ? Math.round(Math.abs(nearestResistance.price - nearestSupport.price) * pipMultiplier)
     : 0;
 
-  const description = `Auto S&R: แนวต้านใกล้สุด ${nearestResistance ? `${nearestResistance.price} (${nearestResistance.touchCount}x สัมผัส)` : "None"} | แนวรับใกล้สุด ${nearestSupport ? `${nearestSupport.price} (${nearestSupport.touchCount}x สัมผัส)` : "None"} | กว้าง ${channelWidthPips} pips`;
+  // ตรวจสอบสถานะราคาเทียบกับโซนปัจจุบัน
+  let activeZoneState: ClusteredSRInfo["activeZoneState"] = "BETWEEN_ZONES";
+  let tacticalAdvice = "ราคากำลังเคลื่อนไหวอยู่ระหว่างโซนแนวรับ-แนวต้าน ควรรอให้ราคาเคลื่อนเข้าใกล้โซนก่อนตัดสินใจ";
+  let nextTargetLevel = 0;
+
+  if (nearestSupport && currentPrice >= (nearestSupport.zoneMin ?? nearestSupport.price) && currentPrice <= (nearestSupport.zoneMax ?? nearestSupport.price)) {
+    activeZoneState = "INSIDE_SUPPORT_ZONE";
+    nextTargetLevel = nearestResistance ? nearestResistance.price : Number((currentPrice + currentATR * 2).toFixed(precision));
+    tacticalAdvice = `ราคาอยู่ในโซนแนวรับ [${nearestSupport.zoneMin} - ${nearestSupport.zoneMax}] (${nearestSupport.touchCount}x สัมผัส) ${nearestSupport.isRoleReversed ? "⚡ [S-R Flip]" : ""} -> รอแท่งกลับตัวคอนเฟิร์มแล้วหาจังหวะ Buy โดยเล็งเป้าแนวต้านถัดไปที่ ${nextTargetLevel}`;
+  } else if (nearestResistance && currentPrice >= (nearestResistance.zoneMin ?? nearestResistance.price) && currentPrice <= (nearestResistance.zoneMax ?? nearestResistance.price)) {
+    activeZoneState = "INSIDE_RESISTANCE_ZONE";
+    nextTargetLevel = nearestSupport ? nearestSupport.price : Number((currentPrice - currentATR * 2).toFixed(precision));
+    tacticalAdvice = `ราคาอยู่ในโซนแนวต้าน [${nearestResistance.zoneMin} - ${nearestResistance.zoneMax}] (${nearestResistance.touchCount}x สัมผัส) ${nearestResistance.isRoleReversed ? "⚡ [S-R Flip]" : ""} -> รอแท่งกลับตัวคอนเฟิร์มแล้วหาจังหวะ Sell โดยเล็งเป้าแนวรับถัดไปที่ ${nextTargetLevel}`;
+  } else {
+    nextTargetLevel = nearestResistance ? nearestResistance.price : nearestSupport ? nearestSupport.price : currentPrice;
+  }
+
+  const description = `Auto S&R Zone: แนวต้านใกล้สุด [${nearestResistance ? `${nearestResistance.zoneMin}-${nearestResistance.zoneMax}` : "None"}] (${nearestResistance?.touchCount || 0}x) | แนวรับใกล้สุด [${nearestSupport ? `${nearestSupport.zoneMin}-${nearestSupport.zoneMax}` : "None"}] (${nearestSupport?.touchCount || 0}x) | กว้าง ${channelWidthPips} pips ${srFlipDetected ? "• ⚡ ตรวจพบ S-R Flip" : ""}`;
 
   return {
     supports: topSupports,
@@ -8667,6 +9307,10 @@ export function calculateClusteredSupportResistance(
     nearestResistance,
     channelWidthPips,
     description,
+    activeZoneState,
+    srFlipDetected,
+    nextTargetLevel,
+    tacticalAdvice,
   };
 }
 
@@ -8843,12 +9487,20 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
 
   // Determine asset precision
   const sym = symbol.toUpperCase();
-  const precision = sym.includes("JPY") || sym === "XAUUSD" || sym.startsWith("XAU")
-    ? 2
-    : sym === "XAGUSD"
-    ? 3
+  const precision = sym.includes("JPY")
+    ? 3                   // USDJPY, EURJPY = 3 decimal places (e.g. 149.123)
+    : sym === "XAUUSD" || sym.startsWith("XAU") || sym.includes("GOLD")
+    ? 2                   // Gold = 2 decimal places (e.g. 2652.50)
+    : sym === "XAGUSD" || sym.startsWith("XAG")
+    ? 3                   // Silver = 3 decimal places
+    : sym.includes("PEPE") || sym.includes("SHIB") || sym.includes("FLOKI") || sym.includes("BONK")
+    ? 8                   // Meme coins = 8 decimal places (sub-cent)
+    : sym.includes("DOGE")
+    ? 5                   // DOGE = 5 decimal places
     : ["EUR", "GBP", "AUD", "NZD", "USD", "CAD", "CHF"].some((c) => sym.startsWith(c) || sym.endsWith(c))
-    ? 4
+    ? 5                   // 5-digit Forex (e.g. EURUSD 1.08523)
+    : sym.endsWith("USDT") || sym === "BTC" || sym === "ETH" || sym === "SOL" || sym === "BNB"
+    ? 2                   // Major crypto = 2 decimal places
     : 2;
 
   // [แผน 6] กรองไส้เทียนสเปรดถ่าง (Outlier Wicks) ก่อนส่งคำนวณแนวรับ-ต้านและแบนด์
@@ -8903,6 +9555,7 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const anchoredVwap = calculateAnchoredVWAP(cleanCandles, precision);
   const cvd = calculateCumulativeVolumeDelta(cleanCandles);
   const orderBlocks = identifyOrderBlocksAndBreakers(cleanCandles, precision);
+  const obPAReversal = detectOrderBlockPriceActionReversal(cleanCandles, orderBlocks, precision, latestATR);
   const priceFeedIntegrity = calculatePriceFeedIntegrity(currentPrice, symbol, latestATR);
 
   // Batch 6: Plans 26, 27, 28, 29, 30
@@ -8915,6 +9568,7 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   // Batch 7: Plans 31, 32, 33, 34, 35
   const fvgMitigation = calculateFVGMitigation(cleanCandles, precision);
   const marketStructureShift = calculateMarketStructureShift(cleanCandles, precision);
+  const quasimodo = calculateQuasimodoPattern(cleanCandles, precision);
   const premiumDiscount = calculatePremiumDiscount(cleanCandles, precision);
   const keyLevelTargets = calculateKeyLevelTargets(cleanCandles, precision, symbol);
   const orderFlowVelocity = calculateOrderFlowVelocity(cleanCandles);
@@ -8953,7 +9607,11 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   const harmonics = detectHarmonicPatterns(cleanCandles, precision);
   const ehlersMESA = calculateEhlersMESA(cleanCandles);
   const shannonEntropy = calculateShannonEntropy(cleanCandles, 30);
-  const candlestickPatterns = scanCandlestickPatterns(cleanCandles, precision);
+  const allSRZones = [
+    ...clusteredSR.supports.map((s) => ({ min: s.zoneMin ?? s.price, max: s.zoneMax ?? s.price, label: `Support ${s.price}` })),
+    ...clusteredSR.resistances.map((r) => ({ min: r.zoneMin ?? r.price, max: r.zoneMax ?? r.price, label: `Resistance ${r.price}` })),
+  ];
+  const candlestickPatterns = scanCandlestickPatterns(cleanCandles, precision, allSRZones);
   const milestone50 = synthesizeGrandQuantMilestone50(
     75,
     mcpiConviction.score,
@@ -9078,6 +9736,22 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
   // [แผน 54] Higher Timeframe Confluence Analysis (Fast & Resilient)
   const mtfConfluence = calculateMTFConfluence(cleanCandles, precision, sym);
 
+  // [E-Book Trade 10-Module Suite: Pullback & RSI Institutional Hook]
+  const pullbackQuality = evaluatePullbackQuality(
+    cleanCandles,
+    ema20,
+    ema50,
+    latestATR,
+    allSRZones,
+    mtfStructureMatrix.htfTrend
+  );
+  const rsiInstitutional = evaluateRSIInstitutionalHook(
+    rsi14,
+    cleanCandles,
+    allSRZones,
+    mtfStructureMatrix.htfTrend
+  );
+
   const _result: IndicatorData = {
     rsi14,
     atr14,
@@ -9093,6 +9767,9 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     fvgs,
     supportLevels: clusteredSR.supports.length > 0 ? clusteredSR.supports.map((s) => s.price) : support,
     resistanceLevels: clusteredSR.resistances.length > 0 ? clusteredSR.resistances.map((r) => r.price) : resistance,
+    clusteredSR,
+    pivotPoints,
+    autoFibonacci,
     currentPrice,
     priceChange24h,
     priceChangePercent24h,
@@ -9109,6 +9786,7 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     anchoredVwap,
     cvd,
     orderBlocks,
+    obPAReversal,
     priceFeedIntegrity,
     sessionSweep,
     fibonacciCluster,
@@ -9117,6 +9795,7 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     correlationShield,
     fvgMitigation,
     marketStructureShift,
+    quasimodo,
     premiumDiscount,
     keyLevelTargets,
     orderFlowVelocity,
@@ -9191,9 +9870,8 @@ export function calculateAllIndicators(candles: Candle[], symbol = "XAUUSD"): In
     darkPoolDealerGamma,
     sovereignSingularityAlpha,
     classicTrio,
-    pivotPoints,
-    clusteredSR,
-    autoFibonacci,
+    pullbackQuality,
+    rsiInstitutional,
   };
 
   // ─── Store result in cache before returning ───
@@ -10761,5 +11439,305 @@ export function calculateMTFConfluence(
     keyLevels,
     divergenceAlerts: [],
     description
+  };
+}
+
+/**
+ * ─── [E-Book Folder 4: PULLBACK & VALUE ZONE ENGINE] ───
+ * Evaluates trend-following pullback quality into Value Zones:
+ * 1. Dynamic Support/Resistance: EMA 20 & EMA 50 Ribbon
+ * 2. Static Support/Resistance: Clustered S/R & Role Reversal Flip Zones
+ * 3. Fibonacci Retracements (Shallow 38.2%, Golden Pocket 50-61.8%, Deep 78.6%)
+ * 4. FOMO Guard: Penalizes runaway price chasing if price is > 2.0x ATR from EMA20
+ * 5. Rejection Confirmation: Pin bar / engulfing bounce out of Value Zone
+ */
+export function evaluatePullbackQuality(
+  candles: Candle[],
+  ema20: (number | null)[],
+  ema50: (number | null)[],
+  currentATR: number,
+  srZones?: { min: number; max: number; label?: string }[],
+  trendBias: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL"
+): PullbackQualityInfo {
+  if (candles.length < 15) {
+    return {
+      state: "NO_PULLBACK",
+      valueZoneType: "NONE",
+      pullbackDepthPct: 0,
+      fomoDistanceAtr: 0,
+      isFomoChasing: false,
+      rejectionConfirmed: false,
+      pullbackScore: 50,
+      summary: "ข้อมูลแท่งเทียนไม่เพียงพอสำหรับการวิเคราะห์ Pullback",
+      tacticalAdvice: "รอแท่งเทียนสะสมเพื่อยืนยันโครงสร้างราคา",
+    };
+  }
+
+  const currentCandle = candles[candles.length - 1];
+  const prevCandle = candles[candles.length - 2];
+  const currentPrice = currentCandle.close;
+  const lastEMA20 = ema20.filter((v): v is number => v !== null).slice(-1)[0] ?? currentPrice;
+  const lastEMA50 = ema50.filter((v): v is number => v !== null).slice(-1)[0] ?? currentPrice;
+  const safeATR = Math.max(1e-5, currentATR || currentPrice * 0.005);
+
+  // 1. FOMO Distance from EMA20 in multiples of ATR
+  const fomoDistanceAtr = Number((Math.abs(currentPrice - lastEMA20) / safeATR).toFixed(2));
+  const isFomoChasing = fomoDistanceAtr >= 2.0;
+
+  // 2. Measure Recent Swing High & Low (last 25 bars) for Retracement Depth
+  const lookbackSlice = candles.slice(-25);
+  const swingHigh = Math.max(...lookbackSlice.map((c) => c.high));
+  const swingLow = Math.min(...lookbackSlice.map((c) => c.low));
+  const totalSwingRange = Math.max(1e-5, swingHigh - swingLow);
+
+  const isBull = trendBias === "BULLISH" || (lastEMA20 >= lastEMA50 && currentPrice >= lastEMA50);
+  const isBear = trendBias === "BEARISH" || (lastEMA20 < lastEMA50 && currentPrice <= lastEMA50);
+
+  let pullbackDepthPct = 0;
+  if (isBull) {
+    pullbackDepthPct = Number(Math.max(0, Math.min(100, ((swingHigh - currentPrice) / totalSwingRange) * 100)).toFixed(1));
+  } else if (isBear) {
+    pullbackDepthPct = Number(Math.max(0, Math.min(100, ((currentPrice - swingLow) / totalSwingRange) * 100)).toFixed(1));
+  }
+
+  // 3. Value Zone Verification
+  const inEmaRibbon = isBull
+    ? currentPrice <= lastEMA20 * 1.003 && currentPrice >= lastEMA50 * 0.997
+    : currentPrice >= lastEMA20 * 0.997 && currentPrice <= lastEMA50 * 1.003;
+
+  let inSRZone = false;
+  let srZoneLabel = "";
+  if (srZones && srZones.length > 0) {
+    for (const z of srZones) {
+      if (currentCandle.low <= z.max && currentCandle.high >= z.min) {
+        inSRZone = true;
+        srZoneLabel = z.label || "Key S/R Zone";
+        break;
+      }
+    }
+  }
+
+  let valueZoneType: PullbackQualityInfo["valueZoneType"] = "NONE";
+  if (inEmaRibbon && inSRZone) {
+    valueZoneType = "CONFLUENCE_ZONE";
+  } else if (inEmaRibbon) {
+    valueZoneType = "EMA_RIBBON";
+  } else if (inSRZone) {
+    valueZoneType = "SR_FLIP_ZONE";
+  }
+
+  // 4. Rejection Confirmation at Value Zone
+  const lastRange = Math.max(1e-5, currentCandle.high - currentCandle.low);
+  const lowerWick = Math.min(currentCandle.open, currentCandle.close) - currentCandle.low;
+  const upperWick = currentCandle.high - Math.max(currentCandle.open, currentCandle.close);
+  const isBullPin = lowerWick / lastRange >= 0.50 && currentCandle.close >= currentCandle.open;
+  const isBearPin = upperWick / lastRange >= 0.50 && currentCandle.close <= currentCandle.open;
+  const isBullEngulf = currentCandle.close > currentCandle.open && prevCandle.close < prevCandle.open && currentCandle.close > prevCandle.open;
+  const isBearEngulf = currentCandle.close < currentCandle.open && prevCandle.close > prevCandle.open && currentCandle.close < prevCandle.open;
+
+  const rejectionConfirmed = isBull ? (isBullPin || isBullEngulf) : isBear ? (isBearPin || isBearEngulf) : false;
+
+  // 5. 3 Avoided Traps Evaluation (From 8-Image Pullback Strategy)
+  // Trap 1: Shallow FOMO Trap - price retraced very little or far away, tempting FOMO chase
+  const shallowFomoWarning = isFomoChasing || (pullbackDepthPct > 0 && pullbackDepthPct < 30 && valueZoneType === "NONE");
+  
+  // Trap 2: No Reversal Confirmation - arrived at Value Zone but NO confirmation candle yet (risk of breakdown)
+  const noConfirmationWarning = valueZoneType !== "NONE" && !rejectionConfirmed;
+
+  // Trap 3: Counter-Trend Trap - attempting to trade against dominant macro trend
+  const counterTrendWarning = (trendBias === "BULLISH" && currentPrice < lastEMA50 && lastEMA20 < lastEMA50) ||
+                             (trendBias === "BEARISH" && currentPrice > lastEMA50 && lastEMA20 > lastEMA50);
+
+  let activeTrapWarning: string | undefined;
+  if (counterTrendWarning) {
+    activeTrapWarning = "❌ กับดักที่ 3 (Counter-Trend): สัญญาณขัดแย้งเทรนด์หลักของตลาด เสี่ยงขาดทุนสูง ควรรอให้ทิศทางสอดคล้องกับเทรนด์ใหญ่";
+  } else if (shallowFomoWarning) {
+    activeTrapWarning = isFomoChasing
+      ? `❌ กับดักที่ 1 (FOMO Overextended): ราคาไล่ห่าง EMA20 ถึง ${fomoDistanceAtr}x ATR ห้ามไล่ราคาเด็ดขาด เสี่ยงติดดอย/ติดเหว`
+      : `❌ กับดักที่ 1 (Shallow FOMO): ราคาย่อตัวเพียง ${pullbackDepthPct}% ยังไม่ถึง Value Zone สำคัญ ห้ามรีบเข้า`;
+  } else if (noConfirmationWarning) {
+    activeTrapWarning = "❌ กับดักที่ 2 (No Confirmation): ราคาถึงโซนแล้วแต่ยังไม่มีแท่งเทียนกลับตัว (Pin Bar / Engulfing) ยืนยัน เสี่ยงทะลุแนวรับ/ต้านต่อ";
+  }
+
+  const trapsAvoided = {
+    shallowFomoWarning,
+    noConfirmationWarning,
+    counterTrendWarning,
+    activeTrapWarning,
+  };
+
+  const fourPillars = {
+    trendConfirmed: trendBias !== "NEUTRAL" && (isBull || isBear) && !counterTrendWarning,
+    valueZoneReached: valueZoneType !== "NONE",
+    reversalSignalDetected: rejectionConfirmed,
+    riskManagementPlanned: true,
+  };
+
+  // 6. State Classification & Scoring
+  let state: PullbackQualityInfo["state"] = "NO_PULLBACK";
+  let pullbackScore = 50;
+  let summary = "";
+  let tacticalAdvice = "";
+
+  if (isFomoChasing) {
+    state = "FOMO_OVEREXTENDED";
+    pullbackScore = 20;
+    summary = `🚨 FOMO Alert: ราคาไล่ห่าง EMA20 เกิน ${fomoDistanceAtr}x ATR สัญญาณ Overextended เสี่ยงติดดอย/ติดเหว`;
+    tacticalAdvice = "🛡️ บล็อกการเปิด Follow ทันที! ห้ามไล่ราคาตามน้ำเด็ดขาด ควรรอให้ราคาย่อตัวกลับเข้า Value Zone (EMA 20/50 หรือ S/R Flip)";
+  } else if (valueZoneType !== "NONE" && (pullbackDepthPct >= 35 && pullbackDepthPct <= 68)) {
+    state = "HEALTHY_VALUE_ZONE";
+    pullbackScore = rejectionConfirmed ? 95 : 80;
+    if (rejectionConfirmed) {
+      summary = `✅ Perfect Pullback Setup (${valueZoneType.replace("_", " ")}): ย่อตัว ${pullbackDepthPct}% ในกรอบทองคำ ⚡ มีแท่งเทียนกลับตัวยืนยัน`;
+      tacticalAdvice = `🎯 เข้าออเดอร์ตาม 4 เสาหลัก! เข้า Buy/Sell หลังแท่งคอนเฟิร์มปิดตัว ตั้ง SL หลังแนว ${srZoneLabel || "Swing Low/High ล่าสุด"} (มี Buffer ป้องกันสเปรด) และล็อคเป้า TP ที่แนวต้านถัดไปหรือ R:R >= 1:2`;
+    } else {
+      summary = `⏳ Healthy Value Zone (${valueZoneType.replace("_", " ")}): ย่อตัว ${pullbackDepthPct}% เข้าโซนคุณค่า (รอแท่งเทียนกลับตัว)`;
+      tacticalAdvice = `🛡️ ระวังกับดักที่ 2: ราคาถึงโซนแล้วแต่ห้ามรีบเข้า! รอแท่งเทียนกลับตัว (Pin Bar / Hammer / Engulfing) ปิดยืนยันก่อน เพื่อป้องกันการเบรกทะลุโซน`;
+    }
+  } else if (pullbackDepthPct > 0 && pullbackDepthPct < 35) {
+    state = "SHALLOW_PULLBACK";
+    pullbackScore = 70;
+    summary = `⏳ Shallow Pullback: ราคาย่อตัวเพียง ${pullbackDepthPct}% (เทรนด์แข็งแรงมากแต่อาจย่อไม่สุด)`;
+    tacticalAdvice = "แบ่งไม้เข้าเบาๆ หรือรอแท่งเทียน Breakout คอนเฟิร์มการไปต่อ";
+  } else if (pullbackDepthPct > 68) {
+    state = "DEEP_PULLBACK";
+    pullbackScore = 40;
+    summary = `⚠️ Deep Pullback: ราคาย่อลึก ${pullbackDepthPct}% เกินแนว Golden Pocket เสี่ยงเสียโครงสร้างเทรนด์`;
+    tacticalAdvice = "ระวังการกลับทิศทาง (Structure Breakdown) รอให้ราคาเบรกไฮก่อนหน้าก่อนเข้าเทรด";
+  } else {
+    state = "NO_PULLBACK";
+    pullbackScore = 50;
+    summary = `⚪ สภาวะราคาเคลื่อนไหวปกติ (ห่างจาก EMA20 ${fomoDistanceAtr}x ATR)`;
+    tacticalAdvice = "รอการพักตัวเข้าโซนแนวรับ-แนวต้าน หรือเส้น EMA เพื่อหาจังหวะที่ได้เปรียบ";
+  }
+
+  if (counterTrendWarning) {
+    pullbackScore = Math.min(pullbackScore, 35);
+    tacticalAdvice = `⛔ บล็อกการเข้าเทรด: ${activeTrapWarning}`;
+  }
+
+  return {
+    state,
+    valueZoneType,
+    pullbackDepthPct,
+    fomoDistanceAtr,
+    isFomoChasing,
+    rejectionConfirmed,
+    pullbackScore,
+    summary,
+    tacticalAdvice,
+    trapsAvoided,
+    fourPillars,
+  };
+}
+
+/**
+ * ─── [E-Book Folder 5: RSI INSTITUTIONAL HOOK & REGIME RANGE ENGINE] ───
+ * Evaluates institutional RSI momentum dynamics:
+ * 1. Exit-Extreme Hook:
+ *    - Bullish: RSI dips < 32 then hooks back UP above 32 at Support.
+ *    - Bearish: RSI peaks > 68 then hooks back DOWN below 68 at Resistance.
+ * 2. Constance Brown Trend Continuation Ranges:
+ *    - Bull Market: RSI oscillates between 40 - 80 (40 acts as support).
+ *    - Bear Market: RSI oscillates between 20 - 60 (60 acts as resistance).
+ * 3. Zone-Anchored Divergence:
+ *    - Bullish regular divergence at Support (Price LL, RSI HL).
+ *    - Bearish regular divergence at Resistance (Price HH, RSI LH).
+ */
+export function evaluateRSIInstitutionalHook(
+  rsiValues: (number | null)[],
+  candles: Candle[],
+  srZones?: { min: number; max: number; label?: string }[],
+  trendBias: "BULLISH" | "BEARISH" | "NEUTRAL" = "NEUTRAL"
+): RSIInstitutionalAnalysisInfo {
+  const cleanRSI = rsiValues.filter((v): v is number => v !== null);
+  if (cleanRSI.length < 5 || candles.length < 5) {
+    return {
+      currentRSI: 50,
+      prevRSI: 50,
+      hookState: "NEUTRAL",
+      marketRegimeRange: "SIDEWAYS_RANGE_30_70",
+      divergenceAtZone: "NONE",
+      momentumConvictionScore: 50,
+      rsiSummary: "ข้อมูล RSI ไม่เพียงพอสำหรับการประเมิน",
+    };
+  }
+
+  const currentRSI = cleanRSI[cleanRSI.length - 1];
+  const prevRSI = cleanRSI[cleanRSI.length - 2];
+  const currentPrice = candles[candles.length - 1].close;
+
+  // 1. Exit-Extreme Hook Detection (E-Book Folder 5)
+  const hadOversoldRecently = cleanRSI.slice(-4).some((v) => v <= 32);
+  const isBullHook = hadOversoldRecently && currentRSI > 32 && currentRSI >= prevRSI;
+
+  const hadOverboughtRecently = cleanRSI.slice(-4).some((v) => v >= 68);
+  const isBearHook = hadOverboughtRecently && currentRSI < 68 && currentRSI <= prevRSI;
+
+  // 2. Trend Range Regime (Constance Brown / Andrew Cardwell)
+  let marketRegimeRange: RSIInstitutionalAnalysisInfo["marketRegimeRange"] = "SIDEWAYS_RANGE_30_70";
+  if (cleanRSI.slice(-10).every((v) => v >= 38) && currentRSI >= 45) {
+    marketRegimeRange = "BULL_MARKET_RANGE_40_80";
+  } else if (cleanRSI.slice(-10).every((v) => v <= 62) && currentRSI <= 55) {
+    marketRegimeRange = "BEAR_MARKET_RANGE_20_60";
+  }
+
+  // 3. Zone-Anchored Regular Divergence
+  let divergenceAtZone: RSIInstitutionalAnalysisInfo["divergenceAtZone"] = "NONE";
+  const recentCandles = candles.slice(-12);
+  const recentRSI = cleanRSI.slice(-12);
+  if (recentCandles.length >= 8 && recentRSI.length >= 8) {
+    const p1 = recentCandles[recentCandles.length - 1].low;
+    const p0 = Math.min(...recentCandles.slice(0, -3).map((c) => c.low));
+    const r1 = currentRSI;
+    const r0 = Math.min(...recentRSI.slice(0, -3));
+    if (p1 < p0 && r1 > r0 + 2.0 && r1 <= 45) {
+      divergenceAtZone = "BULLISH_DIVERGENCE_AT_SUPPORT";
+    }
+
+    const ph1 = recentCandles[recentCandles.length - 1].high;
+    const ph0 = Math.max(...recentCandles.slice(0, -3).map((c) => c.high));
+    const rh1 = currentRSI;
+    const rh0 = Math.max(...recentRSI.slice(0, -3));
+    if (ph1 > ph0 && rh1 < rh0 - 2.0 && rh1 >= 55) {
+      divergenceAtZone = "BEARISH_DIVERGENCE_AT_RESISTANCE";
+    }
+  }
+
+  // 4. Hook State and Conviction Scoring
+  let hookState: RSIInstitutionalAnalysisInfo["hookState"] = "NEUTRAL";
+  let momentumConvictionScore = 50;
+  let rsiSummary = "";
+
+  if (isBullHook) {
+    hookState = "BULLISH_EXIT_HOOK";
+    momentumConvictionScore = divergenceAtZone === "BULLISH_DIVERGENCE_AT_SUPPORT" ? 95 : 85;
+    rsiSummary = `⚡ RSI Bullish Exit Hook: RSI (${currentRSI.toFixed(1)}) หลุดพ้น Oversold แล้วหักหัวขึ้น${divergenceAtZone === "BULLISH_DIVERGENCE_AT_SUPPORT" ? " + Bullish Divergence" : ""} จุดกลับตัวแรงซื้อสถาบัน`;
+  } else if (isBearHook) {
+    hookState = "BEARISH_EXIT_HOOK";
+    momentumConvictionScore = divergenceAtZone === "BEARISH_DIVERGENCE_AT_RESISTANCE" ? 95 : 85;
+    rsiSummary = `⚡ RSI Bearish Exit Hook: RSI (${currentRSI.toFixed(1)}) หลุดพ้น Overbought แล้วหักหัวลง${divergenceAtZone === "BEARISH_DIVERGENCE_AT_RESISTANCE" ? " + Bearish Divergence" : ""} จุดกลับตัวแรงขายสถาบัน`;
+  } else if (marketRegimeRange === "BULL_MARKET_RANGE_40_80" && currentRSI >= 40 && currentRSI <= 60 && currentRSI >= prevRSI) {
+    hookState = "BULLISH_TREND_SUPPORT";
+    momentumConvictionScore = 80;
+    rsiSummary = `📈 Bull Market RSI Support (40-80 Zone): RSI (${currentRSI.toFixed(1)}) เด้งรับที่แนว 40-50 รักษาโมเมนตัมขาขึ้น`;
+  } else if (marketRegimeRange === "BEAR_MARKET_RANGE_20_60" && currentRSI <= 60 && currentRSI >= 40 && currentRSI <= prevRSI) {
+    hookState = "BEARISH_TREND_RESISTANCE";
+    momentumConvictionScore = 80;
+    rsiSummary = `📉 Bear Market RSI Resistance (20-60 Zone): RSI (${currentRSI.toFixed(1)}) ชนต้านที่แนว 50-60 รักษาโมเมนตัมขาลง`;
+  } else {
+    hookState = "NEUTRAL";
+    momentumConvictionScore = 55;
+    rsiSummary = `RSI (${currentRSI.toFixed(1)}) เคลื่อนไหวในกรอบปกติ ${marketRegimeRange === "BULL_MARKET_RANGE_40_80" ? "[Bull Bias]" : marketRegimeRange === "BEAR_MARKET_RANGE_20_60" ? "[Bear Bias]" : "[Neutral]"}`;
+  }
+
+  return {
+    currentRSI: Number(currentRSI.toFixed(1)),
+    prevRSI: Number(prevRSI.toFixed(1)),
+    hookState,
+    marketRegimeRange,
+    divergenceAtZone,
+    momentumConvictionScore,
+    rsiSummary,
   };
 }

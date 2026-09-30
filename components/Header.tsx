@@ -1,26 +1,31 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Activity, Send, Sparkles, Palette } from "lucide-react";
+import { Activity, Send, Sparkles, Palette, Clock, Download } from "lucide-react";
+import { getTradingSessionPhase, SessionPhaseInfo } from "../lib/sessionEngine";
 
 interface HeaderProps {
   onRefreshAll?: () => void;
   isLoading?: boolean;
   onOpenTelegramModal: () => void;
   onOpenBackgroundModal?: () => void;
+  onOpenMt5Modal?: () => void;
   lastSyncTimestamp?: number | null;
 }
 
 export default function Header({
   onOpenTelegramModal,
   onOpenBackgroundModal,
+  onOpenMt5Modal,
 }: HeaderProps) {
   const [time, setTime] = useState<string>("");
+  const [sessionInfo, setSessionInfo] = useState<SessionPhaseInfo | null>(null);
 
   useEffect(() => {
     const update = () => {
       const now = new Date();
       setTime(now.toTimeString().split(" ")[0] + " UTC" + (now.getTimezoneOffset() > 0 ? "-" : "+") + Math.abs(now.getTimezoneOffset() / 60));
+      setSessionInfo(getTradingSessionPhase(now));
     };
     update();
     const interval = setInterval(update, 1000);
@@ -49,6 +54,25 @@ export default function Header({
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
                 Institutional
               </span>
+              {sessionInfo && (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono font-medium rounded border ${
+                    sessionInfo.phase === "NIGHT"
+                      ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                      : sessionInfo.phase === "AFTERNOON"
+                      ? "bg-sky-500/10 text-sky-300 border-sky-500/30"
+                      : sessionInfo.phase === "MORNING"
+                      ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                      : "bg-rose-500/10 text-rose-300 border-rose-500/30 animate-pulse"
+                  }`}
+                  title={sessionInfo.description}
+                >
+                  <span>{sessionInfo.label}</span>
+                  <span className="hidden lg:inline text-zinc-400 text-[9px]">
+                    ({sessionInfo.recommendedRegime === "RANGE_BOX" ? "เน้นกรอบ Sideway" : sessionInfo.recommendedRegime === "STAND_DOWN" ? "พักเทรด" : "เน้นรันเทรนด์"})
+                  </span>
+                </span>
+              )}
             </div>
             <p className="text-[10px] sm:text-[11px] text-zinc-400 hidden sm:block truncate font-normal">
               5-Pillar Confluence Engine • Real-time Alpha Signals • Autonomous Execution Bridge
@@ -73,6 +97,19 @@ export default function Header({
             >
               <Palette className="w-3.5 h-3.5 text-zinc-400" />
               <span className="hidden md:inline">ธีมพื้นหลัง</span>
+            </button>
+          )}
+
+          {/* MT5 EA Modal Trigger */}
+          {onOpenMt5Modal && (
+            <button
+              onClick={onOpenMt5Modal}
+              className="h-7 sm:h-8 px-2.5 sm:px-3 text-[11px] sm:text-xs font-semibold rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-950/30 cursor-pointer"
+              title="ดาวน์โหลด EA สำหรับ MetaTrader 5 พร้อม On-Chart GUI Dashboard"
+            >
+              <Download className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <span className="hidden sm:inline">โหลด MT5 EA</span>
+              <span className="sm:hidden">EA</span>
             </button>
           )}
 

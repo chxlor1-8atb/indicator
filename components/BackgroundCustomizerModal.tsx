@@ -104,7 +104,7 @@ export default function BackgroundCustomizerModal({
           <div className="rounded-md bg-white/[0.03] border border-white/[0.08] p-2.5 flex items-start gap-2.5">
             <Layers className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
             <div className="text-xs text-zinc-300 leading-relaxed">
-              <span className="font-semibold text-white">"เว็บมี Background — ดูพรีเมียมทันที"</span>
+              <span className="font-semibold text-white">&ldquo;เว็บมี Background — ดูพรีเมียมทันที&rdquo;</span>
               <br />
               ระบบ Multi-layer Parallax ขับเคลื่อนด้วย GPU พื้นหลังขยับตามการเลื่อนหน้าจออย่างนุ่มนวล
             </div>
